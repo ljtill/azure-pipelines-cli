@@ -114,17 +114,17 @@ jobs:
 
           PROMPT="You are a release notes writer for an open-source CLI tool called azure-pipelines-cli (a TUI dashboard for Azure DevOps Pipelines).
 
-Given the following git commit messages (using Conventional Commits format), generate clean, polished release notes in Markdown.
+          Given the following git commit messages (using Conventional Commits format), generate clean, polished release notes in Markdown.
 
-Rules:
-- Group changes under these headings (only include sections that have entries): 🚀 Features, 🐛 Bug Fixes, ♻️ Refactoring, 📖 Documentation, 🔧 CI & Maintenance
-- Flag any breaking changes with a ⚠️ BREAKING CHANGE callout
-- Write concise, user-friendly descriptions (not raw commit messages)
-- Do not include commit hashes or author names
-- Output only the Markdown, no preamble
+          Rules:
+          - Group changes under these headings (only include sections that have entries): 🚀 Features, 🐛 Bug Fixes, ♻️ Refactoring, 📖 Documentation, 🔧 CI & Maintenance
+          - Flag any breaking changes with a ⚠️ BREAKING CHANGE callout
+          - Write concise, user-friendly descriptions (not raw commit messages)
+          - Do not include commit hashes or author names
+          - Output only the Markdown, no preamble
 
-Commits:
-${COMMIT_LOG}"
+          Commits:
+          ${COMMIT_LOG}"
 
           if echo "$PROMPT" | gh models run openai/gpt-5-mini > ai-notes.md 2>/dev/null && [ -s ai-notes.md ]; then
             echo "AI release notes generated successfully"
