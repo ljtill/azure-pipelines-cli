@@ -31,6 +31,28 @@ download() {
   fi
 }
 
+download_text() {
+  url="$1"
+  if has curl; then
+    curl -fsSL "$url"
+  elif has wget; then
+    wget -qO- "$url"
+  else
+    die "curl or wget is required"
+  fi
+}
+
+compute_sha256() {
+  file="$1"
+  if has sha256sum; then
+    sha256sum "$file" | awk '{print $1}'
+  elif has shasum; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    die "sha256sum or shasum is required to verify downloads"
+  fi
+}
+
 # --- detect platform --------------------------------------------------------
 
 OS="$(uname -s)"
@@ -66,6 +88,7 @@ fi
 
 TAG="v${VERSION}"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ARTIFACT}"
+CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
 
 # --- download and install ---------------------------------------------------
 
@@ -77,6 +100,11 @@ TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
 download "$URL" "$TMP"
+CHECKSUMS="$(download_text "$CHECKSUMS_URL")"
+EXPECTED="$(printf '%s\n' "$CHECKSUMS" | awk -v artifact="$ARTIFACT" '$2 == artifact { print $1; exit }')"
+[ -n "$EXPECTED" ] || die "Could not find checksum for ${ARTIFACT}"
+ACTUAL="$(compute_sha256 "$TMP")"
+[ "$ACTUAL" = "$EXPECTED" ] || die "Checksum mismatch for ${ARTIFACT}"
 chmod +x "$TMP"
 mv "$TMP" "${INSTALL_DIR}/${BINARY_NAME}"
 

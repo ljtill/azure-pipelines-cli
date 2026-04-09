@@ -104,6 +104,7 @@ impl PipelinesState {
 }
 
 use std::collections::{BTreeMap, HashSet};
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 
@@ -219,6 +220,12 @@ pub struct App {
     pub last_refresh: Option<DateTime<Utc>>,
     pub notifications: Notifications,
     pub loading: bool,
+    pub data_refresh_in_flight: bool,
+    pub data_refresh_failures: u32,
+    pub data_refresh_backoff_until: Option<Instant>,
+    pub log_refresh_in_flight: bool,
+    pub log_refresh_failures: u32,
+    pub log_refresh_backoff_until: Option<Instant>,
 }
 
 impl App {
@@ -252,6 +259,12 @@ impl App {
             last_refresh: None,
             notifications: Notifications::new(10),
             loading: false,
+            data_refresh_in_flight: false,
+            data_refresh_failures: 0,
+            data_refresh_backoff_until: None,
+            log_refresh_in_flight: false,
+            log_refresh_failures: 0,
+            log_refresh_backoff_until: None,
         }
     }
 

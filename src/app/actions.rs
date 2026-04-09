@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use tokio::sync::mpsc;
@@ -12,7 +12,7 @@ use crate::events::Action;
 use super::App;
 use super::View;
 use super::log_viewer::TimelineRow;
-use super::messages::AppMessage;
+use super::messages::{AppMessage, RefreshSource};
 
 /// Spawn an async API call on a background task, routing the result to AppMessage.
 fn spawn_api<F, Fut, T>(
@@ -37,6 +37,12 @@ fn spawn_api<F, Fut, T>(
     });
 }
 
+fn refresh_backoff(failures: u32, base_secs: u64, max_secs: u64) -> Duration {
+    let shift = failures.saturating_sub(1).min(6);
+    let multiplier = 1u64 << shift;
+    Duration::from_secs(base_secs.saturating_mul(multiplier).min(max_secs))
+}
+
 pub fn handle_action(
     app: &mut App,
     client: &AdoClient,
@@ -48,11 +54,12 @@ pub fn handle_action(
     match action {
         Action::Quit => app.running = false,
         Action::ForceRefresh => {
-            spawn_data_refresh(client, tx);
+            if spawn_data_refresh(app, client, tx) {
+                *last_data_fetch = Instant::now();
+            }
             if app.view == View::BuildHistory {
                 spawn_build_history_refresh(app, client, tx);
             }
-            *last_data_fetch = Instant::now();
         }
         Action::FetchBuildHistory(def_id) => {
             spawn_api(
@@ -195,6 +202,9 @@ pub fn handle_message(
                 approvals = pending_approvals.len(),
                 "data refresh received"
             );
+            app.data_refresh_in_flight = false;
+            app.data_refresh_failures = 0;
+            app.data_refresh_backoff_until = None;
             app.data.definitions = definitions;
 
             let mut map: BTreeMap<u32, models::Build> = BTreeMap::new();
@@ -295,17 +305,34 @@ pub fn handle_message(
             }
             app.log_viewer.set_log_content(content);
         }
+        AppMessage::LogRefreshFinished { had_failure } => {
+            app.log_refresh_in_flight = false;
+            if had_failure {
+                app.log_refresh_failures = app.log_refresh_failures.saturating_add(1);
+                let backoff = refresh_backoff(app.log_refresh_failures, 5, 60);
+                app.log_refresh_backoff_until = Some(Instant::now() + backoff);
+            } else {
+                app.log_refresh_failures = 0;
+                app.log_refresh_backoff_until = None;
+            }
+        }
         AppMessage::Error(msg) => {
             tracing::warn!(error = %msg, "app error");
             app.notifications.error(msg);
         }
-        AppMessage::RefreshError(msg) => {
-            tracing::warn!(error = %msg, "refresh error");
-            app.notifications.error_dedup(msg);
+        AppMessage::RefreshError { message, source } => {
+            tracing::warn!(error = %message, ?source, "refresh error");
+            if source == RefreshSource::Data {
+                app.data_refresh_in_flight = false;
+                app.data_refresh_failures = app.data_refresh_failures.saturating_add(1);
+                let backoff = refresh_backoff(app.data_refresh_failures, 30, 300);
+                app.data_refresh_backoff_until = Some(Instant::now() + backoff);
+            }
+            app.notifications.error_dedup(message);
         }
         AppMessage::BuildCancelled => {
             app.notifications.success("Build cancelled");
-            spawn_data_refresh(client, tx);
+            spawn_data_refresh(app, client, tx);
             if app.view == View::BuildHistory {
                 spawn_build_history_refresh(app, client, tx);
             }
@@ -315,7 +342,7 @@ pub fn handle_message(
         }
         AppMessage::BuildsCancelled { cancelled, failed } => {
             app.active_runs.selected.clear();
-            spawn_data_refresh(client, tx);
+            spawn_data_refresh(app, client, tx);
             if app.view == View::BuildHistory {
                 spawn_build_history_refresh(app, client, tx);
             }
@@ -332,11 +359,11 @@ pub fn handle_message(
             if let Some(build) = app.log_viewer.selected_build() {
                 spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
             }
-            spawn_data_refresh(client, tx);
+            spawn_data_refresh(app, client, tx);
         }
         AppMessage::CheckUpdated => {
             app.notifications.success("Check updated");
-            spawn_data_refresh(client, tx);
+            spawn_data_refresh(app, client, tx);
             if let Some(build) = app.log_viewer.selected_build() {
                 spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
             }
@@ -416,7 +443,16 @@ pub fn spawn_timeline_fetch(
     });
 }
 
-pub fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
+pub fn spawn_data_refresh(
+    app: &mut App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+) -> bool {
+    if app.data_refresh_in_flight {
+        return false;
+    }
+    app.data_refresh_in_flight = true;
+
     let client = client.clone();
     let tx = tx.clone();
     tokio::spawn(async move {
@@ -427,7 +463,18 @@ pub fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
             client.list_pending_approvals(),
         );
 
-        let pending_approvals = approvals_result.unwrap_or_default();
+        let pending_approvals = match approvals_result {
+            Ok(approvals) => approvals,
+            Err(e) => {
+                let _ = tx
+                    .send(AppMessage::RefreshError {
+                        message: format!("Approvals unavailable: {e}"),
+                        source: RefreshSource::Approvals,
+                    })
+                    .await;
+                Vec::new()
+            }
+        };
 
         match (defs_result, recent_result, active_result) {
             (Ok(definitions), Ok(recent_builds), Ok(active_builds)) => {
@@ -442,11 +489,15 @@ pub fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
             }
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
                 let _ = tx
-                    .send(AppMessage::RefreshError(format!("Refresh: {e}")))
+                    .send(AppMessage::RefreshError {
+                        message: format!("Refresh: {e}"),
+                        source: RefreshSource::Data,
+                    })
                     .await;
             }
         }
     });
+    true
 }
 
 /// Re-fetch the build history for the currently selected pipeline definition.
@@ -462,7 +513,10 @@ fn spawn_build_history_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<
                 }
                 Err(e) => {
                     let _ = tx
-                        .send(AppMessage::RefreshError(format!("Refresh builds: {e}")))
+                        .send(AppMessage::RefreshError {
+                            message: format!("Refresh builds: {e}"),
+                            source: RefreshSource::BuildHistory,
+                        })
                         .await;
                 }
             }
@@ -470,44 +524,103 @@ fn spawn_build_history_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<
     }
 }
 
-pub fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
-    let generation = app.log_viewer.generation();
-
-    // Re-fetch timeline for in-progress builds
-    if let Some(build) = app.log_viewer.selected_build()
-        && build.status.is_in_progress()
-    {
-        spawn_timeline_fetch(client, tx, build.id, generation, true);
+pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) -> bool {
+    if app.log_refresh_in_flight {
+        return false;
     }
-
-    // Re-fetch log content for the currently viewed task.
-    // In follow mode: refresh the followed task's log.
-    // In inspect mode: refresh the selected (pinned) task's log.
+    let generation = app.log_viewer.generation();
+    let Some(build) = app.log_viewer.selected_build() else {
+        return false;
+    };
+    app.log_refresh_in_flight = true;
+    let build_id = build.id;
+    let should_refresh_timeline = build.status.is_in_progress();
     let log_id_to_refresh = if app.log_viewer.is_following() {
         app.log_viewer.followed_log_id()
     } else {
         app.log_viewer
             .timeline_task_log_id(app.log_viewer.nav().index())
     };
+    let should_refresh_log =
+        !app.log_viewer.log_content().is_empty() && log_id_to_refresh.is_some();
 
-    if !app.log_viewer.log_content().is_empty()
-        && let Some(build) = app.log_viewer.selected_build()
-        && let Some(log_id) = log_id_to_refresh
-    {
-        let client = client.clone();
-        let tx = tx.clone();
-        let build_id = build.id;
-        tokio::spawn(async move {
-            if let Ok(content) = client.get_build_log(build_id, log_id).await {
-                let _ = tx
-                    .send(AppMessage::LogContent {
-                        content,
-                        generation,
-                    })
-                    .await;
+    let timeline_client = client.clone();
+    let log_client = client.clone();
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let timeline_future = async move {
+            if should_refresh_timeline {
+                Some(timeline_client.get_build_timeline(build_id).await)
+            } else {
+                None
             }
-        });
-    }
+        };
+        let log_future = async move {
+            if should_refresh_log {
+                if let Some(log_id) = log_id_to_refresh {
+                    Some(log_client.get_build_log(build_id, log_id).await)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        let (timeline_result, log_result) = tokio::join!(timeline_future, log_future);
+        let mut had_failure = false;
+
+        if let Some(result) = timeline_result {
+            match result {
+                Ok(timeline) => {
+                    let _ = tx
+                        .send(AppMessage::Timeline {
+                            build_id,
+                            timeline,
+                            generation,
+                            is_refresh: true,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    had_failure = true;
+                    let _ = tx
+                        .send(AppMessage::RefreshError {
+                            message: format!("Refresh timeline: {e}"),
+                            source: RefreshSource::Log,
+                        })
+                        .await;
+                }
+            }
+        }
+
+        if let Some(result) = log_result {
+            match result {
+                Ok(content) => {
+                    let _ = tx
+                        .send(AppMessage::LogContent {
+                            content,
+                            generation,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    had_failure = true;
+                    let _ = tx
+                        .send(AppMessage::RefreshError {
+                            message: format!("Refresh log: {e}"),
+                            source: RefreshSource::Log,
+                        })
+                        .await;
+                }
+            }
+        }
+
+        let _ = tx
+            .send(AppMessage::LogRefreshFinished { had_failure })
+            .await;
+    });
+    true
 }
 
 /// Open a URL in the platform's default browser.

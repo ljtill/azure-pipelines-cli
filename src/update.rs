@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 const GITHUB_REPO: &str = "ljtill/azure-pipelines-cli";
 const GITHUB_API_BASE: &str = "https://api.github.com/repos";
 const GITHUB_DOWNLOAD_BASE: &str = "https://github.com";
+const CHECKSUMS_FILE_NAME: &str = "SHA256SUMS";
 
 /// Number of old versions to keep when pruning.
 const VERSIONS_TO_KEEP: usize = 3;
@@ -52,12 +53,120 @@ pub fn platform_artifact_name() -> Result<String> {
     };
 
     let name = if cfg!(target_os = "windows") {
-        format!("azure-pipelines-cli-{os}-{arch}.exe")
+        format!("pipelines-{os}-{arch}.exe")
     } else {
-        format!("azure-pipelines-cli-{os}-{arch}")
+        format!("pipelines-{os}-{arch}")
     };
 
     Ok(name)
+}
+
+fn artifact_download_url(version: &str) -> Result<String> {
+    let artifact = platform_artifact_name()?;
+    Ok(format!(
+        "{GITHUB_DOWNLOAD_BASE}/{GITHUB_REPO}/releases/download/v{version}/{artifact}"
+    ))
+}
+
+fn checksums_download_url(version: &str) -> String {
+    format!(
+        "{GITHUB_DOWNLOAD_BASE}/{GITHUB_REPO}/releases/download/v{version}/{CHECKSUMS_FILE_NAME}"
+    )
+}
+
+fn parse_checksum_manifest(manifest: &str, artifact: &str) -> Result<String> {
+    for line in manifest.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(hash) = parts.next() else {
+            continue;
+        };
+        let Some(name) = parts.next() else {
+            continue;
+        };
+
+        if name == artifact {
+            let normalized = hash.trim().to_ascii_lowercase();
+            if normalized.len() == 64 && normalized.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                return Ok(normalized);
+            }
+            bail!("Checksum for {artifact} is not a valid SHA-256 digest");
+        }
+    }
+
+    bail!("Checksum for {artifact} not found in manifest");
+}
+
+fn parse_posix_hash_output(stdout: &[u8]) -> Result<String> {
+    let stdout = String::from_utf8_lossy(stdout);
+    let hash = stdout
+        .split_whitespace()
+        .next()
+        .context("Hash command returned no digest")?
+        .trim()
+        .to_ascii_lowercase();
+
+    if hash.len() == 64 && hash.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        Ok(hash)
+    } else {
+        bail!("Hash command returned an invalid SHA-256 digest");
+    }
+}
+
+#[cfg(unix)]
+fn compute_sha256(path: &std::path::Path) -> Result<String> {
+    let sha256sum = std::process::Command::new("sha256sum").arg(path).output();
+    if let Ok(output) = sha256sum
+        && output.status.success()
+    {
+        return parse_posix_hash_output(&output.stdout);
+    }
+
+    let output = std::process::Command::new("shasum")
+        .args(["-a", "256"])
+        .arg(path)
+        .output()
+        .context("Failed to execute shasum for SHA-256 verification")?;
+    if !output.status.success() {
+        bail!("shasum exited with status {}", output.status);
+    }
+
+    parse_posix_hash_output(&output.stdout)
+}
+
+#[cfg(windows)]
+fn compute_sha256(path: &std::path::Path) -> Result<String> {
+    let output = std::process::Command::new("certutil")
+        .args(["-hashfile"])
+        .arg(path)
+        .arg("SHA256")
+        .output()
+        .context("Failed to execute certutil for SHA-256 verification")?;
+    if !output.status.success() {
+        bail!("certutil exited with status {}", output.status);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let normalized: String = line.chars().filter(|ch| !ch.is_whitespace()).collect();
+        if normalized.len() == 64 && normalized.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            return Ok(normalized.to_ascii_lowercase());
+        }
+    }
+
+    bail!("certutil output did not contain a SHA-256 digest");
+}
+
+fn verify_sha256(path: &std::path::Path, expected: &str) -> Result<()> {
+    let actual = compute_sha256(path)?;
+    let expected = expected.to_ascii_lowercase();
+    if actual == expected {
+        Ok(())
+    } else {
+        bail!(
+            "SHA-256 mismatch for {} (expected {expected}, got {actual})",
+            path.display()
+        );
+    }
 }
 
 /// Directory where versioned binaries are stored.
@@ -140,8 +249,8 @@ pub async fn self_update() -> Result<UpdateResult> {
     }
 
     let artifact = platform_artifact_name()?;
-    let download_url =
-        format!("{GITHUB_DOWNLOAD_BASE}/{GITHUB_REPO}/releases/download/v{latest}/{artifact}");
+    let download_url = artifact_download_url(&latest)?;
+    let checksums_url = checksums_download_url(&latest);
 
     // Prepare version directory
     let version_dir = versions_dir()?.join(&latest);
@@ -154,6 +263,7 @@ pub async fn self_update() -> Result<UpdateResult> {
         "pipelines"
     };
     let binary_path = version_dir.join(binary_name);
+    let temp_path = version_dir.join(format!("{binary_name}.download"));
 
     // Download
     let client = reqwest::Client::builder()
@@ -168,16 +278,43 @@ pub async fn self_update() -> Result<UpdateResult> {
         .error_for_status()
         .with_context(|| format!("Failed to download {download_url}"))?;
 
+    let checksums = client
+        .get(&checksums_url)
+        .header("User-Agent", format!("pipelines/{}", current_version()))
+        .send()
+        .await?
+        .error_for_status()
+        .with_context(|| format!("Failed to download {checksums_url}"))?
+        .text()
+        .await
+        .context("Failed to read checksum manifest")?;
+    let expected_sha256 = parse_checksum_manifest(&checksums, &artifact)?;
+
     let bytes = resp.bytes().await?;
-    std::fs::write(&binary_path, &bytes)
-        .with_context(|| format!("Failed to write binary to {}", binary_path.display()))?;
+    if temp_path.exists() {
+        std::fs::remove_file(&temp_path)
+            .with_context(|| format!("Failed to remove stale {}", temp_path.display()))?;
+    }
+    std::fs::write(&temp_path, &bytes)
+        .with_context(|| format!("Failed to write binary to {}", temp_path.display()))?;
+    if let Err(err) = verify_sha256(&temp_path, &expected_sha256) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(err);
+    }
 
     // Set executable permission (Unix)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o755))?;
     }
+
+    if binary_path.exists() {
+        std::fs::remove_file(&binary_path)
+            .with_context(|| format!("Failed to remove existing {}", binary_path.display()))?;
+    }
+    std::fs::rename(&temp_path, &binary_path)
+        .with_context(|| format!("Failed to install binary to {}", binary_path.display()))?;
 
     // Update symlink
     update_symlink(&binary_path)?;
@@ -315,8 +452,42 @@ mod tests {
     #[test]
     fn platform_artifact_name_succeeds() {
         let name = platform_artifact_name().unwrap();
-        assert!(name.starts_with("azure-pipelines-cli-"));
+        assert!(name.starts_with("pipelines-"));
         assert!(name.contains("amd64") || name.contains("arm64"));
+    }
+
+    #[test]
+    fn artifact_download_url_uses_canonical_artifact_name() {
+        let url = artifact_download_url("1.2.3").unwrap();
+        assert!(url.contains("/releases/download/v1.2.3/"));
+        assert!(url.contains("pipelines-"));
+        assert!(!url.contains("azure-pipelines-cli-"));
+    }
+
+    #[test]
+    fn checksums_download_url_points_to_manifest() {
+        let url = checksums_download_url("1.2.3");
+        assert!(url.ends_with("/releases/download/v1.2.3/SHA256SUMS"));
+    }
+
+    #[test]
+    fn parse_checksum_manifest_returns_matching_hash() {
+        let manifest = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  pipelines-linux-amd64
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-windows-amd64.exe
+";
+        let hash = parse_checksum_manifest(manifest, "pipelines-windows-amd64.exe").unwrap();
+        assert_eq!(
+            hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+    }
+
+    #[test]
+    fn parse_checksum_manifest_rejects_missing_artifact() {
+        let manifest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  pipelines-linux-amd64";
+        let err = parse_checksum_manifest(manifest, "pipelines-darwin-arm64").unwrap_err();
+        assert!(err.to_string().contains("not found"));
     }
 
     #[test]

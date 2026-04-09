@@ -154,11 +154,20 @@ fn which(cmd: &str) -> bool {
 }
 
 pub fn default_config_path() -> Result<PathBuf> {
+    default_config_path_from(
+        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        dirs::home_dir(),
+    )
+}
+
+fn default_config_path_from(
+    xdg_config_home: Option<PathBuf>,
+    home_dir: Option<PathBuf>,
+) -> Result<PathBuf> {
     // Prefer XDG_CONFIG_HOME (~/.config) over platform default (~/Library/Application Support on macOS)
-    let config_dir = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
+    let config_dir = xdg_config_home
         .filter(|p| p.is_absolute())
-        .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
+        .or_else(|| home_dir.map(|h| h.join(".config")))
         .context("Could not determine config directory")?;
 
     Ok(config_dir.join("pipelines").join("config.toml"))
@@ -221,9 +230,7 @@ refresh_interval_secs = 30
     #[test]
     fn default_config_path_with_xdg_override() {
         let test_dir = "/test/custom/xdg";
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", test_dir) };
-        let path = default_config_path().unwrap();
-        unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
+        let path = default_config_path_from(Some(PathBuf::from(test_dir)), None).unwrap();
         assert_eq!(
             path,
             PathBuf::from("/test/custom/xdg/pipelines/config.toml")
@@ -232,12 +239,11 @@ refresh_interval_secs = 30
 
     #[test]
     fn default_config_path_falls_back_to_home() {
-        unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
-        let path = default_config_path().unwrap();
-        let path_str = path.to_string_lossy();
-        assert!(
-            path_str.contains("pipelines/config.toml"),
-            "Expected path to contain 'pipelines/config.toml', got: {path_str}"
+        let home = PathBuf::from("/test/home");
+        let path = default_config_path_from(None, Some(home.clone())).unwrap();
+        assert_eq!(
+            path,
+            home.join(".config").join("pipelines").join("config.toml")
         );
     }
 

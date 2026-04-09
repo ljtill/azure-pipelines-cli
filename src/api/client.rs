@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use anyhow::Result;
-use reqwest::Client;
+use anyhow::{Context, Result};
+use reqwest::{Client, Url};
 
 use super::auth::AdoAuth;
 use super::endpoints::Endpoints;
@@ -50,16 +50,13 @@ impl AdoClient {
         let mut continuation_token: Option<String> = None;
 
         loop {
-            let full_url = match &continuation_token {
-                Some(token) => format!("{}&continuationToken={}", url, token),
-                None => url.to_string(),
-            };
+            let full_url = paginated_url(url, continuation_token.as_deref())?;
 
             let token = self.auth.token().await?;
             tracing::debug!(method = "GET", url = %full_url, "api paginated request");
             let resp = self
                 .http
-                .get(&full_url)
+                .get(full_url)
                 .bearer_auth(&token)
                 .send()
                 .await?
@@ -215,5 +212,53 @@ impl AdoClient {
             .await?
             .error_for_status()?;
         Ok(())
+    }
+}
+
+fn paginated_url(base_url: &str, continuation_token: Option<&str>) -> Result<Url> {
+    let mut url =
+        Url::parse(base_url).with_context(|| format!("Failed to parse URL: {base_url}"))?;
+    if let Some(token) = continuation_token {
+        url.query_pairs_mut()
+            .append_pair("continuationToken", token);
+    }
+    Ok(url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paginated_url_preserves_existing_query_params() {
+        let url = paginated_url(
+            "https://example.test/builds?api-version=7.1&$top=100",
+            Some("page-2"),
+        )
+        .unwrap();
+
+        let query: Vec<(String, String)> = url.query_pairs().into_owned().collect();
+        assert_eq!(
+            query,
+            vec![
+                ("api-version".into(), "7.1".into()),
+                ("$top".into(), "100".into()),
+                ("continuationToken".into(), "page-2".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn paginated_url_percent_encodes_opaque_tokens() {
+        let url = paginated_url(
+            "https://example.test/builds?api-version=7.1",
+            Some("abc+/=?&value"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://example.test/builds?api-version=7.1&continuationToken=abc%2B%2F%3D%3F%26value"
+        );
     }
 }

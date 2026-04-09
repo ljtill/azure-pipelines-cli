@@ -278,6 +278,14 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
+      - name: Generate checksums
+        run: |
+          (
+            cd artifacts
+            sha256sum pipelines-* > SHA256SUMS
+          )
+          cat artifacts/SHA256SUMS
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -291,4 +299,5 @@ jobs:
             --title "${{ needs.version.outputs.tag }}" \
             --notes-file artifacts/release-notes.md \
             $DRAFT_FLAG \
-            artifacts/pipelines-*
+            artifacts/pipelines-* \
+            artifacts/SHA256SUMS

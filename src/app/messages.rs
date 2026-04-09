@@ -1,5 +1,13 @@
 use crate::api::models::{Approval, Build, BuildTimeline, PipelineDefinition};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshSource {
+    Data,
+    BuildHistory,
+    Approvals,
+    Log,
+}
+
 /// Messages sent from background tasks to the main event loop.
 pub enum AppMessage {
     DataRefresh {
@@ -21,6 +29,9 @@ pub enum AppMessage {
         content: String,
         generation: u64,
     },
+    LogRefreshFinished {
+        had_failure: bool,
+    },
     BuildCancelled,
     BuildsCancelled {
         cancelled: u32,
@@ -39,5 +50,8 @@ pub enum AppMessage {
     Error(String),
     /// Like `Error`, but for periodic refresh failures — uses dedup to avoid
     /// flooding the notification queue when the network is persistently down.
-    RefreshError(String),
+    RefreshError {
+        message: String,
+        source: RefreshSource,
+    },
 }

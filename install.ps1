@@ -27,6 +27,7 @@ if ($env:VERSION) {
 
 $Tag = "v$Version"
 $Url = "https://github.com/$Repo/releases/download/$Tag/$Artifact"
+$ChecksumsUrl = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS"
 
 # --- download and install ---------------------------------------------------
 
@@ -37,7 +38,34 @@ if (-not (Test-Path $InstallDir)) {
 }
 
 $Dest = Join-Path $InstallDir "$BinaryName.exe"
-Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing
+$Temp = [System.IO.Path]::GetTempFileName()
+$ChecksumBody = (Invoke-WebRequest -Uri $ChecksumsUrl -UseBasicParsing).Content
+$ExpectedHash = $null
+foreach ($line in ($ChecksumBody -split "`r?`n")) {
+    $parts = $line -split '\s+', 2
+    if ($parts.Count -eq 2 -and $parts[1] -eq $Artifact) {
+        $ExpectedHash = $parts[0].ToLowerInvariant()
+        break
+    }
+}
+if (-not $ExpectedHash) {
+    throw "Could not find checksum for $Artifact"
+}
+
+try {
+    Invoke-WebRequest -Uri $Url -OutFile $Temp -UseBasicParsing
+    $ActualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Temp).Hash.ToLowerInvariant()
+    if ($ActualHash -ne $ExpectedHash) {
+        throw "Checksum mismatch for $Artifact"
+    }
+
+    Move-Item -Force $Temp $Dest
+}
+finally {
+    if (Test-Path $Temp) {
+        Remove-Item -Force $Temp -ErrorAction SilentlyContinue
+    }
+}
 
 Write-Host "Installed to $Dest"
 

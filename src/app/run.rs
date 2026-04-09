@@ -50,20 +50,28 @@ pub async fn run(
         }
 
         // Spawn periodic background refreshes
-        let should_refresh_data = last_data_fetch.elapsed() >= refresh_interval;
+        let should_refresh_data = !app.data_refresh_in_flight
+            && app
+                .data_refresh_backoff_until
+                .map(|until| Instant::now() >= until)
+                .unwrap_or(true)
+            && last_data_fetch.elapsed() >= refresh_interval;
         let should_refresh_logs = app.view == View::LogViewer
             && app.log_viewer.selected_build().is_some()
+            && !app.log_refresh_in_flight
+            && app
+                .log_refresh_backoff_until
+                .map(|until| Instant::now() >= until)
+                .unwrap_or(true)
             && last_log_fetch
                 .map(|t| t.elapsed() >= log_refresh_interval)
                 .unwrap_or(true);
 
-        if should_refresh_data {
-            spawn_data_refresh(&client, &tx);
+        if should_refresh_data && spawn_data_refresh(&mut app, &client, &tx) {
             last_data_fetch = Instant::now();
         }
 
-        if should_refresh_logs {
-            spawn_log_refresh(&app, &client, &tx);
+        if should_refresh_logs && spawn_log_refresh(&mut app, &client, &tx) {
             last_log_fetch = Some(Instant::now());
         }
 

@@ -120,3 +120,7 @@ Uses the Azure SDK `DeveloperToolsCredential`, which tries local developer crede
 2. Azure Developer CLI (`azd auth login`)
 
 For local development, ensure you're logged in with `az login` or `azd auth login`.
+
+## Security
+
+Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
