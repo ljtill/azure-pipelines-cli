@@ -11,7 +11,7 @@ use super::models::*;
 pub struct AdoClient {
     http: Client,
     auth: AdoAuth,
-    pub endpoints: Endpoints,
+    endpoints: Endpoints,
 }
 
 impl AdoClient {

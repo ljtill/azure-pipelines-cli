@@ -379,6 +379,9 @@ fn handle_message(
 
             app.build_timeline = Some(timeline);
 
+            // Update selected_build status from timeline data so the header stays current
+            app.refresh_build_status_from_timeline();
+
             if !is_refresh {
                 // Initial load: full setup with auto-select
                 app.log_content.clear();

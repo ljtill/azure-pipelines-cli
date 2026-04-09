@@ -215,6 +215,56 @@ impl App {
         }
     }
 
+    /// Update `selected_build` status/result from timeline records.
+    /// Called on each timeline refresh so the log viewer header stays current.
+    pub fn refresh_build_status_from_timeline(&mut self) {
+        use crate::api::models::{BuildResult, BuildStatus, TaskState};
+
+        let timeline = match &self.build_timeline {
+            Some(t) => t,
+            None => return,
+        };
+        let build = match &mut self.selected_build {
+            Some(b) => b,
+            None => return,
+        };
+
+        // If all root stages are completed, the build is completed
+        let stages: Vec<_> = timeline
+            .records
+            .iter()
+            .filter(|r| r.record_type == "Stage" && r.parent_id.is_none())
+            .collect();
+
+        if stages.is_empty() {
+            return;
+        }
+
+        let all_completed = stages.iter().all(|s| s.state == Some(TaskState::Completed));
+
+        if all_completed && build.status.is_in_progress() {
+            build.status = BuildStatus::Completed;
+            // Derive overall result: Failed > PartiallySucceeded > Canceled > Succeeded
+            let has_failed = stages.iter().any(|s| s.result == Some(BuildResult::Failed));
+            let has_partial = stages
+                .iter()
+                .any(|s| s.result == Some(BuildResult::PartiallySucceeded));
+            let has_canceled = stages
+                .iter()
+                .any(|s| s.result == Some(BuildResult::Canceled));
+
+            build.result = Some(if has_failed {
+                BuildResult::Failed
+            } else if has_partial {
+                BuildResult::PartiallySucceeded
+            } else if has_canceled {
+                BuildResult::Canceled
+            } else {
+                BuildResult::Succeeded
+            });
+        }
+    }
+
     pub fn navigate_to_build_history(&mut self, def: PipelineDefinition) {
         self.previous_view = Some(self.view);
         self.selected_definition = Some(def);
