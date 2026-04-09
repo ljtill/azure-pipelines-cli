@@ -177,7 +177,8 @@ fn init_tracing(level: &str) {
         )
         .from_env_lossy()
         .add_directive("hyper_util=warn".parse().unwrap())
-        .add_directive("hyper=warn".parse().unwrap());
+        .add_directive("hyper=warn".parse().unwrap())
+        .add_directive("reqwest=warn".parse().unwrap());
 
     let log_dir = match dirs::home_dir() {
         Some(h) => h.join(".local/state/pipelines"),
