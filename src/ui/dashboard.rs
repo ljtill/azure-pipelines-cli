@@ -1,9 +1,10 @@
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
-use ratatui::Frame;
 
+use super::helpers::{build_elapsed, status_icon};
 use crate::app::{App, DashboardRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -15,10 +16,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             DashboardRow::FolderHeader { path, collapsed } => {
                 let icon = if *collapsed { "▸" } else { "▾" };
                 ListItem::new(Line::from(vec![
-                    Span::styled(
-                        format!(" {} ", icon),
-                        Style::default().fg(Color::Yellow),
-                    ),
+                    Span::styled(format!(" {} ", icon), Style::default().fg(Color::Yellow)),
                     Span::styled(
                         path.to_string(),
                         Style::default()
@@ -37,18 +35,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 latest_build,
             } => {
                 let (icon, icon_color) = match latest_build {
-                    Some(b) if b.status == "inProgress" || b.status == "InProgress" => {
-                        ("⏳", Color::Yellow)
-                    }
-                    Some(b) => match b.result.as_deref() {
-                        Some("succeeded") | Some("Succeeded") => ("✓", Color::Green),
-                        Some("failed") | Some("Failed") => ("✗", Color::Red),
-                        Some("partiallySucceeded") | Some("PartiallySucceeded") => {
-                            ("◐", Color::Yellow)
-                        }
-                        Some("canceled") | Some("Canceled") => ("⊘", Color::DarkGray),
-                        _ => ("○", Color::DarkGray),
-                    },
+                    Some(b) => status_icon(&b.status, b.result.as_deref()),
                     None => ("○", Color::DarkGray),
                 };
 
@@ -99,28 +86,4 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.dashboard_index));
     f.render_stateful_widget(list, area, &mut state);
-}
-
-fn build_elapsed(build: &crate::api::models::Build) -> String {
-    use chrono::Utc;
-
-    if build.status == "inProgress" || build.status == "InProgress" {
-        if let Some(start) = build.start_time {
-            let elapsed = Utc::now().signed_duration_since(start);
-            return format!("running {}m", elapsed.num_minutes());
-        }
-    }
-
-    if let Some(finish) = build.finish_time {
-        let ago = Utc::now().signed_duration_since(finish);
-        if ago.num_hours() < 1 {
-            return format!("{}m ago", ago.num_minutes());
-        } else if ago.num_hours() < 24 {
-            return format!("{}h ago", ago.num_hours());
-        } else {
-            return format!("{}d ago", ago.num_days());
-        }
-    }
-
-    String::new()
 }

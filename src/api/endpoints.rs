@@ -6,10 +6,7 @@ pub struct Endpoints {
 impl Endpoints {
     pub fn new(organization: &str, project: &str) -> Self {
         Self {
-            base_url: format!(
-                "https://dev.azure.com/{}/{}/_apis",
-                organization, project
-            ),
+            base_url: format!("https://dev.azure.com/{}/{}/_apis", organization, project),
         }
     }
 

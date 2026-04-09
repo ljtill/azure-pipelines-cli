@@ -1,9 +1,10 @@
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
-use ratatui::Frame;
 
+use super::helpers::timeline_status_icon;
 use crate::app::{App, TimelineRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -17,7 +18,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     let chunks = Layout::vertical([
         Constraint::Length(2), // build info header
-        Constraint::Min(0),   // body (tree + log)
+        Constraint::Min(0),    // body (tree + log)
     ])
     .split(area);
 
@@ -43,22 +44,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     draw_tree(f, app, body[0]);
     draw_log(f, app, body[1]);
-}
-
-fn status_icon(state: Option<&str>, result: Option<&str>) -> (&'static str, Color) {
-    match result {
-        Some("succeeded") => ("✓", Color::Green),
-        Some("failed") => ("✗", Color::Red),
-        Some("partiallySucceeded") => ("◐", Color::Yellow),
-        Some("canceled") | Some("cancelled") => ("⊘", Color::DarkGray),
-        Some("skipped") => ("⊘", Color::DarkGray),
-        _ => match state {
-            Some("inProgress") => ("⏳", Color::Yellow),
-            Some("pending") => ("○", Color::DarkGray),
-            Some("completed") => ("✓", Color::Green),
-            _ => ("○", Color::DarkGray),
-        },
-    }
 }
 
 fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
@@ -91,12 +76,9 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                 } => {
                     let arrow = if *collapsed { "▸" } else { "▾" };
                     let (icon, icon_color) =
-                        status_icon(state.as_deref(), result.as_deref());
+                        timeline_status_icon(state.as_deref(), result.as_deref());
                     ListItem::new(Line::from(vec![
-                        Span::styled(
-                            format!("{} ", arrow),
-                            Style::default().fg(Color::Yellow),
-                        ),
+                        Span::styled(format!("{} ", arrow), Style::default().fg(Color::Yellow)),
                         Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
                         Span::styled(
                             name.as_str(),
@@ -120,13 +102,10 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                 } => {
                     let arrow = if *collapsed { "▸" } else { "▾" };
                     let (icon, icon_color) =
-                        status_icon(state.as_deref(), result.as_deref());
+                        timeline_status_icon(state.as_deref(), result.as_deref());
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
-                        Span::styled(
-                            format!("{} ", arrow),
-                            Style::default().fg(Color::Cyan),
-                        ),
+                        Span::styled(format!("{} ", arrow), Style::default().fg(Color::Cyan)),
                         Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
                         Span::styled(name.as_str(), Style::default().fg(Color::White)),
                     ]))
@@ -144,7 +123,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ..
                 } => {
                     let (icon, icon_color) =
-                        status_icon(state.as_deref(), result.as_deref());
+                        timeline_status_icon(state.as_deref(), result.as_deref());
                     let log_indicator = if log_id.is_some() { "" } else { " ·" };
                     ListItem::new(Line::from(vec![
                         Span::raw("      "),
@@ -179,9 +158,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         format!(" Log Output — FOLLOW: {} ", app.followed_task_name)
     } else if !app.follow_mode {
         // Show the name of the pinned task
-        if let Some(TimelineRow::Task { name, .. }) =
-            app.timeline_rows.get(app.log_entries_index)
-        {
+        if let Some(TimelineRow::Task { name, .. }) = app.timeline_rows.get(app.log_entries_index) {
             format!(" Log Output — {} ", name)
         } else {
             " Log Output ".to_string()
@@ -193,11 +170,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
     if app.log_content.is_empty() {
         let hint = Paragraph::new(" Select a task and press Enter to view its log")
             .style(Style::default().fg(Color::DarkGray))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(title),
-            );
+            .block(Block::default().borders(Borders::ALL).title(title));
         f.render_widget(hint, area);
     } else {
         let lines: Vec<Line> = app

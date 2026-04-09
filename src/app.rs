@@ -88,6 +88,7 @@ pub struct App {
     pub input_mode: InputMode,
     pub running: bool,
     pub show_help: bool,
+    pub org_project_label: String,
 
     // Data
     pub definitions: Vec<PipelineDefinition>,
@@ -134,13 +135,14 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(organization: &str, project: &str) -> Self {
         Self {
             view: View::Dashboard,
             previous_view: None,
             input_mode: InputMode::Normal,
             running: true,
             show_help: false,
+            org_project_label: format!("{} / {}", organization, project),
 
             definitions: Vec::new(),
             recent_builds: Vec::new(),
@@ -201,9 +203,7 @@ impl App {
         }
 
         for (folder, pipelines) in &by_folder {
-            let display_path = folder
-                .trim_start_matches('\\')
-                .replace('\\', " / ");
+            let display_path = folder.trim_start_matches('\\').replace('\\', " / ");
             let display_path = if display_path.is_empty() {
                 "Root".to_string()
             } else {
@@ -238,7 +238,9 @@ impl App {
             self.filtered_pipelines = self
                 .definitions
                 .iter()
-                .filter(|d| d.name.to_lowercase().contains(&q) || d.path.to_lowercase().contains(&q))
+                .filter(|d| {
+                    d.name.to_lowercase().contains(&q) || d.path.to_lowercase().contains(&q)
+                })
                 .cloned()
                 .collect();
         }
@@ -375,7 +377,7 @@ impl App {
         let is_running = self
             .selected_build
             .as_ref()
-            .is_some_and(|b| b.status == "inProgress" || b.status == "InProgress");
+            .is_some_and(|b| b.status.eq_ignore_ascii_case("inProgress"));
 
         // Find best task index: in-progress > failed > last
         let best_idx = if is_running {
@@ -459,7 +461,7 @@ impl App {
         let is_running = self
             .selected_build
             .as_ref()
-            .is_some_and(|b| b.status == "inProgress" || b.status == "InProgress");
+            .is_some_and(|b| b.status.eq_ignore_ascii_case("inProgress"));
 
         let best = if is_running {
             tasks
@@ -697,7 +699,9 @@ impl App {
                         .find(|(_, r)| matches!(r, TimelineRow::Job { id, .. } if id == parent_job_id))
                         .map(|(i, _)| i);
                 }
-                TimelineRow::Job { parent_stage_id, .. } => {
+                TimelineRow::Job {
+                    parent_stage_id, ..
+                } => {
                     return self.timeline_rows.iter().enumerate().rev()
                         .take(index + 1)
                         .find(|(_, r)| matches!(r, TimelineRow::Stage { id, .. } if id == parent_stage_id))
@@ -750,7 +754,10 @@ impl App {
     /// Collapse the folder at the given dashboard index. Returns true if it was expanded and is now collapsed.
     pub fn collapse_folder_at(&mut self, index: usize) -> bool {
         if let Some(row) = self.dashboard_rows.get(index) {
-            if let DashboardRow::FolderHeader { path, collapsed, .. } = row {
+            if let DashboardRow::FolderHeader {
+                path, collapsed, ..
+            } = row
+            {
                 if !collapsed {
                     let folder_key = self.find_folder_key_for_display(path);
                     if let Some(key) = folder_key {
@@ -767,7 +774,10 @@ impl App {
     /// Expand the folder at the given dashboard index. Returns true if it was collapsed and is now expanded.
     pub fn expand_folder_at(&mut self, index: usize) -> bool {
         if let Some(row) = self.dashboard_rows.get(index) {
-            if let DashboardRow::FolderHeader { path, collapsed, .. } = row {
+            if let DashboardRow::FolderHeader {
+                path, collapsed, ..
+            } = row
+            {
                 if *collapsed {
                     let folder_key = self.find_folder_key_for_display(path);
                     if let Some(key) = folder_key {

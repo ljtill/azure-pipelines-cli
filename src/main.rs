@@ -11,12 +11,12 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use clap::Parser;
 use crossterm::event::KeyEventKind;
+use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::execute;
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
 use crate::api::client::AdoClient;
@@ -25,7 +25,10 @@ use crate::config::Config;
 use crate::events::{Action, handle_key};
 
 #[derive(Parser)]
-#[command(name = "azure-pipelines-cli", about = "TUI dashboard for Azure DevOps Pipelines")]
+#[command(
+    name = "azure-pipelines-cli",
+    about = "TUI dashboard for Azure DevOps Pipelines"
+)]
 struct Cli {
     /// Path to config file
     #[arg(short, long)]
@@ -45,7 +48,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = Config::load(cli.config.as_ref())?;
 
-    let client = AdoClient::new(&config.azure_devops.organization, &config.azure_devops.project).await?;
+    let client = AdoClient::new(
+        &config.azure_devops.organization,
+        &config.azure_devops.project,
+    )
+    .await?;
 
     // Terminal setup
     enable_raw_mode()?;
@@ -69,7 +76,10 @@ async fn run(
     client: AdoClient,
     config: &Config,
 ) -> Result<()> {
-    let mut app = App::new();
+    let mut app = App::new(
+        &config.azure_devops.organization,
+        &config.azure_devops.project,
+    );
     let refresh_interval = Duration::from_secs(config.display.refresh_interval_secs);
     let log_refresh_interval = Duration::from_secs(config.display.log_refresh_interval_secs);
     let mut last_data_fetch = Instant::now() - refresh_interval; // trigger immediate fetch
@@ -151,7 +161,9 @@ fn handle_action(
                         let _ = tx.send(AppMessage::BuildHistory { builds }).await;
                     }
                     Err(e) => {
-                        let _ = tx.send(AppMessage::Error(format!("Fetch builds: {e}"))).await;
+                        let _ = tx
+                            .send(AppMessage::Error(format!("Fetch builds: {e}")))
+                            .await;
                     }
                 }
             });
@@ -181,19 +193,7 @@ fn handle_action(
             });
         }
         Action::FetchBuildLog { build_id, log_id } => {
-            let client = client.clone();
-            let tx = tx.clone();
-            let generation = app.log_generation;
-            tokio::spawn(async move {
-                match client.get_build_log(build_id, log_id).await {
-                    Ok(content) => {
-                        let _ = tx.send(AppMessage::LogContent { content, generation }).await;
-                    }
-                    Err(e) => {
-                        let _ = tx.send(AppMessage::Error(format!("Fetch log: {e}"))).await;
-                    }
-                }
-            });
+            spawn_log_fetch(client, tx, build_id, log_id, app.log_generation);
         }
         Action::FollowLatest => {
             // Switch to follow mode: jump cursor to active task and fetch its log
@@ -203,24 +203,7 @@ fn handle_action(
                 }
                 app.followed_log_id = Some(log_id);
                 if let Some(build) = &app.selected_build {
-                    let client = client.clone();
-                    let tx = tx.clone();
-                    let generation = app.log_generation;
-                    let build_id = build.id;
-                    tokio::spawn(async move {
-                        match client.get_build_log(build_id, log_id).await {
-                            Ok(content) => {
-                                let _ = tx
-                                    .send(AppMessage::LogContent { content, generation })
-                                    .await;
-                            }
-                            Err(e) => {
-                                let _ = tx
-                                    .send(AppMessage::Error(format!("Fetch log: {e}")))
-                                    .await;
-                            }
-                        }
-                    });
+                    spawn_log_fetch(client, tx, build.id, log_id, app.log_generation);
                 }
             }
         }
@@ -255,6 +238,7 @@ fn handle_message(
             app.rebuild_filtered_pipelines();
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
+            app.error_message = None;
         }
         AppMessage::BuildHistory { builds } => {
             app.definition_builds = builds;
@@ -287,24 +271,7 @@ fn handle_message(
                         app.followed_task_name = name.clone();
                     }
                     app.followed_log_id = Some(log_id);
-
-                    let client = client.clone();
-                    let tx = tx.clone();
-                    let generation = app.log_generation;
-                    tokio::spawn(async move {
-                        match client.get_build_log(build_id, log_id).await {
-                            Ok(content) => {
-                                let _ = tx
-                                    .send(AppMessage::LogContent { content, generation })
-                                    .await;
-                            }
-                            Err(e) => {
-                                let _ = tx
-                                    .send(AppMessage::Error(format!("Fetch log: {e}")))
-                                    .await;
-                            }
-                        }
-                    });
+                    spawn_log_fetch(client, tx, build_id, log_id, app.log_generation);
                 }
             } else if app.follow_mode {
                 // Refresh in follow mode: update tree, track latest active task
@@ -317,23 +284,7 @@ fn handle_message(
 
                     if task_changed {
                         // Active task changed — fetch the new task's log
-                        let client = client.clone();
-                        let tx = tx.clone();
-                        let generation = app.log_generation;
-                        tokio::spawn(async move {
-                            match client.get_build_log(build_id, log_id).await {
-                                Ok(content) => {
-                                    let _ = tx
-                                        .send(AppMessage::LogContent { content, generation })
-                                        .await;
-                                }
-                                Err(e) => {
-                                    let _ = tx
-                                        .send(AppMessage::Error(format!("Fetch log: {e}")))
-                                        .await;
-                                }
-                            }
-                        });
+                        spawn_log_fetch(client, tx, build_id, log_id, app.log_generation);
                     }
                     // If same task, spawn_log_refresh already handles content refresh
                 }
@@ -342,7 +293,10 @@ fn handle_message(
                 app.rebuild_timeline_rows();
             }
         }
-        AppMessage::LogContent { content, generation } => {
+        AppMessage::LogContent {
+            content,
+            generation,
+        } => {
             // Discard stale log results
             if generation != app.log_generation {
                 return;
@@ -355,6 +309,32 @@ fn handle_message(
             app.error_message = Some(msg);
         }
     }
+}
+
+fn spawn_log_fetch(
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    build_id: u32,
+    log_id: u32,
+    generation: u64,
+) {
+    let client = client.clone();
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        match client.get_build_log(build_id, log_id).await {
+            Ok(content) => {
+                let _ = tx
+                    .send(AppMessage::LogContent {
+                        content,
+                        generation,
+                    })
+                    .await;
+            }
+            Err(e) => {
+                let _ = tx.send(AppMessage::Error(format!("Fetch log: {e}"))).await;
+            }
+        }
+    });
 }
 
 fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
@@ -378,9 +358,7 @@ fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
                     .await;
             }
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
-                let _ = tx
-                    .send(AppMessage::Error(format!("Refresh: {e}")))
-                    .await;
+                let _ = tx.send(AppMessage::Error(format!("Refresh: {e}"))).await;
             }
         }
     });
@@ -391,7 +369,7 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
 
     // Re-fetch timeline for in-progress builds
     if let Some(build) = &app.selected_build {
-        if build.status == "inProgress" || build.status == "InProgress" {
+        if build.status.eq_ignore_ascii_case("inProgress") {
             let client = client.clone();
             let tx = tx.clone();
             let build_id = build.id;
@@ -427,11 +405,15 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
                 let build_id = build.id;
                 tokio::spawn(async move {
                     if let Ok(content) = client.get_build_log(build_id, log_id).await {
-                        let _ = tx.send(AppMessage::LogContent { content, generation }).await;
+                        let _ = tx
+                            .send(AppMessage::LogContent {
+                                content,
+                                generation,
+                            })
+                            .await;
                     }
                 });
             }
         }
     }
 }
-

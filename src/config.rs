@@ -88,7 +88,5 @@ pub fn default_config_path() -> Result<PathBuf> {
         .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
         .context("Could not determine config directory")?;
 
-    Ok(config_dir
-        .join("azure-pipelines-cli")
-        .join("config.toml"))
+    Ok(config_dir.join("azure-pipelines-cli").join("config.toml"))
 }
