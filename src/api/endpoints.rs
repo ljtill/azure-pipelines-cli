@@ -91,3 +91,104 @@ impl Endpoints {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ep() -> Endpoints {
+        Endpoints::new("myorg", "myproj")
+    }
+
+    const BASE: &str = "https://dev.azure.com/myorg/myproj/_apis";
+
+    #[test]
+    fn definitions_url() {
+        assert_eq!(
+            ep().definitions(),
+            format!("{BASE}/build/definitions?api-version=7.1")
+        );
+    }
+
+    #[test]
+    fn builds_active_url() {
+        assert_eq!(
+            ep().builds_active(),
+            format!("{BASE}/build/builds?statusFilter=inProgress&api-version=7.1&$top=100")
+        );
+    }
+
+    #[test]
+    fn builds_recent_url() {
+        assert_eq!(
+            ep().builds_recent(),
+            format!("{BASE}/build/builds?api-version=7.1&$top=100&queryOrder=startTimeDescending")
+        );
+    }
+
+    #[test]
+    fn builds_for_definition_url() {
+        assert_eq!(
+            ep().builds_for_definition(42),
+            format!(
+                "{BASE}/build/builds?definitions=42&api-version=7.1&$top=20&queryOrder=startTimeDescending"
+            )
+        );
+    }
+
+    #[test]
+    fn build_url() {
+        assert_eq!(
+            ep().build(123),
+            format!("{BASE}/build/builds/123?api-version=7.1")
+        );
+    }
+
+    #[test]
+    fn build_timeline_url() {
+        assert_eq!(
+            ep().build_timeline(123),
+            format!("{BASE}/build/builds/123/timeline?api-version=7.1")
+        );
+    }
+
+    #[test]
+    fn build_log_url() {
+        assert_eq!(
+            ep().build_log(123, 7),
+            format!("{BASE}/build/builds/123/logs/7?api-version=7.1")
+        );
+    }
+
+    #[test]
+    fn build_stage_url() {
+        assert_eq!(
+            ep().build_stage(123, "__default"),
+            format!("{BASE}/build/builds/123/stages/__default?api-version=7.1-preview.1")
+        );
+    }
+
+    #[test]
+    fn pipeline_runs_url() {
+        assert_eq!(
+            ep().pipeline_runs(42),
+            format!("{BASE}/pipelines/42/runs?api-version=7.1")
+        );
+    }
+
+    #[test]
+    fn approvals_pending_url() {
+        assert_eq!(
+            ep().approvals_pending(),
+            format!("{BASE}/pipelines/approvals?state=pending&$expand=steps&api-version=7.1")
+        );
+    }
+
+    #[test]
+    fn approvals_update_url() {
+        assert_eq!(
+            ep().approvals_update(),
+            format!("{BASE}/pipelines/approvals?api-version=7.1")
+        );
+    }
+}
