@@ -52,7 +52,14 @@ impl App {
     }
 
     /// Check if a build's definition passes the configured ID filter.
-    /// Folder filters can't be applied here since builds don't carry the definition path.
+    ///
+    /// Only `filter_definition_ids` is checked here. Folder filters are **not**
+    /// applied because [`Build`] payloads from the ADO API do not include the
+    /// definition's folder path — they only carry a [`BuildDefinitionRef`] with
+    /// `id` and `name`. This means a folder-only filter config (no ID filter)
+    /// will show *all* active builds regardless of which folder their definition
+    /// lives in. If both folder and ID filters are set, only the ID filter
+    /// narrows the Active Runs view.
     pub fn matches_build_filter(&self, build: &Build) -> bool {
         if !self.filter_definition_ids.is_empty()
             && !self.filter_definition_ids.contains(&build.definition.id)
@@ -340,6 +347,30 @@ mod tests {
 
         app.toggle_folder_at(0); // expand
         assert_eq!(app.dashboard_rows.len(), 3);
+    }
+
+    // --- matches_build_filter / folder limitation ---
+
+    #[test]
+    fn folder_filter_does_not_restrict_active_builds() {
+        // A folder-only filter hides definitions outside the folder in the
+        // Dashboard/Pipelines views, but cannot restrict Active Runs because
+        // builds don't carry definition folder paths.
+        let mut cfg = make_config();
+        cfg.filters.folders = vec!["\\Infra".to_string()];
+        // No definition_ids filter — only folder filter is active.
+        let mut app = App::new("o", "p", &cfg);
+
+        let mut build = make_build(1, BuildStatus::InProgress, None);
+        build.definition.id = 99; // not in any ID allowlist
+        build.definition.name = "Outside Infra".to_string();
+        app.active_builds = vec![build];
+
+        app.rebuild_filtered_active_builds();
+
+        // Build should still appear because folder filters can't apply to builds.
+        assert_eq!(app.filtered_active_builds.len(), 1);
+        assert_eq!(app.filtered_active_builds[0].definition.id, 99);
     }
 
     // --- rebuild_filtered_active_builds ---

@@ -61,6 +61,8 @@ refresh_interval_secs = 30
 log_refresh_interval_secs = 5
 
 # Optional: filter which pipelines are shown
+# Note: folder filters apply to Dashboard and Pipelines views.
+# Active Runs can only filter by definition ID (builds don't carry folder paths).
 [filters]
 folders = ["\\Infra", "\\Deploy"]  # only show these folder paths (prefix match)
 definition_ids = [42, 99]          # only show these pipeline definition IDs
