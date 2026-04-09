@@ -8,6 +8,7 @@ use crate::api::models;
 use crate::events::Action;
 
 use super::App;
+use super::View;
 use super::log_viewer::TimelineRow;
 use super::messages::AppMessage;
 
@@ -23,6 +24,9 @@ pub fn handle_action(
         Action::Quit => app.running = false,
         Action::ForceRefresh => {
             spawn_data_refresh(client, tx);
+            if app.view == View::BuildHistory {
+                spawn_build_history_refresh(app, client, tx);
+            }
             *last_data_fetch = Instant::now();
         }
         Action::FetchBuildHistory(def_id) => {
@@ -304,6 +308,9 @@ pub fn handle_message(
         AppMessage::BuildCancelled => {
             app.notifications.success("Build cancelled");
             spawn_data_refresh(client, tx);
+            if app.view == View::BuildHistory {
+                spawn_build_history_refresh(app, client, tx);
+            }
             if let Some(build) = app.log_viewer.selected_build() {
                 spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
             }
@@ -311,6 +318,9 @@ pub fn handle_message(
         AppMessage::BuildsCancelled { cancelled, failed } => {
             app.selected_builds.clear();
             spawn_data_refresh(client, tx);
+            if app.view == View::BuildHistory {
+                spawn_build_history_refresh(app, client, tx);
+            }
             if failed > 0 {
                 app.notifications
                     .error(format!("Cancelled {cancelled}, {failed} failed"));
@@ -431,6 +441,27 @@ pub fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
             }
         }
     });
+}
+
+/// Re-fetch the build history for the currently selected pipeline definition.
+fn spawn_build_history_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
+    if let Some(def) = &app.selected_definition {
+        let client = client.clone();
+        let tx = tx.clone();
+        let def_id = def.id;
+        tokio::spawn(async move {
+            match client.list_builds_for_definition(def_id).await {
+                Ok(builds) => {
+                    let _ = tx.send(AppMessage::BuildHistory { builds }).await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(AppMessage::Error(format!("Refresh builds: {e}")))
+                        .await;
+                }
+            }
+        });
+    }
 }
 
 pub fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
