@@ -64,6 +64,21 @@ impl Notifications {
         self.push(NotificationLevel::Error, message);
     }
 
+    /// Push an error, but if the most recent notification has the same message,
+    /// just refresh its timestamp instead of adding a duplicate.
+    pub fn error_dedup(&mut self, message: impl Into<String>) {
+        let message = message.into();
+        if let Some(last) = self.queue.back()
+            && last.message == message
+        {
+            if let Some(last) = self.queue.back_mut() {
+                last.created_at = Instant::now();
+            }
+            return;
+        }
+        self.push(NotificationLevel::Error, message);
+    }
+
     /// Return the most recent non-expired notification, pruning expired ones.
     #[allow(dead_code)]
     pub fn current(&mut self) -> Option<&Notification> {
@@ -125,5 +140,37 @@ mod tests {
         n.error("err");
         n.clear();
         assert!(n.current().is_none());
+    }
+
+    #[test]
+    fn error_dedup_suppresses_identical() {
+        let mut n = Notifications::new(60);
+        n.error_dedup("network down");
+        n.error_dedup("network down");
+        // Only one notification should exist
+        assert_eq!(n.queue.len(), 1);
+        assert_eq!(n.current().unwrap().message, "network down");
+    }
+
+    #[test]
+    fn error_dedup_allows_different_messages() {
+        let mut n = Notifications::new(60);
+        n.error_dedup("network down");
+        n.error_dedup("auth expired");
+        assert_eq!(n.queue.len(), 2);
+        assert_eq!(n.current().unwrap().message, "auth expired");
+    }
+
+    #[test]
+    fn error_dedup_refreshes_timestamp() {
+        let mut n = Notifications::new(60);
+        n.error_dedup("network down");
+        let first_time = n.queue.back().unwrap().created_at;
+        // Spin briefly so Instant advances
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        n.error_dedup("network down");
+        let second_time = n.queue.back().unwrap().created_at;
+        assert!(second_time > first_time);
+        assert_eq!(n.queue.len(), 1);
     }
 }

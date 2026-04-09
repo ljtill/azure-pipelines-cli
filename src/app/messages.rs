@@ -37,4 +37,7 @@ pub enum AppMessage {
         version: String,
     },
     Error(String),
+    /// Like `Error`, but for periodic refresh failures — uses dedup to avoid
+    /// flooding the notification queue when the network is persistently down.
+    RefreshError(String),
 }

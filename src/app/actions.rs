@@ -212,7 +212,6 @@ pub fn handle_message(
             app.rebuild_filtered_active_builds();
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
-            app.notifications.clear();
         }
         AppMessage::BuildHistory { builds } => {
             app.definition_builds = builds;
@@ -283,6 +282,10 @@ pub fn handle_message(
         AppMessage::Error(msg) => {
             tracing::warn!(error = %msg, "app error");
             app.notifications.error(msg);
+        }
+        AppMessage::RefreshError(msg) => {
+            tracing::warn!(error = %msg, "refresh error");
+            app.notifications.error_dedup(msg);
         }
         AppMessage::BuildCancelled => {
             app.notifications.success("Build cancelled");
@@ -422,7 +425,9 @@ pub fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
                     .await;
             }
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
-                let _ = tx.send(AppMessage::Error(format!("Refresh: {e}"))).await;
+                let _ = tx
+                    .send(AppMessage::RefreshError(format!("Refresh: {e}")))
+                    .await;
             }
         }
     });
@@ -441,7 +446,7 @@ fn spawn_build_history_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<
                 }
                 Err(e) => {
                     let _ = tx
-                        .send(AppMessage::Error(format!("Refresh builds: {e}")))
+                        .send(AppMessage::RefreshError(format!("Refresh builds: {e}")))
                         .await;
                 }
             }
@@ -553,7 +558,6 @@ mod tests {
         app.rebuild_filtered_active_builds();
         app.last_refresh = Some(chrono::Utc::now());
         app.loading = false;
-        app.notifications.clear();
 
         assert_eq!(app.definitions.len(), 2);
         assert_eq!(app.filtered_pipelines.len(), 2);
@@ -563,14 +567,15 @@ mod tests {
     }
 
     #[test]
-    fn data_refresh_clears_notifications() {
+    fn data_refresh_preserves_notifications() {
         let mut app = make_app();
         app.notifications.error("old error");
         assert!(app.notifications.clone_current().is_some());
 
-        // DataRefresh clears notifications
-        app.notifications.clear();
-        assert!(app.notifications.clone_current().is_none());
+        // DataRefresh no longer clears notifications — they expire via TTL
+        // Simulate what handle_message(DataRefresh) does (no clear call)
+        app.loading = false;
+        assert!(app.notifications.clone_current().is_some());
     }
 
     #[test]
