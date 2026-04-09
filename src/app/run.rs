@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 
 use crate::api::client::AdoClient;
 use crate::config::Config;
-use crate::events::handle_key;
+use crate::events::{handle_key, handle_mouse};
 use crate::ui;
 
 use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_log_refresh};
@@ -64,11 +64,16 @@ pub async fn run(
         // consumes from crossterm's buffer when the future completes.
         tokio::select! {
             Some(event_result) = event_stream.next() => {
-                if let Ok(crossterm::event::Event::Key(key)) = event_result
-                    && key.kind == KeyEventKind::Press
-                {
-                    let action = handle_key(&mut app, key);
-                    handle_action(&mut app, &client, &tx, action, &mut last_data_fetch);
+                match event_result {
+                    Ok(crossterm::event::Event::Key(key)) if key.kind == KeyEventKind::Press => {
+                        let action = handle_key(&mut app, key);
+                        handle_action(&mut app, &client, &tx, action, &mut last_data_fetch);
+                    }
+                    Ok(crossterm::event::Event::Mouse(mouse)) => {
+                        let action = handle_mouse(&mut app, mouse);
+                        handle_action(&mut app, &client, &tx, action, &mut last_data_fetch);
+                    }
+                    _ => {}
                 }
             }
 

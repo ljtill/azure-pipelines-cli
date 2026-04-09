@@ -15,6 +15,11 @@ impl ListNav {
         self.len
     }
 
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// Update the list length and clamp the index.
     pub fn set_len(&mut self, len: usize) {
         self.len = len;

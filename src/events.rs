@@ -1,6 +1,6 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
-use crate::app::{App, ConfirmAction, ConfirmPrompt, InputMode, View};
+use crate::app::{App, ConfirmAction, ConfirmPrompt, InputMode, TimelineRow, View};
 
 /// The action requested by the user after handling a key event.
 #[derive(Debug)]
@@ -326,10 +326,39 @@ fn handle_cancel_request(app: &mut App) -> Action {
 
 fn handle_retry_request(app: &mut App) -> Action {
     let idx = app.log_viewer.nav().index();
-    if app.log_viewer.timeline_row_kind(idx) != Some("stage") {
-        return Action::None;
-    }
-    let stage_ref_name = match app.log_viewer.timeline_stage_ref_name(idx) {
+
+    // Find the stage to retry: if cursor is on a stage, use it directly.
+    // If on a job/task/checkpoint, walk up to the parent stage.
+    let stage_idx = match app.log_viewer.timeline_row_kind(idx) {
+        Some("stage") => Some(idx),
+        Some("job") => app.log_viewer.find_timeline_parent_index(idx),
+        Some("task") => app
+            .log_viewer
+            .find_timeline_parent_index(idx)
+            .and_then(|job_idx| app.log_viewer.find_timeline_parent_index(job_idx)),
+        Some("checkpoint") => {
+            if let Some(TimelineRow::Checkpoint {
+                parent_stage_id, ..
+            }) = app.log_viewer.timeline_rows().get(idx)
+            {
+                let psid = parent_stage_id.clone();
+                app.log_viewer
+                    .timeline_rows()
+                    .iter()
+                    .position(|r| matches!(r, TimelineRow::Stage { id, .. } if *id == psid))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let stage_idx = match stage_idx {
+        Some(i) => i,
+        None => return Action::None,
+    };
+
+    let stage_ref_name = match app.log_viewer.timeline_stage_ref_name(stage_idx) {
         Some(name) => name,
         None => return Action::None,
     };
@@ -342,8 +371,8 @@ fn handle_retry_request(app: &mut App) -> Action {
         .selected_build()
         .map(|b| b.build_number.as_str())
         .unwrap_or("?");
-    let stage_name = match app.log_viewer.timeline_rows().get(idx) {
-        Some(crate::app::TimelineRow::Stage { name, .. }) => name.clone(),
+    let stage_name = match app.log_viewer.timeline_rows().get(stage_idx) {
+        Some(TimelineRow::Stage { name, .. }) => name.clone(),
         _ => stage_ref_name.clone(),
     };
 
@@ -550,5 +579,19 @@ fn handle_enter(app: &mut App) -> Action {
                 _ => Action::None,
             }
         }
+    }
+}
+
+pub fn handle_mouse(app: &mut App, mouse: MouseEvent) -> Action {
+    match mouse.kind {
+        MouseEventKind::ScrollUp if app.view == View::LogViewer => {
+            app.log_viewer.scroll_up(3);
+            Action::None
+        }
+        MouseEventKind::ScrollDown if app.view == View::LogViewer => {
+            app.log_viewer.scroll_down(3);
+            Action::None
+        }
+        _ => Action::None,
     }
 }

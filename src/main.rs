@@ -1,15 +1,8 @@
-mod api;
-mod app;
-mod config;
-mod events;
-#[cfg(test)]
-mod test_helpers;
-mod ui;
-
 use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -17,8 +10,9 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
-use crate::api::client::AdoClient;
-use crate::config::Config;
+use azure_pipelines_cli::api::client::AdoClient;
+use azure_pipelines_cli::app;
+use azure_pipelines_cli::config::Config;
 
 #[derive(Parser)]
 #[command(
@@ -41,7 +35,7 @@ async fn main() -> Result<()> {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         let _ = disable_raw_mode();
-        let _ = execute!(std::io::stderr(), LeaveAlternateScreen);
+        let _ = execute!(std::io::stderr(), LeaveAlternateScreen, DisableMouseCapture);
         original_hook(panic_info);
     }));
 
@@ -57,7 +51,7 @@ async fn main() -> Result<()> {
     // Terminal setup
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -65,7 +59,11 @@ async fn main() -> Result<()> {
 
     // Restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     result

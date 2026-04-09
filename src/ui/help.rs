@@ -21,6 +21,7 @@ pub fn draw(f: &mut Frame) {
         Line::from("  Enter          Drill into selected item"),
         Line::from("  Esc            Go back to previous view"),
         Line::from("  PgUp / PgDn    Scroll log content"),
+        Line::from("  Mouse wheel    Scroll log content"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "  Views",
