@@ -242,6 +242,7 @@ pub struct TimelineRecord {
     #[serde(rename = "parentId")]
     pub parent_id: Option<String>,
     pub name: String,
+    pub identifier: Option<String>,
     #[serde(rename = "type")]
     pub record_type: String,
     pub state: Option<TaskState>,
@@ -249,6 +250,25 @@ pub struct TimelineRecord {
     pub order: Option<i32>,
     #[serde(rename = "log")]
     pub log: Option<LogReference>,
+}
+
+// --- Pipeline Run (queue) ---
+
+#[derive(Debug, serde::Serialize)]
+pub struct RunPipelineRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<RunPipelineResources>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct RunPipelineResources {
+    pub repositories: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PipelineRun {
+    pub id: u32,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

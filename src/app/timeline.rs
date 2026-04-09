@@ -17,6 +17,7 @@ type TaskEntry = (
 pub enum TimelineRow {
     Stage {
         id: String,
+        identifier: Option<String>,
         name: String,
         state: Option<TaskState>,
         result: Option<BuildResult>,
@@ -220,6 +221,7 @@ impl App {
             let stage_collapsed = self.collapsed_stages.contains(&stage.id);
             rows.push(TimelineRow::Stage {
                 id: stage.id.clone(),
+                identifier: stage.identifier.clone(),
                 name: stage.name.clone(),
                 state: stage.state,
                 result: stage.result,
@@ -415,6 +417,18 @@ impl App {
     pub fn timeline_task_log_id(&self, index: usize) -> Option<u32> {
         if let Some(TimelineRow::Task { log_id, .. }) = self.timeline_rows.get(index) {
             *log_id
+        } else {
+            None
+        }
+    }
+
+    /// Get the stage ref name (identifier) for a Stage timeline row at the given index.
+    pub fn timeline_stage_ref_name(&self, index: usize) -> Option<String> {
+        if let Some(TimelineRow::Stage {
+            identifier, name, ..
+        }) = self.timeline_rows.get(index)
+        {
+            Some(identifier.as_ref().unwrap_or(name).clone())
         } else {
             None
         }

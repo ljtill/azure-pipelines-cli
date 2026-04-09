@@ -27,6 +27,21 @@ pub enum InputMode {
     Search,
 }
 
+/// Action pending user confirmation (y/n).
+#[derive(Debug, Clone)]
+pub enum ConfirmAction {
+    CancelBuild { build_id: u32 },
+    RetryStage { build_id: u32, stage_ref_name: String },
+    QueuePipeline { definition_id: u32 },
+}
+
+/// A pending confirmation prompt shown in the footer.
+#[derive(Debug, Clone)]
+pub struct ConfirmPrompt {
+    pub message: String,
+    pub action: ConfirmAction,
+}
+
 pub struct App {
     pub view: View,
     pub previous_view: Option<View>,
@@ -64,6 +79,9 @@ pub struct App {
     pub follow_mode: bool,
     pub followed_task_name: String,
     pub followed_log_id: Option<u32>,
+
+    // Confirmation prompt
+    pub confirm_prompt: Option<ConfirmPrompt>,
 
     // List state indices
     pub dashboard_index: usize,
@@ -117,6 +135,8 @@ impl App {
             follow_mode: true,
             followed_task_name: String::new(),
             followed_log_id: None,
+
+            confirm_prompt: None,
 
             dashboard_index: 0,
             pipelines_index: 0,

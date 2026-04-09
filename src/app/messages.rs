@@ -20,5 +20,11 @@ pub enum AppMessage {
         content: String,
         generation: u64,
     },
+    BuildCancelled,
+    StageRetried,
+    PipelineQueued {
+        build: Build,
+        definition_id: u32,
+    },
     Error(String),
 }

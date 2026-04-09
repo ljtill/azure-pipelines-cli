@@ -3,10 +3,16 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Release version (e.g. 0.2.0)"
-        required: true
-        type: string
+      bump:
+        description: "Version bump type (auto derives from conventional commits)"
+        required: false
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+        default: auto
       draft:
         description: "Create as draft release"
         required: false
@@ -21,36 +27,131 @@ env:
   BINARY_NAME: azure-pipelines-cli
 
 jobs:
-  validate:
-    name: Validate
+  version:
+    name: Calculate Version
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.calc.outputs.version }}
+      tag: ${{ steps.calc.outputs.tag }}
+      changelog: ${{ steps.notes.outputs.changelog }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Validate version format
-        id: version
+      - name: Calculate next version
+        id: calc
         run: |
-          VERSION="${{ inputs.version }}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g. 1.2.3)"
-            exit 1
+          # Find latest semver tag, default to 0.0.0 if none exist
+          LATEST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.0.0"
+            COMMIT_RANGE="HEAD"
+          else
+            COMMIT_RANGE="${LATEST_TAG}..HEAD"
           fi
+          echo "Latest tag: $LATEST_TAG"
+
+          CURRENT="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          BUMP="${{ inputs.bump }}"
+          if [ "$BUMP" = "auto" ]; then
+            # Parse conventional commits to determine bump type
+            COMMITS=$(git log "$COMMIT_RANGE" --pretty=format:"%s" 2>/dev/null || true)
+
+            if echo "$COMMITS" | grep -qE '^[a-z]+(\(.+\))?!:|BREAKING CHANGE:'; then
+              BUMP="major"
+            elif echo "$COMMITS" | grep -qE '^feat(\(.+\))?:'; then
+              BUMP="minor"
+            else
+              BUMP="patch"
+            fi
+            echo "Auto-detected bump: $BUMP"
+          fi
+
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "Next version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Check tag does not already exist
         run: |
-          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
-            echo "::error::Tag v${{ inputs.version }} already exists"
+          if git rev-parse "${{ steps.calc.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::error::Tag ${{ steps.calc.outputs.tag }} already exists"
             exit 1
           fi
 
+      - name: Generate release notes
+        id: notes
+        run: |
+          LATEST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            COMMIT_RANGE="HEAD"
+          else
+            COMMIT_RANGE="${LATEST_TAG}..HEAD"
+          fi
+
+          # Collect commits grouped by conventional commit type
+          FEATURES=""
+          FIXES=""
+          REFACTORS=""
+          DOCS=""
+          CI_CHORES=""
+          OTHER=""
+
+          while IFS= read -r MSG; do
+            [ -z "$MSG" ] && continue
+            BREAKING=""
+            if echo "$MSG" | grep -qE '^[a-z]+(\(.+\))?!:'; then
+              BREAKING=" **BREAKING**"
+            fi
+            # Strip type prefix for the description
+            DESC=$(echo "$MSG" | sed -E 's/^[a-z]+(\([^)]*\))?!?:\s*//')
+            case "$MSG" in
+              feat*)    FEATURES="${FEATURES}- ${DESC}${BREAKING}\n" ;;
+              fix*)     FIXES="${FIXES}- ${DESC}${BREAKING}\n" ;;
+              refactor*) REFACTORS="${REFACTORS}- ${DESC}${BREAKING}\n" ;;
+              docs*)    DOCS="${DOCS}- ${DESC}${BREAKING}\n" ;;
+              ci*|chore*) CI_CHORES="${CI_CHORES}- ${DESC}${BREAKING}\n" ;;
+              *)        OTHER="${OTHER}- ${MSG}${BREAKING}\n" ;;
+            esac
+          done <<< "$(git log "$COMMIT_RANGE" --pretty=format:"%s" 2>/dev/null)"
+
+          # Build changelog markdown
+          CHANGELOG=""
+          [ -n "$FEATURES" ]  && CHANGELOG="${CHANGELOG}## 🚀 Features\n\n${FEATURES}\n"
+          [ -n "$FIXES" ]     && CHANGELOG="${CHANGELOG}## 🐛 Bug Fixes\n\n${FIXES}\n"
+          [ -n "$REFACTORS" ] && CHANGELOG="${CHANGELOG}## ♻️ Refactoring\n\n${REFACTORS}\n"
+          [ -n "$DOCS" ]      && CHANGELOG="${CHANGELOG}## 📖 Documentation\n\n${DOCS}\n"
+          [ -n "$CI_CHORES" ] && CHANGELOG="${CHANGELOG}## 🔧 CI & Chores\n\n${CI_CHORES}\n"
+          [ -n "$OTHER" ]     && CHANGELOG="${CHANGELOG}## Other\n\n${OTHER}\n"
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="No notable changes."
+          fi
+
+          # Write to file (multi-line output is tricky in GITHUB_OUTPUT)
+          echo -e "$CHANGELOG" > release-notes.md
+          cat release-notes.md
+
+          echo "changelog=release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+
   build:
     name: Build (${{ matrix.target }})
-    needs: validate
+    needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -124,7 +225,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [validate, build]
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -138,8 +239,8 @@ jobs:
 
       - name: Create and push tag
         run: |
-          git tag -a "${{ needs.validate.outputs.tag }}" -m "Release ${{ needs.validate.outputs.tag }}"
-          git push origin "${{ needs.validate.outputs.tag }}"
+          git tag -a "${{ needs.version.outputs.tag }}" -m "Release ${{ needs.version.outputs.tag }}"
+          git push origin "${{ needs.version.outputs.tag }}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -155,8 +256,8 @@ jobs:
           if [ "${{ inputs.draft }}" = "true" ]; then
             DRAFT_FLAG="--draft"
           fi
-          gh release create "${{ needs.validate.outputs.tag }}" \
-            --title "${{ needs.validate.outputs.tag }}" \
-            --generate-notes \
+          gh release create "${{ needs.version.outputs.tag }}" \
+            --title "${{ needs.version.outputs.tag }}" \
+            --notes-file artifacts/release-notes.md \
             $DRAFT_FLAG \
-            artifacts/*
+            artifacts/azure-pipelines-cli-*
