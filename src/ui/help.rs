@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-use ratatui::Frame;
 
 pub fn draw(f: &mut Frame) {
     let area = centered_rect(60, 70, f.area());
@@ -11,9 +11,10 @@ pub fn draw(f: &mut Frame) {
 
     let help_text = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  Navigation", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "  Navigation",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from("  ↑ / ↓          Move selection up / down"),
         Line::from("  ← / →          Collapse / expand folder (Dashboard)"),
@@ -21,17 +22,19 @@ pub fn draw(f: &mut Frame) {
         Line::from("  Esc            Go back to previous view"),
         Line::from("  PgUp / PgDn    Scroll log content"),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  Views", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "  Views",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from("  1              Dashboard (grouped by folder)"),
         Line::from("  2              All Pipelines (flat list)"),
         Line::from("  3              Active Runs"),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  Actions", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "  Actions",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from("  /              Search / filter (Pipelines view)"),
         Line::from("  f              Follow latest active task (Log Viewer)"),

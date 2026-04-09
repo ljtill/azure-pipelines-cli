@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use reqwest::Client;
 
@@ -17,6 +19,8 @@ impl AdoClient {
         let auth = AdoAuth::new().await?;
         let http = Client::builder()
             .user_agent("azure-pipelines-cli/0.1.0")
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
             .build()?;
         let endpoints = Endpoints::new(organization, project);
 

@@ -1,10 +1,10 @@
-use chrono::Utc;
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
 
+use super::helpers::{build_elapsed, status_icon};
 use crate::app::App;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -12,7 +12,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     let chunks = Layout::vertical([
         Constraint::Length(2), // pipeline name header
-        Constraint::Min(0),   // builds list
+        Constraint::Min(0),    // builds list
     ])
     .split(area);
 
@@ -40,38 +40,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, build)| {
-            let (icon, icon_color) = match build.status.as_str() {
-                "inProgress" | "InProgress" => ("⏳", Color::Yellow),
-                _ => match build.result.as_deref() {
-                    Some("succeeded") | Some("Succeeded") => ("✓", Color::Green),
-                    Some("failed") | Some("Failed") => ("✗", Color::Red),
-                    Some("partiallySucceeded") | Some("PartiallySucceeded") => {
-                        ("◐", Color::Yellow)
-                    }
-                    Some("canceled") | Some("Canceled") => ("⊘", Color::DarkGray),
-                    _ => ("○", Color::DarkGray),
-                },
-            };
-
-            let time_info = if build.status == "inProgress" || build.status == "InProgress" {
-                if let Some(start) = build.start_time {
-                    let dur = Utc::now().signed_duration_since(start);
-                    format!("running {}m", dur.num_minutes())
-                } else {
-                    "queued".to_string()
-                }
-            } else if let Some(finish) = build.finish_time {
-                let ago = Utc::now().signed_duration_since(finish);
-                if ago.num_hours() < 1 {
-                    format!("{}m ago", ago.num_minutes())
-                } else if ago.num_hours() < 24 {
-                    format!("{}h ago", ago.num_hours())
-                } else {
-                    format!("{}d ago", ago.num_days())
-                }
-            } else {
-                String::new()
-            };
+            let (icon, icon_color) = status_icon(build.status, build.result);
+            let time_info = build_elapsed(build);
 
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", icon), Style::default().fg(icon_color)),
