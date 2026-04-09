@@ -12,7 +12,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     use ratatui::layout::{Constraint, Layout};
 
     let show_search = app.view == crate::app::View::ActiveRuns
-        && (app.input_mode == InputMode::Search || !app.search_query.is_empty());
+        && (app.search.mode == InputMode::Search || !app.search.query.is_empty());
 
     let chunks = if show_search {
         Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(area)
@@ -23,7 +23,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let list_area = if show_search { chunks[1] } else { chunks[0] };
 
     if show_search {
-        draw_search_bar(f, chunks[0], &app.search_query, app.input_mode);
+        draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
     }
 
     // Fixed overhead: check(2) + icon(4) + build_number(16) + branch(27) + requestor(21) + elapsed(10) = 80

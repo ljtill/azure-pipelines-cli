@@ -27,10 +27,18 @@ pub enum View {
     LogViewer,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputMode {
+    #[default]
     Normal,
     Search,
+}
+
+/// Cross-cutting search/filter state shared by Pipelines and Active Runs views.
+#[derive(Debug, Default)]
+pub struct SearchState {
+    pub query: String,
+    pub mode: InputMode,
 }
 
 /// Action pending user confirmation (y/n).
@@ -67,7 +75,7 @@ pub struct ConfirmPrompt {
 pub struct App {
     pub view: View,
     pub previous_view: Option<View>,
-    pub input_mode: InputMode,
+    pub search: SearchState,
     pub running: bool,
     pub show_help: bool,
     pub org_project_label: String,
@@ -106,7 +114,6 @@ pub struct App {
     pub builds_nav: nav::ListNav,
 
     // Search
-    pub search_query: String,
     pub filtered_pipelines: Vec<PipelineDefinition>,
     pub filtered_active_builds: Vec<Build>,
 
@@ -121,7 +128,7 @@ impl App {
         Self {
             view: View::Dashboard,
             previous_view: None,
-            input_mode: InputMode::Normal,
+            search: SearchState::default(),
             running: true,
             show_help: false,
             org_project_label: format!("{} / {}", organization, project),
@@ -151,7 +158,6 @@ impl App {
             active_runs_nav: nav::ListNav::default(),
             builds_nav: nav::ListNav::default(),
 
-            search_query: String::new(),
             filtered_pipelines: Vec::new(),
             filtered_active_builds: Vec::new(),
 
@@ -166,9 +172,9 @@ impl App {
             self.show_help = false;
             return;
         }
-        if self.input_mode == InputMode::Search {
-            self.input_mode = InputMode::Normal;
-            self.search_query.clear();
+        if self.search.mode == InputMode::Search {
+            self.search.mode = InputMode::Normal;
+            self.search.query.clear();
             self.rebuild_filtered_pipelines();
             return;
         }
@@ -243,10 +249,10 @@ impl App {
             .iter()
             .filter(|b| self.matches_build_filter(b));
 
-        if self.search_query.is_empty() {
+        if self.search.query.is_empty() {
             self.filtered_active_builds = base.cloned().collect();
         } else {
-            let q = self.search_query.to_lowercase();
+            let q = self.search.query.to_lowercase();
             self.filtered_active_builds = base
                 .filter(|b| {
                     b.definition.name.to_lowercase().contains(&q)
@@ -337,11 +343,11 @@ mod tests {
     #[test]
     fn go_back_exits_search_mode() {
         let mut app = App::new("org", "proj", &make_config());
-        app.input_mode = InputMode::Search;
-        app.search_query = "test".to_string();
+        app.search.mode = InputMode::Search;
+        app.search.query = "test".to_string();
         app.go_back();
-        assert_eq!(app.input_mode, InputMode::Normal);
-        assert!(app.search_query.is_empty());
+        assert_eq!(app.search.mode, InputMode::Normal);
+        assert!(app.search.query.is_empty());
     }
 
     #[test]

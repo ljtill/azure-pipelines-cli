@@ -39,7 +39,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 
     // Search mode input
-    if app.input_mode == InputMode::Search {
+    if app.search.mode == InputMode::Search {
         return handle_search_key(app, key);
     }
 
@@ -75,7 +75,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::FollowLatest
         }
         KeyCode::Char('/') if app.view == View::Pipelines || app.view == View::ActiveRuns => {
-            app.input_mode = InputMode::Search;
+            app.search.mode = InputMode::Search;
             Action::None
         }
 
@@ -122,18 +122,18 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Tab switching
         KeyCode::Char('1') => {
-            app.search_query.clear();
+            app.search.query.clear();
             app.view = View::Dashboard;
             Action::None
         }
         KeyCode::Char('2') => {
-            app.search_query.clear();
+            app.search.query.clear();
             app.view = View::Pipelines;
             app.rebuild_filtered_pipelines();
             Action::None
         }
         KeyCode::Char('3') => {
-            app.search_query.clear();
+            app.search.query.clear();
             app.view = View::ActiveRuns;
             app.rebuild_filtered_active_builds();
             Action::None
@@ -477,19 +477,19 @@ fn handle_reject_request(app: &mut App) -> Action {
 fn handle_search_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            app.search_query.clear();
+            app.search.mode = InputMode::Normal;
+            app.search.query.clear();
             rebuild_search_results(app);
         }
         KeyCode::Enter => {
-            app.input_mode = InputMode::Normal;
+            app.search.mode = InputMode::Normal;
         }
         KeyCode::Backspace => {
-            app.search_query.pop();
+            app.search.query.pop();
             rebuild_search_results(app);
         }
         KeyCode::Char(c) => {
-            app.search_query.push(c);
+            app.search.query.push(c);
             rebuild_search_results(app);
         }
         _ => {}

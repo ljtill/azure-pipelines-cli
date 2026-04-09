@@ -152,7 +152,7 @@ fn slash_enters_search_on_pipelines() {
     let mut app = test_app();
     app.view = View::Pipelines;
     let action = handle_key(&mut app, key(KeyCode::Char('/')));
-    assert_eq!(app.input_mode, InputMode::Search);
+    assert_eq!(app.search.mode, InputMode::Search);
     assert!(matches!(action, Action::None));
 }
 
@@ -161,7 +161,7 @@ fn slash_no_op_on_dashboard() {
     let mut app = test_app();
     app.view = View::Dashboard;
     let action = handle_key(&mut app, key(KeyCode::Char('/')));
-    assert_eq!(app.input_mode, InputMode::Normal);
+    assert_eq!(app.search.mode, InputMode::Normal);
     assert!(matches!(action, Action::None));
 }
 
@@ -169,12 +169,12 @@ fn slash_no_op_on_dashboard() {
 fn esc_exits_search() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.input_mode = InputMode::Search;
-    app.search_query = "hello".into();
+    app.search.mode = InputMode::Search;
+    app.search.query = "hello".into();
 
     let action = handle_key(&mut app, key(KeyCode::Esc));
-    assert_eq!(app.input_mode, InputMode::Normal);
-    assert!(app.search_query.is_empty());
+    assert_eq!(app.search.mode, InputMode::Normal);
+    assert!(app.search.query.is_empty());
     assert!(matches!(action, Action::None));
 }
 
@@ -182,34 +182,34 @@ fn esc_exits_search() {
 fn typing_in_search_appends() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.input_mode = InputMode::Search;
+    app.search.mode = InputMode::Search;
 
     handle_key(&mut app, key(KeyCode::Char('a')));
     handle_key(&mut app, key(KeyCode::Char('b')));
-    assert_eq!(app.search_query, "ab");
+    assert_eq!(app.search.query, "ab");
 }
 
 #[test]
 fn backspace_in_search() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.input_mode = InputMode::Search;
-    app.search_query = "abc".into();
+    app.search.mode = InputMode::Search;
+    app.search.query = "abc".into();
 
     handle_key(&mut app, key(KeyCode::Backspace));
-    assert_eq!(app.search_query, "ab");
+    assert_eq!(app.search.query, "ab");
 }
 
 #[test]
 fn enter_commits_search() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.input_mode = InputMode::Search;
-    app.search_query = "hello".into();
+    app.search.mode = InputMode::Search;
+    app.search.query = "hello".into();
 
     let action = handle_key(&mut app, key(KeyCode::Enter));
-    assert_eq!(app.input_mode, InputMode::Normal);
-    assert_eq!(app.search_query, "hello"); // query preserved
+    assert_eq!(app.search.mode, InputMode::Normal);
+    assert_eq!(app.search.query, "hello"); // query preserved
     assert!(matches!(action, Action::None));
 }
 
@@ -474,10 +474,10 @@ fn home_and_end_keys() {
 fn tab_switching_clears_search_query() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.search_query = "hello".into();
+    app.search.query = "hello".into();
 
     handle_key(&mut app, key(KeyCode::Char('1')));
-    assert!(app.search_query.is_empty());
+    assert!(app.search.query.is_empty());
     assert_eq!(app.view, View::Dashboard);
 }
 
@@ -490,7 +490,7 @@ fn slash_enters_search_on_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
     let action = handle_key(&mut app, key(KeyCode::Char('/')));
-    assert_eq!(app.input_mode, InputMode::Search);
+    assert_eq!(app.search.mode, InputMode::Search);
     assert!(matches!(action, Action::None));
 }
 

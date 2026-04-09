@@ -113,10 +113,10 @@ impl App {
     pub fn rebuild_filtered_pipelines(&mut self) {
         let base = self.definitions.iter().filter(|d| self.matches_filter(d));
 
-        if self.search_query.is_empty() {
+        if self.search.query.is_empty() {
             self.filtered_pipelines = base.cloned().collect();
         } else {
-            let q = self.search_query.to_lowercase();
+            let q = self.search.query.to_lowercase();
             self.filtered_pipelines = base
                 .filter(|d| {
                     d.name.to_lowercase().contains(&q) || d.path.to_lowercase().contains(&q)
@@ -312,7 +312,7 @@ mod tests {
             make_definition(1, "CI Pipeline", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
         ];
-        app.search_query = "ci".to_string();
+        app.search.query = "ci".to_string();
         app.rebuild_filtered_pipelines();
         assert_eq!(app.filtered_pipelines.len(), 1);
         assert_eq!(app.filtered_pipelines[0].name, "CI Pipeline");
@@ -386,7 +386,7 @@ mod tests {
         b2.status = BuildStatus::InProgress;
         app.active_builds = vec![b1, b2];
 
-        app.search_query = "deploy".to_string();
+        app.search.query = "deploy".to_string();
         app.rebuild_filtered_active_builds();
         assert_eq!(app.filtered_active_builds.len(), 1);
         assert_eq!(app.filtered_active_builds[0].definition.name, "Deploy");
