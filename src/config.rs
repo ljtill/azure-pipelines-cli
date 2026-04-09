@@ -89,6 +89,6 @@ pub fn default_config_path() -> Result<PathBuf> {
         .context("Could not determine config directory")?;
 
     Ok(config_dir
-        .join("pipelines-dashboard")
+        .join("azure-pipelines-cli")
         .join("config.toml"))
 }

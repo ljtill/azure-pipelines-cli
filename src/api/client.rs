@@ -16,7 +16,7 @@ impl AdoClient {
     pub async fn new(organization: &str, project: &str) -> Result<Self> {
         let auth = AdoAuth::new().await?;
         let http = Client::builder()
-            .user_agent("pipelines-dashboard/0.1.0")
+            .user_agent("azure-pipelines-cli/0.1.0")
             .build()?;
         let endpoints = Endpoints::new(organization, project);
 

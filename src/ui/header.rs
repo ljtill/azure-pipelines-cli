@@ -41,7 +41,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     let title = Paragraph::new(Line::from(vec![
         Span::styled(
-            " pipelines-dashboard",
+            " azure-pipelines-cli",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),

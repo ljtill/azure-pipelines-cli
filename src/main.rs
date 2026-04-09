@@ -25,7 +25,7 @@ use crate::config::Config;
 use crate::events::{Action, handle_key};
 
 #[derive(Parser)]
-#[command(name = "pipelines-dashboard", about = "TUI dashboard for Azure DevOps Pipelines")]
+#[command(name = "azure-pipelines-cli", about = "TUI dashboard for Azure DevOps Pipelines")]
 struct Cli {
     /// Path to config file
     #[arg(short, long)]

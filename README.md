@@ -1,4 +1,4 @@
-# pipelines-dashboard
+# azure-pipelines-cli
 
 A terminal (TUI) dashboard for monitoring Azure DevOps Pipelines in real-time.
 
@@ -22,7 +22,7 @@ cargo install --path .
 
 ## Configuration
 
-Create `~/.config/pipelines-dashboard/config.toml`:
+Create `~/.config/azure-pipelines-cli/config.toml`:
 
 ```toml
 [azure_devops]
@@ -38,10 +38,10 @@ log_refresh_interval_secs = 5
 
 ```bash
 # Uses default config path
-pipelines-dashboard
+azure-pipelines-cli
 
 # Override config path
-pipelines-dashboard --config /path/to/config.toml
+azure-pipelines-cli --config /path/to/config.toml
 ```
 
 ## Keybindings
