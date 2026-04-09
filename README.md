@@ -21,6 +21,26 @@ Built with [ratatui](https://ratatui.rs/) and designed to run inside [Ghostty](h
 
 ## Installation
 
+### macOS / Linux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
+```
+
+Pin a specific version:
+
+```sh
+VERSION=0.2.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.ps1 | iex
+```
+
+### From source
+
 ```bash
 cargo install --path .
 ```
