@@ -1,9 +1,17 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.2.0)"
+        required: true
+        type: string
+      draft:
+        description: "Create as draft release"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -13,8 +21,36 @@ env:
   BINARY_NAME: azure-pipelines-cli
 
 jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate version format
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g. 1.2.3)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag does not already exist
+        run: |
+          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ inputs.version }} already exists"
+            exit 1
+          fi
+
   build:
     name: Build (${{ matrix.target }})
+    needs: validate
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -88,10 +124,22 @@ jobs:
 
   release:
     name: Create Release
-    needs: build
+    needs: [validate, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        run: |
+          git tag -a "${{ needs.validate.outputs.tag }}" -m "Release ${{ needs.validate.outputs.tag }}"
+          git push origin "${{ needs.validate.outputs.tag }}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -103,8 +151,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
+          DRAFT_FLAG=""
+          if [ "${{ inputs.draft }}" = "true" ]; then
+            DRAFT_FLAG="--draft"
+          fi
+          gh release create "${{ needs.validate.outputs.tag }}" \
+            --title "${{ needs.validate.outputs.tag }}" \
             --generate-notes \
-            --draft \
+            $DRAFT_FLAG \
             artifacts/*
