@@ -20,7 +20,7 @@ use ratatui::Terminal;
 use tokio::sync::mpsc;
 
 use crate::api::client::AdoClient;
-use crate::app::{App, AppMessage};
+use crate::app::{App, AppMessage, TimelineRow};
 use crate::config::Config;
 use crate::events::{Action, handle_key};
 
@@ -168,6 +168,7 @@ fn handle_action(
                                 build_id,
                                 timeline,
                                 generation,
+                                is_refresh: false,
                             })
                             .await;
                     }
@@ -193,6 +194,33 @@ fn handle_action(
                     }
                 }
             });
+        }
+        Action::FollowLatest => {
+            // Switch to follow mode and fetch the latest active task's log
+            if let Some((task_name, log_id)) = app.find_active_task() {
+                app.followed_task_name = task_name;
+                app.followed_log_id = Some(log_id);
+                if let Some(build) = &app.selected_build {
+                    let client = client.clone();
+                    let tx = tx.clone();
+                    let generation = app.log_generation;
+                    let build_id = build.id;
+                    tokio::spawn(async move {
+                        match client.get_build_log(build_id, log_id).await {
+                            Ok(content) => {
+                                let _ = tx
+                                    .send(AppMessage::LogContent { content, generation })
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _ = tx
+                                    .send(AppMessage::Error(format!("Fetch log: {e}")))
+                                    .await;
+                            }
+                        }
+                    });
+                }
+            }
         }
         Action::None => {}
     }
@@ -233,32 +261,83 @@ fn handle_message(
             build_id,
             timeline,
             generation,
+            is_refresh,
         } => {
             // Discard stale timeline results
             if generation != app.log_generation {
                 return;
             }
-            app.build_timeline = Some(timeline);
-            app.log_content.clear();
-            app.log_entries_index = 0;
-            app.rebuild_timeline_rows();
 
-            // Auto-select and spawn log fetch for the best task
-            if let Some((_idx, log_id)) = app.auto_select_log_entry() {
-                let client = client.clone();
-                let tx = tx.clone();
-                let generation = app.log_generation;
-                tokio::spawn(async move {
-                    match client.get_build_log(build_id, log_id).await {
-                        Ok(content) => {
-                            let _ = tx.send(AppMessage::LogContent { content, generation }).await;
-                        }
-                        Err(e) => {
-                            let _ =
-                                tx.send(AppMessage::Error(format!("Fetch log: {e}"))).await;
-                        }
+            app.build_timeline = Some(timeline);
+
+            if !is_refresh {
+                // Initial load: full setup with auto-select
+                app.log_content.clear();
+                app.log_entries_index = 0;
+                app.follow_mode = true;
+                app.rebuild_timeline_rows();
+
+                if let Some((_idx, log_id)) = app.auto_select_log_entry() {
+                    // Set follow tracking info
+                    if let Some(TimelineRow::Task { name, .. }) =
+                        app.timeline_rows.get(app.log_entries_index)
+                    {
+                        app.followed_task_name = name.clone();
                     }
-                });
+                    app.followed_log_id = Some(log_id);
+
+                    let client = client.clone();
+                    let tx = tx.clone();
+                    let generation = app.log_generation;
+                    tokio::spawn(async move {
+                        match client.get_build_log(build_id, log_id).await {
+                            Ok(content) => {
+                                let _ = tx
+                                    .send(AppMessage::LogContent { content, generation })
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _ = tx
+                                    .send(AppMessage::Error(format!("Fetch log: {e}")))
+                                    .await;
+                            }
+                        }
+                    });
+                }
+            } else if app.follow_mode {
+                // Refresh in follow mode: update tree, track latest active task
+                app.rebuild_timeline_rows();
+
+                if let Some((task_name, log_id)) = app.find_active_task() {
+                    let task_changed = app.followed_log_id != Some(log_id);
+                    app.followed_task_name = task_name;
+                    app.followed_log_id = Some(log_id);
+
+                    if task_changed {
+                        // Active task changed — fetch the new task's log
+                        let client = client.clone();
+                        let tx = tx.clone();
+                        let generation = app.log_generation;
+                        tokio::spawn(async move {
+                            match client.get_build_log(build_id, log_id).await {
+                                Ok(content) => {
+                                    let _ = tx
+                                        .send(AppMessage::LogContent { content, generation })
+                                        .await;
+                                }
+                                Err(e) => {
+                                    let _ = tx
+                                        .send(AppMessage::Error(format!("Fetch log: {e}")))
+                                        .await;
+                                }
+                            }
+                        });
+                    }
+                    // If same task, spawn_log_refresh already handles content refresh
+                }
+            } else {
+                // Refresh in inspect mode: only update tree status, preserve cursor + log
+                app.rebuild_timeline_rows();
             }
         }
         AppMessage::LogContent { content, generation } => {
@@ -321,6 +400,7 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
                             build_id,
                             timeline,
                             generation,
+                            is_refresh: true,
                         })
                         .await;
                 }
@@ -328,10 +408,18 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
         }
     }
 
-    // Re-fetch the currently viewed log content
+    // Re-fetch log content for the currently viewed task.
+    // In follow mode: refresh the followed task's log.
+    // In inspect mode: refresh the selected (pinned) task's log.
+    let log_id_to_refresh = if app.follow_mode {
+        app.followed_log_id
+    } else {
+        app.timeline_task_log_id(app.log_entries_index)
+    };
+
     if !app.log_content.is_empty() {
         if let Some(build) = &app.selected_build {
-            if let Some(log_id) = app.timeline_task_log_id(app.log_entries_index) {
+            if let Some(log_id) = log_id_to_refresh {
                 let client = client.clone();
                 let tx = tx.clone();
                 let build_id = build.id;

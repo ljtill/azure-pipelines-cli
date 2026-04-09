@@ -34,6 +34,7 @@ pub fn draw(f: &mut Frame) {
         ]),
         Line::from(""),
         Line::from("  /              Search / filter (Pipelines view)"),
+        Line::from("  f              Follow latest active task (Log Viewer)"),
         Line::from("  r              Force data refresh"),
         Line::from("  ?              Toggle this help"),
         Line::from("  q              Quit"),

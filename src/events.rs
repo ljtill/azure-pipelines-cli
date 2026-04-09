@@ -21,6 +21,7 @@ pub enum Action {
     FetchBuildHistory(u32),
     FetchBuildLog { build_id: u32, log_id: u32 },
     FetchTimeline(u32),
+    FollowLatest,
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
@@ -47,6 +48,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('r') => Action::ForceRefresh,
+        KeyCode::Char('f') if app.view == View::LogViewer => {
+            app.follow_mode = true;
+            Action::FollowLatest
+        }
         KeyCode::Char('/') if app.view == View::Pipelines => {
             app.input_mode = InputMode::Search;
             Action::None
@@ -246,7 +251,8 @@ fn handle_enter(app: &mut App) -> Action {
                     Action::None
                 }
                 Some("task") => {
-                    // Fetch the task's log
+                    // Switch to inspect mode and fetch this task's log
+                    app.follow_mode = false;
                     if let Some(log_id) = app.timeline_task_log_id(idx) {
                         if let Some(build) = &app.selected_build {
                             return Action::FetchBuildLog {

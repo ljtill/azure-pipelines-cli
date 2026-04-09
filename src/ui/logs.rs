@@ -175,13 +175,28 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_log(f: &mut Frame, app: &App, area: Rect) {
+    let title = if app.follow_mode && !app.followed_task_name.is_empty() {
+        format!(" Log Output — FOLLOW: {} ", app.followed_task_name)
+    } else if !app.follow_mode {
+        // Show the name of the pinned task
+        if let Some(TimelineRow::Task { name, .. }) =
+            app.timeline_rows.get(app.log_entries_index)
+        {
+            format!(" Log Output — {} ", name)
+        } else {
+            " Log Output ".to_string()
+        }
+    } else {
+        " Log Output ".to_string()
+    };
+
     if app.log_content.is_empty() {
         let hint = Paragraph::new(" Select a task and press Enter to view its log")
             .style(Style::default().fg(Color::DarkGray))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" Log Output "),
+                    .title(title),
             );
         f.render_widget(hint, area);
     } else {
@@ -201,12 +216,18 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             app.log_scroll_offset.min(max_scroll)
         };
 
+        let title_style = if app.follow_mode {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+
         let log = Paragraph::new(Text::from(lines))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" Log Output ")
-                    .title_style(Style::default().fg(Color::Cyan)),
+                    .title(title)
+                    .title_style(title_style),
             )
             .wrap(Wrap { trim: false })
             .scroll((scroll_offset, 0));

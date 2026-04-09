@@ -18,6 +18,7 @@ pub enum AppMessage {
         build_id: u32,
         timeline: BuildTimeline,
         generation: u64,
+        is_refresh: bool,
     },
     LogContent {
         content: String,
@@ -110,6 +111,9 @@ pub struct App {
     pub log_auto_scroll: bool,
     pub log_generation: u64,
     pub timeline_initialized: bool,
+    pub follow_mode: bool,
+    pub followed_task_name: String,
+    pub followed_log_id: Option<u32>,
 
     // List state indices
     pub dashboard_index: usize,
@@ -157,6 +161,9 @@ impl App {
             log_auto_scroll: true,
             log_generation: 0,
             timeline_initialized: false,
+            follow_mode: true,
+            followed_task_name: String::new(),
+            followed_log_id: None,
 
             dashboard_index: 0,
             pipelines_index: 0,
@@ -291,6 +298,9 @@ impl App {
         self.log_auto_scroll = true;
         self.log_generation += 1;
         self.timeline_initialized = false;
+        self.follow_mode = true;
+        self.followed_task_name.clear();
+        self.followed_log_id = None;
         self.view = View::LogViewer;
     }
 
@@ -430,6 +440,44 @@ impl App {
         } else {
             None
         }
+    }
+
+    /// Find the currently active task without moving cursor or changing state.
+    /// Returns (task_name, log_id) if found.
+    pub fn find_active_task(&self) -> Option<(String, u32)> {
+        let timeline = self.build_timeline.as_ref()?;
+        let tasks: Vec<_> = timeline
+            .records
+            .iter()
+            .filter(|r| r.record_type == "Task" && r.log.is_some())
+            .collect();
+
+        if tasks.is_empty() {
+            return None;
+        }
+
+        let is_running = self
+            .selected_build
+            .as_ref()
+            .is_some_and(|b| b.status == "inProgress" || b.status == "InProgress");
+
+        let best = if is_running {
+            tasks
+                .iter()
+                .rev()
+                .find(|r| r.state.as_deref() == Some("inProgress"))
+                .or(tasks.last())
+        } else {
+            tasks
+                .iter()
+                .rev()
+                .find(|r| r.result.as_deref() == Some("failed"))
+                .or(tasks.last())
+        };
+
+        let best = best?;
+        let log_id = best.log.as_ref()?.id;
+        Some((best.name.clone(), log_id))
     }
 
     /// Build the timeline tree rows from the raw timeline records.
