@@ -100,7 +100,7 @@ async fn run(
         // Spawn periodic background refreshes
         let should_refresh_data = last_data_fetch.elapsed() >= refresh_interval;
         let should_refresh_logs = app.view == app::View::LogViewer
-            && app.selected_build.is_some()
+            && app.log_viewer.selected_build.is_some()
             && last_log_fetch
                 .map(|t| t.elapsed() >= log_refresh_interval)
                 .unwrap_or(true);
@@ -173,20 +173,21 @@ fn handle_action(
             });
         }
         Action::FetchTimeline(build_id) => {
-            spawn_timeline_fetch(client, tx, build_id, app.log_generation, false);
+            spawn_timeline_fetch(client, tx, build_id, app.log_viewer.log_generation, false);
         }
         Action::FetchBuildLog { build_id, log_id } => {
-            spawn_log_fetch(client, tx, build_id, log_id, app.log_generation);
+            spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.log_generation);
         }
         Action::FollowLatest => {
             // Switch to follow mode: jump cursor to active task and fetch its log
             if let Some((idx, log_id)) = app.auto_select_log_entry() {
-                if let Some(TimelineRow::Task { name, .. }) = app.timeline_rows.get(idx) {
-                    app.followed_task_name = name.clone();
+                if let Some(TimelineRow::Task { name, .. }) = app.log_viewer.timeline_rows.get(idx)
+                {
+                    app.log_viewer.followed_task_name = name.clone();
                 }
-                app.followed_log_id = Some(log_id);
-                if let Some(build) = &app.selected_build {
-                    spawn_log_fetch(client, tx, build.id, log_id, app.log_generation);
+                app.log_viewer.followed_log_id = Some(log_id);
+                if let Some(build) = &app.log_viewer.selected_build {
+                    spawn_log_fetch(client, tx, build.id, log_id, app.log_viewer.log_generation);
                 }
             }
         }
@@ -373,44 +374,52 @@ fn handle_message(
             is_refresh,
         } => {
             // Discard stale timeline results
-            if generation != app.log_generation {
+            if generation != app.log_viewer.log_generation {
                 return;
             }
 
-            app.build_timeline = Some(timeline);
+            app.log_viewer.build_timeline = Some(timeline);
 
             // Update selected_build status from timeline data so the header stays current
             app.refresh_build_status_from_timeline();
 
             if !is_refresh {
                 // Initial load: full setup with auto-select
-                app.log_content.clear();
-                app.log_entries_index = 0;
-                app.follow_mode = true;
+                app.log_viewer.log_content.clear();
+                app.log_viewer.log_entries_index = 0;
+                app.log_viewer.follow_mode = true;
                 app.rebuild_timeline_rows();
 
                 if let Some((_idx, log_id)) = app.auto_select_log_entry() {
                     // Set follow tracking info
-                    if let Some(TimelineRow::Task { name, .. }) =
-                        app.timeline_rows.get(app.log_entries_index)
+                    if let Some(TimelineRow::Task { name, .. }) = app
+                        .log_viewer
+                        .timeline_rows
+                        .get(app.log_viewer.log_entries_index)
                     {
-                        app.followed_task_name = name.clone();
+                        app.log_viewer.followed_task_name = name.clone();
                     }
-                    app.followed_log_id = Some(log_id);
-                    spawn_log_fetch(client, tx, build_id, log_id, app.log_generation);
+                    app.log_viewer.followed_log_id = Some(log_id);
+                    spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.log_generation);
                 }
-            } else if app.follow_mode {
+            } else if app.log_viewer.follow_mode {
                 // Refresh in follow mode: update tree, track latest active task
                 app.rebuild_timeline_rows();
 
                 if let Some((task_name, log_id)) = app.find_active_task() {
-                    let task_changed = app.followed_log_id != Some(log_id);
-                    app.followed_task_name = task_name;
-                    app.followed_log_id = Some(log_id);
+                    let task_changed = app.log_viewer.followed_log_id != Some(log_id);
+                    app.log_viewer.followed_task_name = task_name;
+                    app.log_viewer.followed_log_id = Some(log_id);
 
                     if task_changed {
                         // Active task changed — fetch the new task's log
-                        spawn_log_fetch(client, tx, build_id, log_id, app.log_generation);
+                        spawn_log_fetch(
+                            client,
+                            tx,
+                            build_id,
+                            log_id,
+                            app.log_viewer.log_generation,
+                        );
                     }
                     // If same task, spawn_log_refresh already handles content refresh
                 }
@@ -424,12 +433,12 @@ fn handle_message(
             generation,
         } => {
             // Discard stale log results
-            if generation != app.log_generation {
+            if generation != app.log_viewer.log_generation {
                 return;
             }
-            app.log_content = content.lines().map(String::from).collect();
-            app.log_auto_scroll = true;
-            app.log_scroll_offset = 0;
+            app.log_viewer.log_content = content.lines().map(String::from).collect();
+            app.log_viewer.log_auto_scroll = true;
+            app.log_viewer.log_scroll_offset = 0;
         }
         AppMessage::Error(msg) => {
             tracing::warn!(error = %msg, "app error");
@@ -439,8 +448,8 @@ fn handle_message(
             // Trigger a data refresh to update build status
             spawn_data_refresh(client, tx);
             // If we're viewing this build's logs, refresh timeline too
-            if let Some(build) = &app.selected_build {
-                spawn_timeline_fetch(client, tx, build.id, app.log_generation, true);
+            if let Some(build) = &app.log_viewer.selected_build {
+                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
             }
         }
         AppMessage::BuildsCancelled { cancelled, failed } => {
@@ -452,16 +461,16 @@ fn handle_message(
         }
         AppMessage::StageRetried => {
             // Refresh timeline to show the retried stage
-            if let Some(build) = &app.selected_build {
-                spawn_timeline_fetch(client, tx, build.id, app.log_generation, true);
+            if let Some(build) = &app.log_viewer.selected_build {
+                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
             }
             spawn_data_refresh(client, tx);
         }
         AppMessage::CheckUpdated => {
             // Refresh approvals + timeline
             spawn_data_refresh(client, tx);
-            if let Some(build) = &app.selected_build {
-                spawn_timeline_fetch(client, tx, build.id, app.log_generation, true);
+            if let Some(build) = &app.log_viewer.selected_build {
+                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
             }
         }
         AppMessage::PipelineQueued {
@@ -472,7 +481,7 @@ fn handle_message(
             let build_id = build.id;
             app.navigate_to_log_viewer(build);
             // Fetch its timeline
-            spawn_timeline_fetch(client, tx, build_id, app.log_generation, false);
+            spawn_timeline_fetch(client, tx, build_id, app.log_viewer.log_generation, false);
         }
     }
 }
@@ -565,10 +574,10 @@ fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
 }
 
 fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
-    let generation = app.log_generation;
+    let generation = app.log_viewer.log_generation;
 
     // Re-fetch timeline for in-progress builds
-    if let Some(build) = &app.selected_build
+    if let Some(build) = &app.log_viewer.selected_build
         && build.status.is_in_progress()
     {
         spawn_timeline_fetch(client, tx, build.id, generation, true);
@@ -577,14 +586,14 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
     // Re-fetch log content for the currently viewed task.
     // In follow mode: refresh the followed task's log.
     // In inspect mode: refresh the selected (pinned) task's log.
-    let log_id_to_refresh = if app.follow_mode {
-        app.followed_log_id
+    let log_id_to_refresh = if app.log_viewer.follow_mode {
+        app.log_viewer.followed_log_id
     } else {
-        app.timeline_task_log_id(app.log_entries_index)
+        app.timeline_task_log_id(app.log_viewer.log_entries_index)
     };
 
-    if !app.log_content.is_empty()
-        && let Some(build) = &app.selected_build
+    if !app.log_viewer.log_content.is_empty()
+        && let Some(build) = &app.log_viewer.selected_build
         && let Some(log_id) = log_id_to_refresh
     {
         let client = client.clone();

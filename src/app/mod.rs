@@ -84,19 +84,8 @@ pub struct App {
     pub selected_definition: Option<PipelineDefinition>,
     pub definition_builds: Vec<Build>,
 
-    // Log viewer
-    pub selected_build: Option<Build>,
-    pub build_timeline: Option<BuildTimeline>,
-    pub timeline_rows: Vec<TimelineRow>,
-    pub collapsed_stages: HashSet<String>,
-    pub collapsed_jobs: HashSet<String>,
-    pub log_content: Vec<String>,
-    pub log_auto_scroll: bool,
-    pub log_generation: u64,
-    pub timeline_initialized: bool,
-    pub follow_mode: bool,
-    pub followed_task_name: String,
-    pub followed_log_id: Option<u32>,
+    // Log viewer state (grouped)
+    pub log_viewer: LogViewerState,
 
     // Confirmation prompt
     pub confirm_prompt: Option<ConfirmPrompt>,
@@ -109,8 +98,6 @@ pub struct App {
     pub pipelines_index: usize,
     pub active_runs_index: usize,
     pub builds_index: usize,
-    pub log_entries_index: usize,
-    pub log_scroll_offset: u16,
 
     // Search
     pub search_query: String,
@@ -121,6 +108,25 @@ pub struct App {
     pub last_refresh: Option<DateTime<Utc>>,
     pub error_message: Option<String>,
     pub loading: bool,
+}
+
+/// State for the log viewer screen — reset as a unit on navigation.
+#[derive(Default)]
+pub struct LogViewerState {
+    pub selected_build: Option<Build>,
+    pub build_timeline: Option<BuildTimeline>,
+    pub timeline_rows: Vec<TimelineRow>,
+    pub collapsed_stages: HashSet<String>,
+    pub collapsed_jobs: HashSet<String>,
+    pub log_content: Vec<String>,
+    pub log_auto_scroll: bool,
+    pub log_generation: u64,
+    pub timeline_initialized: bool,
+    pub follow_mode: bool,
+    pub followed_task_name: String,
+    pub followed_log_id: Option<u32>,
+    pub log_entries_index: usize,
+    pub log_scroll_offset: u16,
 }
 
 impl App {
@@ -147,18 +153,7 @@ impl App {
             selected_definition: None,
             definition_builds: Vec::new(),
 
-            selected_build: None,
-            build_timeline: None,
-            timeline_rows: Vec::new(),
-            collapsed_stages: HashSet::new(),
-            collapsed_jobs: HashSet::new(),
-            log_content: Vec::new(),
-            log_auto_scroll: true,
-            log_generation: 0,
-            timeline_initialized: false,
-            follow_mode: true,
-            followed_task_name: String::new(),
-            followed_log_id: None,
+            log_viewer: LogViewerState::default(),
 
             confirm_prompt: None,
 
@@ -168,8 +163,6 @@ impl App {
             pipelines_index: 0,
             active_runs_index: 0,
             builds_index: 0,
-            log_entries_index: 0,
-            log_scroll_offset: 0,
 
             search_query: String::new(),
             filtered_pipelines: Vec::new(),
@@ -195,15 +188,9 @@ impl App {
         match self.view {
             View::LogViewer => {
                 self.view = View::BuildHistory;
-                self.selected_build = None;
-                self.build_timeline = None;
-                self.timeline_rows.clear();
-                self.collapsed_stages.clear();
-                self.collapsed_jobs.clear();
-                self.log_content.clear();
-                self.log_entries_index = 0;
-                self.log_scroll_offset = 0;
-                self.log_generation += 1;
+                let next_gen = self.log_viewer.log_generation + 1;
+                self.log_viewer = LogViewerState::default();
+                self.log_viewer.log_generation = next_gen;
             }
             View::BuildHistory => {
                 self.view = self.previous_view.unwrap_or(View::Dashboard);
@@ -220,11 +207,11 @@ impl App {
     pub fn refresh_build_status_from_timeline(&mut self) {
         use crate::api::models::{BuildResult, BuildStatus, TaskState};
 
-        let timeline = match &self.build_timeline {
+        let timeline = match &self.log_viewer.build_timeline {
             Some(t) => t,
             None => return,
         };
-        let build = match &mut self.selected_build {
+        let build = match &mut self.log_viewer.selected_build {
             Some(b) => b,
             None => return,
         };
@@ -275,20 +262,14 @@ impl App {
 
     pub fn navigate_to_log_viewer(&mut self, build: Build) {
         tracing::info!(build_id = build.id, "navigating to log viewer");
-        self.selected_build = Some(build);
-        self.build_timeline = None;
-        self.timeline_rows.clear();
-        self.collapsed_stages.clear();
-        self.collapsed_jobs.clear();
-        self.log_content.clear();
-        self.log_entries_index = 0;
-        self.log_scroll_offset = 0;
-        self.log_auto_scroll = true;
-        self.log_generation += 1;
-        self.timeline_initialized = false;
-        self.follow_mode = true;
-        self.followed_task_name.clear();
-        self.followed_log_id = None;
+        let next_gen = self.log_viewer.log_generation + 1;
+        self.log_viewer = LogViewerState {
+            selected_build: Some(build),
+            log_auto_scroll: true,
+            follow_mode: true,
+            log_generation: next_gen,
+            ..Default::default()
+        };
         self.view = View::LogViewer;
     }
 
@@ -298,7 +279,7 @@ impl App {
             View::Pipelines => self.filtered_pipelines.len(),
             View::ActiveRuns => self.filtered_active_builds.len(),
             View::BuildHistory => self.definition_builds.len(),
-            View::LogViewer => self.timeline_rows.len(),
+            View::LogViewer => self.log_viewer.timeline_rows.len(),
         }
     }
 
@@ -308,7 +289,7 @@ impl App {
             View::Pipelines => self.pipelines_index,
             View::ActiveRuns => self.active_runs_index,
             View::BuildHistory => self.builds_index,
-            View::LogViewer => self.log_entries_index,
+            View::LogViewer => self.log_viewer.log_entries_index,
         }
     }
 
@@ -320,7 +301,7 @@ impl App {
             View::Pipelines => self.pipelines_index = clamped,
             View::ActiveRuns => self.active_runs_index = clamped,
             View::BuildHistory => self.builds_index = clamped,
-            View::LogViewer => self.log_entries_index = clamped,
+            View::LogViewer => self.log_viewer.log_entries_index = clamped,
         }
     }
 

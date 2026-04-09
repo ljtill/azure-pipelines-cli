@@ -68,7 +68,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Char('r') => Action::ForceRefresh,
         KeyCode::Char('f') if app.view == View::LogViewer => {
-            app.follow_mode = true;
+            app.log_viewer.follow_mode = true;
             Action::FollowLatest
         }
         KeyCode::Char('/') if app.view == View::Pipelines || app.view == View::ActiveRuns => {
@@ -165,7 +165,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Left/Right for timeline tree collapse/expand in LogViewer
         KeyCode::Left if app.view == View::LogViewer => {
-            let idx = app.log_entries_index;
+            let idx = app.log_viewer.log_entries_index;
             match app.timeline_row_kind(idx) {
                 Some("stage") => {
                     app.collapse_timeline_node(idx);
@@ -174,12 +174,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                     if !app.collapse_timeline_node(idx)
                         && let Some(parent_idx) = app.find_timeline_parent_index(idx)
                     {
-                        app.log_entries_index = parent_idx;
+                        app.log_viewer.log_entries_index = parent_idx;
                     }
                 }
                 Some("task") => {
                     if let Some(parent_idx) = app.find_timeline_parent_index(idx) {
-                        app.log_entries_index = parent_idx;
+                        app.log_viewer.log_entries_index = parent_idx;
                     }
                 }
                 _ => {}
@@ -187,7 +187,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Right if app.view == View::LogViewer => {
-            let idx = app.log_entries_index;
+            let idx = app.log_viewer.log_entries_index;
             match app.timeline_row_kind(idx) {
                 Some("stage") | Some("job") => {
                     app.expand_timeline_node(idx);
@@ -209,12 +209,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Log viewer scroll
         KeyCode::PageUp if app.view == View::LogViewer => {
-            app.log_auto_scroll = false;
-            app.log_scroll_offset = app.log_scroll_offset.saturating_sub(20);
+            app.log_viewer.log_auto_scroll = false;
+            app.log_viewer.log_scroll_offset = app.log_viewer.log_scroll_offset.saturating_sub(20);
             Action::None
         }
         KeyCode::PageDown if app.view == View::LogViewer => {
-            app.log_scroll_offset = app.log_scroll_offset.saturating_add(20);
+            app.log_viewer.log_scroll_offset = app.log_viewer.log_scroll_offset.saturating_add(20);
             Action::None
         }
 
@@ -275,6 +275,7 @@ fn handle_open_in_browser(app: &App) -> Action {
             .get(app.builds_index)
             .map(|b| app.endpoints_web_build(b.id)),
         View::LogViewer => app
+            .log_viewer
             .selected_build
             .as_ref()
             .map(|b| app.endpoints_web_build(b.id)),
@@ -300,7 +301,7 @@ fn handle_cancel_request(app: &mut App) -> Action {
 
     // Single cancel: cursor item
     let build = match app.view {
-        View::LogViewer => app.selected_build.as_ref(),
+        View::LogViewer => app.log_viewer.selected_build.as_ref(),
         View::ActiveRuns => app.filtered_active_builds.get(app.active_runs_index),
         _ => None,
     };
@@ -317,7 +318,7 @@ fn handle_cancel_request(app: &mut App) -> Action {
 }
 
 fn handle_retry_request(app: &mut App) -> Action {
-    let idx = app.log_entries_index;
+    let idx = app.log_viewer.log_entries_index;
     if app.timeline_row_kind(idx) != Some("stage") {
         return Action::None;
     }
@@ -325,16 +326,17 @@ fn handle_retry_request(app: &mut App) -> Action {
         Some(name) => name,
         None => return Action::None,
     };
-    let build_id = match &app.selected_build {
+    let build_id = match &app.log_viewer.selected_build {
         Some(b) => b.id,
         None => return Action::None,
     };
     let build_number = app
+        .log_viewer
         .selected_build
         .as_ref()
         .map(|b| b.build_number.as_str())
         .unwrap_or("?");
-    let stage_name = match &app.timeline_rows.get(idx) {
+    let stage_name = match &app.log_viewer.timeline_rows.get(idx) {
         Some(crate::app::TimelineRow::Stage { name, .. }) => name.clone(),
         _ => stage_ref_name.clone(),
     };
@@ -390,7 +392,7 @@ fn handle_queue_request(app: &mut App) -> Action {
 }
 
 fn handle_approve_request(app: &mut App) -> Action {
-    let idx = app.log_entries_index;
+    let idx = app.log_viewer.log_entries_index;
     if app.timeline_row_kind(idx) != Some("checkpoint") {
         return Action::None;
     }
@@ -398,7 +400,7 @@ fn handle_approve_request(app: &mut App) -> Action {
         Some(id) => id,
         None => return Action::None,
     };
-    let name = match &app.timeline_rows.get(idx) {
+    let name = match &app.log_viewer.timeline_rows.get(idx) {
         Some(crate::app::TimelineRow::Checkpoint { name, .. }) => name.clone(),
         _ => "check".to_string(),
     };
@@ -410,7 +412,7 @@ fn handle_approve_request(app: &mut App) -> Action {
 }
 
 fn handle_reject_request(app: &mut App) -> Action {
-    let idx = app.log_entries_index;
+    let idx = app.log_viewer.log_entries_index;
     if app.timeline_row_kind(idx) != Some("checkpoint") {
         return Action::None;
     }
@@ -418,7 +420,7 @@ fn handle_reject_request(app: &mut App) -> Action {
         Some(id) => id,
         None => return Action::None,
     };
-    let name = match &app.timeline_rows.get(idx) {
+    let name = match &app.log_viewer.timeline_rows.get(idx) {
         Some(crate::app::TimelineRow::Checkpoint { name, .. }) => name.clone(),
         _ => "check".to_string(),
     };
@@ -517,16 +519,16 @@ fn handle_enter(app: &mut App) -> Action {
             }
         }
         View::LogViewer => {
-            let idx = app.log_entries_index;
+            let idx = app.log_viewer.log_entries_index;
             match app.timeline_row_kind(idx) {
                 Some("stage") | Some("job") => {
                     app.toggle_timeline_node(idx);
                     Action::None
                 }
                 Some("task") => {
-                    app.follow_mode = false;
+                    app.log_viewer.follow_mode = false;
                     if let Some(log_id) = app.timeline_task_log_id(idx)
-                        && let Some(build) = &app.selected_build
+                        && let Some(build) = &app.log_viewer.selected_build
                     {
                         return Action::FetchBuildLog {
                             build_id: build.id,
