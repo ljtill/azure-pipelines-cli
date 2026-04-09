@@ -1,44 +1,37 @@
 use ratatui::style::Color;
 
-use crate::api::models::Build;
+use crate::api::models::{Build, BuildResult, BuildStatus, TaskState};
 
-/// Shared status → (icon, color) mapping for build status and result strings.
-pub fn status_icon(status: &str, result: Option<&str>) -> (&'static str, Color) {
-    match status {
-        s if s.eq_ignore_ascii_case("inProgress") => ("⏳", Color::Yellow),
-        _ => match result {
-            Some(r) if r.eq_ignore_ascii_case("succeeded") => ("✓", Color::Green),
-            Some(r) if r.eq_ignore_ascii_case("failed") => ("✗", Color::Red),
-            Some(r) if r.eq_ignore_ascii_case("partiallySucceeded") => ("◐", Color::Yellow),
-            Some(r)
-                if r.eq_ignore_ascii_case("canceled") || r.eq_ignore_ascii_case("cancelled") =>
-            {
-                ("⊘", Color::DarkGray)
-            }
-            Some(r) if r.eq_ignore_ascii_case("skipped") => ("⊘", Color::DarkGray),
-            _ => ("○", Color::DarkGray),
-        },
+/// Shared status → (icon, color) mapping for build status and result.
+pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'static str, Color) {
+    if status.is_in_progress() {
+        return ("⏳", Color::Yellow);
+    }
+    match result {
+        Some(BuildResult::Succeeded) => ("✓", Color::Green),
+        Some(BuildResult::Failed) => ("✗", Color::Red),
+        Some(BuildResult::PartiallySucceeded) => ("◐", Color::Yellow),
+        Some(BuildResult::Canceled) => ("⊘", Color::DarkGray),
+        Some(BuildResult::Skipped) => ("⊘", Color::DarkGray),
+        _ => ("○", Color::DarkGray),
     }
 }
 
 /// Status icon for timeline records (stage/job/task) where state and result
 /// are separate optional fields.
-pub fn timeline_status_icon(state: Option<&str>, result: Option<&str>) -> (&'static str, Color) {
+pub fn timeline_status_icon(
+    state: Option<TaskState>,
+    result: Option<BuildResult>,
+) -> (&'static str, Color) {
     match result {
-        Some(r) if r.eq_ignore_ascii_case("succeeded") => ("✓", Color::Green),
-        Some(r) if r.eq_ignore_ascii_case("failed") => ("✗", Color::Red),
-        Some(r) if r.eq_ignore_ascii_case("partiallySucceeded") => ("◐", Color::Yellow),
-        Some(r)
-            if r.eq_ignore_ascii_case("canceled")
-                || r.eq_ignore_ascii_case("cancelled")
-                || r.eq_ignore_ascii_case("skipped") =>
-        {
-            ("⊘", Color::DarkGray)
-        }
+        Some(BuildResult::Succeeded) => ("✓", Color::Green),
+        Some(BuildResult::Failed) => ("✗", Color::Red),
+        Some(BuildResult::PartiallySucceeded) => ("◐", Color::Yellow),
+        Some(BuildResult::Canceled) | Some(BuildResult::Skipped) => ("⊘", Color::DarkGray),
         _ => match state {
-            Some(s) if s.eq_ignore_ascii_case("inProgress") => ("⏳", Color::Yellow),
-            Some(s) if s.eq_ignore_ascii_case("completed") => ("✓", Color::Green),
-            Some(s) if s.eq_ignore_ascii_case("pending") => ("○", Color::DarkGray),
+            Some(TaskState::InProgress) => ("⏳", Color::Yellow),
+            Some(TaskState::Completed) => ("✓", Color::Green),
+            Some(TaskState::Pending) => ("○", Color::DarkGray),
             _ => ("○", Color::DarkGray),
         },
     }
@@ -48,7 +41,7 @@ pub fn timeline_status_icon(state: Option<&str>, result: Option<&str>) -> (&'sta
 pub fn build_elapsed(build: &Build) -> String {
     use chrono::Utc;
 
-    if build.status.eq_ignore_ascii_case("inProgress") {
+    if build.status.is_in_progress() {
         if let Some(start) = build.start_time {
             let elapsed = Utc::now().signed_duration_since(start);
             return format!("running {}m", elapsed.num_minutes());

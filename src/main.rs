@@ -369,7 +369,7 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
 
     // Re-fetch timeline for in-progress builds
     if let Some(build) = &app.selected_build {
-        if build.status.eq_ignore_ascii_case("inProgress") {
+        if build.status.is_in_progress() {
             let client = client.clone();
             let tx = tx.clone();
             let build_id = build.id;

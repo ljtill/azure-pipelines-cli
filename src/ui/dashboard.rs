@@ -35,7 +35,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 latest_build,
             } => {
                 let (icon, icon_color) = match latest_build {
-                    Some(b) => status_icon(&b.status, b.result.as_deref()),
+                    Some(b) => status_icon(b.status, b.result),
                     None => ("○", Color::DarkGray),
                 };
 

@@ -1,5 +1,150 @@
+use std::fmt;
+
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde::de::{self, Visitor};
+
+// --- Enums for build status and result ---
+
+/// Build status as returned by the Azure DevOps API.
+/// Deserialized case-insensitively with an `Unknown` fallback for unrecognized values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildStatus {
+    None,
+    InProgress,
+    Completed,
+    Cancelling,
+    Postponed,
+    NotStarted,
+    Unknown,
+}
+
+impl BuildStatus {
+    pub fn is_in_progress(self) -> bool {
+        self == BuildStatus::InProgress
+    }
+}
+
+impl<'de> Deserialize<'de> for BuildStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct StatusVisitor;
+        impl<'de> Visitor<'de> for StatusVisitor {
+            type Value = BuildStatus;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a build status string")
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<BuildStatus, E> {
+                Ok(match v.to_ascii_lowercase().as_str() {
+                    "none" => BuildStatus::None,
+                    "inprogress" => BuildStatus::InProgress,
+                    "completed" => BuildStatus::Completed,
+                    "cancelling" => BuildStatus::Cancelling,
+                    "postponed" => BuildStatus::Postponed,
+                    "notstarted" => BuildStatus::NotStarted,
+                    _ => BuildStatus::Unknown,
+                })
+            }
+        }
+        deserializer.deserialize_str(StatusVisitor)
+    }
+}
+
+impl fmt::Display for BuildStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BuildStatus::None => write!(f, "none"),
+            BuildStatus::InProgress => write!(f, "inProgress"),
+            BuildStatus::Completed => write!(f, "completed"),
+            BuildStatus::Cancelling => write!(f, "cancelling"),
+            BuildStatus::Postponed => write!(f, "postponed"),
+            BuildStatus::NotStarted => write!(f, "notStarted"),
+            BuildStatus::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+/// Build or timeline record result.
+/// Deserialized case-insensitively with an `Unknown` fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildResult {
+    None,
+    Succeeded,
+    PartiallySucceeded,
+    Failed,
+    Canceled,
+    Skipped,
+    Unknown,
+}
+
+impl<'de> Deserialize<'de> for BuildResult {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct ResultVisitor;
+        impl<'de> Visitor<'de> for ResultVisitor {
+            type Value = BuildResult;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a build result string")
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<BuildResult, E> {
+                Ok(match v.to_ascii_lowercase().as_str() {
+                    "none" => BuildResult::None,
+                    "succeeded" => BuildResult::Succeeded,
+                    "partiallysucceeded" => BuildResult::PartiallySucceeded,
+                    "failed" => BuildResult::Failed,
+                    "canceled" | "cancelled" => BuildResult::Canceled,
+                    "skipped" => BuildResult::Skipped,
+                    _ => BuildResult::Unknown,
+                })
+            }
+        }
+        deserializer.deserialize_str(ResultVisitor)
+    }
+}
+
+/// Timeline record state (stage/job/task).
+/// Deserialized case-insensitively with an `Unknown` fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskState {
+    Pending,
+    InProgress,
+    Completed,
+    Unknown,
+}
+
+impl TaskState {
+    pub fn is_in_progress(self) -> bool {
+        self == TaskState::InProgress
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct StateVisitor;
+        impl<'de> Visitor<'de> for StateVisitor {
+            type Value = TaskState;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a timeline state string")
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<TaskState, E> {
+                Ok(match v.to_ascii_lowercase().as_str() {
+                    "pending" => TaskState::Pending,
+                    "inprogress" => TaskState::InProgress,
+                    "completed" => TaskState::Completed,
+                    _ => TaskState::Unknown,
+                })
+            }
+        }
+        deserializer.deserialize_str(StateVisitor)
+    }
+}
 
 // --- Pipeline Definitions ---
 
@@ -35,8 +180,8 @@ pub struct Build {
     pub id: u32,
     #[serde(rename = "buildNumber")]
     pub build_number: String,
-    pub status: String,
-    pub result: Option<String>,
+    pub status: BuildStatus,
+    pub result: Option<BuildResult>,
     #[allow(dead_code)]
     #[serde(rename = "queueTime")]
     pub queue_time: Option<DateTime<Utc>>,
@@ -99,8 +244,8 @@ pub struct TimelineRecord {
     pub name: String,
     #[serde(rename = "type")]
     pub record_type: String,
-    pub state: Option<String>,
-    pub result: Option<String>,
+    pub state: Option<TaskState>,
+    pub result: Option<BuildResult>,
     pub order: Option<i32>,
     #[serde(rename = "log")]
     pub log: Option<LogReference>,

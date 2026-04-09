@@ -75,8 +75,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ..
                 } => {
                     let arrow = if *collapsed { "▸" } else { "▾" };
-                    let (icon, icon_color) =
-                        timeline_status_icon(state.as_deref(), result.as_deref());
+                    let (icon, icon_color) = timeline_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::styled(format!("{} ", arrow), Style::default().fg(Color::Yellow)),
                         Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
@@ -101,8 +100,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ..
                 } => {
                     let arrow = if *collapsed { "▸" } else { "▾" };
-                    let (icon, icon_color) =
-                        timeline_status_icon(state.as_deref(), result.as_deref());
+                    let (icon, icon_color) = timeline_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
                         Span::styled(format!("{} ", arrow), Style::default().fg(Color::Cyan)),
@@ -122,8 +120,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     log_id,
                     ..
                 } => {
-                    let (icon, icon_color) =
-                        timeline_status_icon(state.as_deref(), result.as_deref());
+                    let (icon, icon_color) = timeline_status_icon(*state, *result);
                     let log_indicator = if log_id.is_some() { "" } else { " ·" };
                     ListItem::new(Line::from(vec![
                         Span::raw("      "),

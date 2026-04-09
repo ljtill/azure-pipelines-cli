@@ -40,7 +40,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, build)| {
-            let (icon, icon_color) = status_icon(&build.status, build.result.as_deref());
+            let (icon, icon_color) = status_icon(build.status, build.result);
             let time_info = build_elapsed(build);
 
             ListItem::new(Line::from(vec![

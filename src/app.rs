@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Utc};
 
-use crate::api::models::{Build, BuildTimeline, PipelineDefinition};
+use crate::api::models::{Build, BuildResult, BuildTimeline, PipelineDefinition, TaskState};
 
 /// Messages sent from background tasks to the main event loop.
 pub enum AppMessage {
@@ -61,22 +61,22 @@ pub enum TimelineRow {
     Stage {
         id: String,
         name: String,
-        state: Option<String>,
-        result: Option<String>,
+        state: Option<TaskState>,
+        result: Option<BuildResult>,
         collapsed: bool,
     },
     Job {
         id: String,
         name: String,
-        state: Option<String>,
-        result: Option<String>,
+        state: Option<TaskState>,
+        result: Option<BuildResult>,
         collapsed: bool,
         parent_stage_id: String,
     },
     Task {
         name: String,
-        state: Option<String>,
-        result: Option<String>,
+        state: Option<TaskState>,
+        result: Option<BuildResult>,
         log_id: Option<u32>,
         parent_job_id: String,
     },
@@ -355,15 +355,21 @@ impl App {
     pub fn auto_select_log_entry(&mut self) -> Option<(usize, u32)> {
         // Extract what we need from the timeline into owned values
         let timeline = self.build_timeline.as_ref()?;
-        let tasks: Vec<(String, Option<String>, Option<String>, Option<String>, u32)> = timeline
+        let tasks: Vec<(
+            String,
+            Option<TaskState>,
+            Option<BuildResult>,
+            Option<String>,
+            u32,
+        )> = timeline
             .records
             .iter()
             .filter(|r| r.record_type == "Task" && r.log.is_some())
             .map(|r| {
                 (
                     r.name.clone(),
-                    r.state.clone(),
-                    r.result.clone(),
+                    r.state,
+                    r.result,
                     r.parent_id.clone(),
                     r.log.as_ref().unwrap().id,
                 )
@@ -377,18 +383,18 @@ impl App {
         let is_running = self
             .selected_build
             .as_ref()
-            .is_some_and(|b| b.status.eq_ignore_ascii_case("inProgress"));
+            .is_some_and(|b| b.status.is_in_progress());
 
         // Find best task index: in-progress > failed > last
         let best_idx = if is_running {
             tasks
                 .iter()
-                .rposition(|t| t.1.as_deref() == Some("inProgress"))
+                .rposition(|t| t.1 == Some(TaskState::InProgress))
                 .or(Some(tasks.len() - 1))
         } else {
             tasks
                 .iter()
-                .rposition(|t| t.2.as_deref() == Some("failed"))
+                .rposition(|t| t.2 == Some(BuildResult::Failed))
                 .or(Some(tasks.len() - 1))
         };
         let best_idx = best_idx?;
@@ -461,19 +467,19 @@ impl App {
         let is_running = self
             .selected_build
             .as_ref()
-            .is_some_and(|b| b.status.eq_ignore_ascii_case("inProgress"));
+            .is_some_and(|b| b.status.is_in_progress());
 
         let best = if is_running {
             tasks
                 .iter()
                 .rev()
-                .find(|r| r.state.as_deref() == Some("inProgress"))
+                .find(|r| r.state.is_some_and(|s| s.is_in_progress()))
                 .or(tasks.last())
         } else {
             tasks
                 .iter()
                 .rev()
-                .find(|r| r.result.as_deref() == Some("failed"))
+                .find(|r| r.result == Some(BuildResult::Failed))
                 .or(tasks.last())
         };
 
