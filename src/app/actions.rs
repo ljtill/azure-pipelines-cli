@@ -84,7 +84,9 @@ pub fn handle_action(
     action: Action,
     last_data_fetch: &mut Instant,
 ) {
-    tracing::debug!(?action, "handle_action");
+    if !matches!(action, Action::None) {
+        tracing::debug!(?action, "handle_action");
+    }
     match action {
         Action::Quit => app.running = false,
         Action::ForceRefresh => {
