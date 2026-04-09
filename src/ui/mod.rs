@@ -7,6 +7,7 @@ pub mod helpers;
 pub mod logs;
 pub mod pipelines;
 pub mod setup;
+pub mod theme;
 
 use ratatui::Frame;
 
@@ -40,7 +41,6 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    use ratatui::style::{Color, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
@@ -48,7 +48,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     if let Some(prompt) = &app.confirm_prompt {
         let footer = Paragraph::new(Line::from(vec![Span::styled(
             format!(" {}", prompt.message),
-            Style::default().fg(Color::Yellow),
+            theme::WARNING,
         )]));
         f.render_widget(footer, area);
         return;
@@ -72,9 +72,6 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         }
     };
 
-    let footer = Paragraph::new(Line::from(vec![Span::styled(
-        hints,
-        Style::default().fg(Color::DarkGray),
-    )]));
+    let footer = Paragraph::new(Line::from(vec![Span::styled(hints, theme::MUTED)]));
     f.render_widget(footer, area);
 }

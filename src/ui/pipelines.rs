@@ -1,10 +1,11 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
 use super::helpers::draw_search_bar;
+use super::theme;
 use crate::app::{App, InputMode};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -32,14 +33,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let folder = def.path.trim_start_matches('\\').replace('\\', " / ");
 
             ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!(" {:<42} ", def.name),
-                    Style::default().fg(Color::White),
-                ),
-                Span::styled(folder, Style::default().fg(Color::DarkGray)),
+                Span::styled(format!(" {:<42} ", def.name), theme::TEXT),
+                Span::styled(folder, theme::MUTED),
             ]))
             .style(if i == app.pipelines_nav.index() {
-                Style::default().bg(Color::DarkGray)
+                theme::SELECTED
             } else {
                 Style::default()
             })
@@ -51,7 +49,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Block::default()
             .borders(Borders::NONE)
             .title(title)
-            .title_style(Style::default().fg(Color::Cyan)),
+            .title_style(theme::TITLE),
     );
 
     let mut state = ListState::default();

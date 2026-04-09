@@ -1,10 +1,11 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
 use super::helpers::{build_elapsed, status_icon};
+use super::theme;
 use crate::app::App;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -24,14 +25,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or("Unknown");
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled(" ← ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            def_name,
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" — Build History", Style::default().fg(Color::DarkGray)),
+        Span::styled(" ← ", theme::MUTED),
+        Span::styled(def_name, theme::BRAND),
+        Span::styled(" — Build History", theme::MUTED),
     ]));
     f.render_widget(header, chunks[0]);
 
@@ -45,22 +41,13 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", icon), Style::default().fg(icon_color)),
-                Span::styled(
-                    format!("#{:<14} ", build.build_number),
-                    Style::default().fg(Color::White),
-                ),
-                Span::styled(
-                    format!("{:<26} ", build.short_branch()),
-                    Style::default().fg(Color::Blue),
-                ),
-                Span::styled(
-                    format!("{:<20} ", build.requestor()),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(time_info, Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("#{:<14} ", build.build_number), theme::TEXT),
+                Span::styled(format!("{:<26} ", build.short_branch()), theme::BRANCH),
+                Span::styled(format!("{:<20} ", build.requestor()), theme::MUTED),
+                Span::styled(time_info, theme::MUTED),
             ]))
             .style(if i == app.builds_nav.index() {
-                Style::default().bg(Color::DarkGray)
+                theme::SELECTED
             } else {
                 Style::default()
             })
@@ -71,7 +58,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Block::default()
             .borders(Borders::NONE)
             .title(format!(" Builds ({}) ", app.definition_builds.len()))
-            .title_style(Style::default().fg(Color::Cyan)),
+            .title_style(theme::TITLE),
     );
 
     let mut state = ListState::default();

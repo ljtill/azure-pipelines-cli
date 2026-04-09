@@ -1,10 +1,11 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
 use super::helpers::{build_elapsed, draw_search_bar};
+use super::theme;
 use crate::app::{App, InputMode};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -38,32 +39,20 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(
                     check,
                     if selected {
-                        Style::default().fg(Color::Green)
+                        theme::SUCCESS
                     } else {
                         Style::default()
                     },
                 ),
-                Span::styled(" ⏳ ", Style::default().fg(Color::Yellow)),
-                Span::styled(
-                    format!("{:<36} ", build.definition.name),
-                    Style::default().fg(Color::White),
-                ),
-                Span::styled(
-                    format!("#{:<14} ", build.build_number),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    format!("{:<26} ", build.short_branch()),
-                    Style::default().fg(Color::Blue),
-                ),
-                Span::styled(
-                    format!("{:<20} ", build.requestor()),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(elapsed, Style::default().fg(Color::Yellow)),
+                Span::styled(" ⏳ ", theme::WARNING),
+                Span::styled(format!("{:<36} ", build.definition.name), theme::TEXT),
+                Span::styled(format!("#{:<14} ", build.build_number), theme::MUTED),
+                Span::styled(format!("{:<26} ", build.short_branch()), theme::BRANCH),
+                Span::styled(format!("{:<20} ", build.requestor()), theme::MUTED),
+                Span::styled(elapsed, theme::WARNING),
             ]))
             .style(if i == app.active_runs_nav.index() {
-                Style::default().bg(Color::DarkGray)
+                theme::SELECTED
             } else {
                 Style::default()
             })
@@ -87,7 +76,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Block::default()
             .borders(Borders::NONE)
             .title(title)
-            .title_style(Style::default().fg(Color::Cyan)),
+            .title_style(theme::TITLE),
     );
 
     let mut state = ListState::default();

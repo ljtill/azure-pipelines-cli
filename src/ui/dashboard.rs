@@ -1,10 +1,11 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
 use super::helpers::{build_elapsed, status_icon, truncate};
+use super::theme;
 use crate::app::{App, DashboardRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -16,16 +17,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             DashboardRow::FolderHeader { path, collapsed } => {
                 let icon = if *collapsed { "▸" } else { "▾" };
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!(" {} ", icon), Style::default().fg(Color::Yellow)),
-                    Span::styled(
-                        path.to_string(),
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled(format!(" {} ", icon), theme::ARROW),
+                    Span::styled(path.to_string(), theme::FOLDER),
                 ]))
                 .style(if i == app.dashboard_nav.index() {
-                    Style::default().bg(Color::DarkGray)
+                    theme::SELECTED
                 } else {
                     Style::default()
                 })
@@ -57,14 +53,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 ListItem::new(Line::from(vec![
                     Span::raw("    "),
                     Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
-                    Span::styled(
-                        format!("{:<40} ", definition.name),
-                        Style::default().fg(Color::White),
-                    ),
-                    Span::styled(build_info, Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("{:<40} ", definition.name), theme::TEXT),
+                    Span::styled(build_info, theme::MUTED),
                 ]))
                 .style(if i == app.dashboard_nav.index() {
-                    Style::default().bg(Color::DarkGray)
+                    theme::SELECTED
                 } else {
                     Style::default()
                 })
@@ -76,7 +69,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Block::default()
             .borders(Borders::NONE)
             .title(" Dashboard — Pipelines by Folder ")
-            .title_style(Style::default().fg(Color::Cyan)),
+            .title_style(theme::TITLE),
     );
 
     let mut state = ListState::default();

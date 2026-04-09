@@ -1,10 +1,11 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 
 use super::helpers::{checkpoint_status_icon, timeline_status_icon};
+use super::theme;
 use crate::app::{App, TimelineRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -24,14 +25,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     // Build info header
     let header = Paragraph::new(Line::from(vec![
-        Span::styled(" ← ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            &build_label,
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" — Log Viewer", Style::default().fg(Color::DarkGray)),
+        Span::styled(" ← ", theme::MUTED),
+        Span::styled(&build_label, theme::BRAND),
+        Span::styled(" — Log Viewer", theme::MUTED),
     ]));
     f.render_widget(header, chunks[0]);
 
@@ -49,12 +45,12 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
     if app.log_viewer.timeline_rows().is_empty() {
         let loading = Paragraph::new(" Loading timeline...")
-            .style(Style::default().fg(Color::DarkGray))
+            .style(theme::MUTED)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .title(" Pipeline Stages ")
-                    .title_style(Style::default().fg(Color::Cyan)),
+                    .title_style(theme::TITLE),
             );
         f.render_widget(loading, area);
         return;
@@ -78,17 +74,12 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let arrow = if *collapsed { "▸" } else { "▾" };
                     let (icon, icon_color) = timeline_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
-                        Span::styled(format!("{} ", arrow), Style::default().fg(Color::Yellow)),
+                        Span::styled(format!("{} ", arrow), theme::ARROW),
                         Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
-                        Span::styled(
-                            name.as_str(),
-                            Style::default()
-                                .fg(Color::Yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ),
+                        Span::styled(name.as_str(), theme::STAGE),
                     ]))
                     .style(if selected {
-                        Style::default().bg(Color::DarkGray)
+                        theme::SELECTED
                     } else {
                         Style::default()
                     })
@@ -104,12 +95,12 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let (icon, icon_color) = timeline_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
-                        Span::styled(format!("{} ", arrow), Style::default().fg(Color::Cyan)),
+                        Span::styled(format!("{} ", arrow), theme::JOB_ARROW),
                         Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
-                        Span::styled(name.as_str(), Style::default().fg(Color::White)),
+                        Span::styled(name.as_str(), theme::JOB),
                     ]))
                     .style(if selected {
-                        Style::default().bg(Color::DarkGray)
+                        theme::SELECTED
                     } else {
                         Style::default()
                     })
@@ -126,11 +117,11 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ListItem::new(Line::from(vec![
                         Span::raw("      "),
                         Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
-                        Span::styled(name.as_str(), Style::default().fg(Color::White)),
-                        Span::styled(log_indicator, Style::default().fg(Color::DarkGray)),
+                        Span::styled(name.as_str(), theme::JOB),
+                        Span::styled(log_indicator, theme::MUTED),
                     ]))
                     .style(if selected {
-                        Style::default().bg(Color::DarkGray)
+                        theme::SELECTED
                     } else {
                         Style::default()
                     })
@@ -148,7 +139,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                         Span::styled(name.as_str(), Style::default().fg(icon_color)),
                     ]))
                     .style(if selected {
-                        Style::default().bg(Color::DarkGray)
+                        theme::SELECTED
                     } else {
                         Style::default()
                     })
@@ -161,7 +152,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
         Block::default()
             .borders(Borders::ALL)
             .title(" Pipeline Stages ")
-            .title_style(Style::default().fg(Color::Cyan)),
+            .title_style(theme::TITLE),
     );
 
     let mut state = ListState::default();
@@ -193,7 +184,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
 
     if app.log_viewer.log_content().is_empty() {
         let hint = Paragraph::new(" Select a task and press Enter to view its log")
-            .style(Style::default().fg(Color::DarkGray))
+            .style(theme::MUTED)
             .block(Block::default().borders(Borders::ALL).title(title));
         f.render_widget(hint, area);
     } else {
@@ -215,9 +206,9 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let title_style = if app.log_viewer.is_following() {
-            Style::default().fg(Color::Green)
+            theme::FOLLOW_TITLE
         } else {
-            Style::default().fg(Color::Cyan)
+            theme::TITLE
         };
 
         let log = Paragraph::new(Text::from(lines))

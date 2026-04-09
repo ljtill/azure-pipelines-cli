@@ -1,11 +1,12 @@
 use chrono::Utc;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 
 use super::helpers::truncate;
+use super::theme;
 use crate::app::{App, View};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -48,22 +49,17 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let approvals_span = if !app.pending_approvals.is_empty() {
         Span::styled(
             format!("  ⏸ {} pending", app.pending_approvals.len()),
-            Style::default().fg(Color::Magenta),
+            theme::APPROVAL,
         )
     } else {
         Span::raw("")
     };
 
     let title = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " pipelines",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("  ●  ", Style::default().fg(Color::DarkGray)),
-        Span::styled(&app.org_project_label, Style::default().fg(Color::White)),
-        Span::styled(refresh_text, Style::default().fg(Color::DarkGray)),
+        Span::styled(" pipelines", theme::BRAND),
+        Span::styled("  ●  ", theme::MUTED),
+        Span::styled(&app.org_project_label, theme::TEXT),
+        Span::styled(refresh_text, theme::MUTED),
         approvals_span,
         error_span,
     ]));
@@ -88,11 +84,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let tabs = Tabs::new(tab_titles)
         .block(Block::default().borders(Borders::BOTTOM))
         .select(selected)
-        .style(Style::default().fg(Color::DarkGray))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        );
+        .style(theme::MUTED)
+        .highlight_style(theme::BRAND);
     f.render_widget(tabs, chunks[1]);
 }

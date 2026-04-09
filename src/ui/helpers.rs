@@ -1,10 +1,10 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
+use super::theme;
 use crate::api::models::{Build, BuildResult, BuildStatus, TaskState};
 use crate::app::InputMode;
 
@@ -88,10 +88,10 @@ pub fn build_elapsed(build: &Build) -> String {
 /// Render a search/filter bar. Call only when the search bar should be visible.
 pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: InputMode) {
     let search = Paragraph::new(Line::from(vec![
-        Span::styled(" / ", Style::default().fg(Color::Yellow)),
+        Span::styled(" / ", theme::SEARCH_PROMPT),
         Span::raw(query),
         if input_mode == InputMode::Search {
-            Span::styled("▌", Style::default().fg(Color::Cyan))
+            Span::styled("▌", theme::CURSOR)
         } else {
             Span::raw("")
         },
@@ -100,7 +100,7 @@ pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: Input
         Block::default()
             .borders(Borders::ALL)
             .title(" Filter ")
-            .title_style(Style::default().fg(Color::Yellow)),
+            .title_style(theme::SEARCH_PROMPT),
     );
     f.render_widget(search, area);
 }
