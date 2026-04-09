@@ -91,3 +91,56 @@ pub fn default_config_path() -> Result<PathBuf> {
 
     Ok(config_dir.join("azure-pipelines-cli").join("config.toml"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_minimal_config() {
+        let toml = r#"
+[azure_devops]
+organization = "myorg"
+project = "myproject"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.azure_devops.organization, "myorg");
+        assert_eq!(config.azure_devops.project, "myproject");
+        assert_eq!(config.display.refresh_interval_secs, 30);
+        assert_eq!(config.display.log_refresh_interval_secs, 5);
+        assert!(config.filters.folders.is_empty());
+        assert!(config.filters.definition_ids.is_empty());
+    }
+
+    #[test]
+    fn parse_full_config() {
+        let toml = r#"
+[azure_devops]
+organization = "myorg"
+project = "myproject"
+
+[display]
+refresh_interval_secs = 60
+log_refresh_interval_secs = 10
+
+[filters]
+folders = ["\\Infra", "\\Deploy"]
+definition_ids = [42, 99]
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.display.refresh_interval_secs, 60);
+        assert_eq!(config.display.log_refresh_interval_secs, 10);
+        assert_eq!(config.filters.folders, vec!["\\Infra", "\\Deploy"]);
+        assert_eq!(config.filters.definition_ids, vec![42, 99]);
+    }
+
+    #[test]
+    fn parse_config_missing_azure_devops_fails() {
+        let toml = r#"
+[display]
+refresh_interval_secs = 30
+"#;
+        let result: Result<Config, _> = toml::from_str(toml);
+        assert!(result.is_err());
+    }
+}

@@ -279,3 +279,148 @@ impl Build {
             .unwrap_or("Unknown")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- BuildStatus deserialization ---
+
+    #[test]
+    fn deserialize_build_status_camel_case() {
+        let status: BuildStatus = serde_json::from_str(r#""inProgress""#).unwrap();
+        assert_eq!(status, BuildStatus::InProgress);
+    }
+
+    #[test]
+    fn deserialize_build_status_pascal_case() {
+        let status: BuildStatus = serde_json::from_str(r#""InProgress""#).unwrap();
+        assert_eq!(status, BuildStatus::InProgress);
+    }
+
+    #[test]
+    fn deserialize_build_status_completed() {
+        let status: BuildStatus = serde_json::from_str(r#""completed""#).unwrap();
+        assert_eq!(status, BuildStatus::Completed);
+    }
+
+    #[test]
+    fn deserialize_build_status_unknown_value() {
+        let status: BuildStatus = serde_json::from_str(r#""somethingNew""#).unwrap();
+        assert_eq!(status, BuildStatus::Unknown);
+    }
+
+    // --- BuildResult deserialization ---
+
+    #[test]
+    fn deserialize_build_result_succeeded() {
+        let result: BuildResult = serde_json::from_str(r#""succeeded""#).unwrap();
+        assert_eq!(result, BuildResult::Succeeded);
+    }
+
+    #[test]
+    fn deserialize_build_result_failed() {
+        let result: BuildResult = serde_json::from_str(r#""failed""#).unwrap();
+        assert_eq!(result, BuildResult::Failed);
+    }
+
+    #[test]
+    fn deserialize_build_result_canceled_us() {
+        let result: BuildResult = serde_json::from_str(r#""canceled""#).unwrap();
+        assert_eq!(result, BuildResult::Canceled);
+    }
+
+    #[test]
+    fn deserialize_build_result_cancelled_uk() {
+        let result: BuildResult = serde_json::from_str(r#""cancelled""#).unwrap();
+        assert_eq!(result, BuildResult::Canceled);
+    }
+
+    #[test]
+    fn deserialize_build_result_partially_succeeded() {
+        let result: BuildResult = serde_json::from_str(r#""partiallySucceeded""#).unwrap();
+        assert_eq!(result, BuildResult::PartiallySucceeded);
+    }
+
+    // --- TaskState deserialization ---
+
+    #[test]
+    fn deserialize_task_state_in_progress() {
+        let state: TaskState = serde_json::from_str(r#""inProgress""#).unwrap();
+        assert_eq!(state, TaskState::InProgress);
+    }
+
+    #[test]
+    fn deserialize_task_state_pending() {
+        let state: TaskState = serde_json::from_str(r#""pending""#).unwrap();
+        assert_eq!(state, TaskState::Pending);
+    }
+
+    #[test]
+    fn deserialize_task_state_completed() {
+        let state: TaskState = serde_json::from_str(r#""completed""#).unwrap();
+        assert_eq!(state, TaskState::Completed);
+    }
+
+    // --- Build helper methods ---
+
+    #[test]
+    fn short_branch_strips_refs_heads() {
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: Some(BuildResult::Succeeded),
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/heads/main".to_string()),
+            requested_for: None,
+        };
+        assert_eq!(build.short_branch(), "main");
+    }
+
+    #[test]
+    fn short_branch_strips_refs_pull() {
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/pull/42/merge".to_string()),
+            requested_for: None,
+        };
+        assert_eq!(build.short_branch(), "42/merge");
+    }
+
+    #[test]
+    fn requestor_unknown_when_none() {
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: None,
+            requested_for: None,
+        };
+        assert_eq!(build.requestor(), "Unknown");
+    }
+}

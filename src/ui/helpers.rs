@@ -74,3 +74,101 @@ pub fn truncate(s: &str, max_len: usize) -> &str {
     }
     &s[..end]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- status_icon tests ---
+
+    #[test]
+    fn status_icon_in_progress() {
+        let (icon, color) = status_icon(BuildStatus::InProgress, None);
+        assert_eq!(icon, "⏳");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn status_icon_in_progress_overrides_result() {
+        let (icon, _) = status_icon(BuildStatus::InProgress, Some(BuildResult::Failed));
+        assert_eq!(icon, "⏳");
+    }
+
+    #[test]
+    fn status_icon_succeeded() {
+        let (icon, color) = status_icon(BuildStatus::Completed, Some(BuildResult::Succeeded));
+        assert_eq!(icon, "✓");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn status_icon_failed() {
+        let (icon, color) = status_icon(BuildStatus::Completed, Some(BuildResult::Failed));
+        assert_eq!(icon, "✗");
+        assert_eq!(color, Color::Red);
+    }
+
+    #[test]
+    fn status_icon_no_result() {
+        let (icon, color) = status_icon(BuildStatus::Completed, None);
+        assert_eq!(icon, "○");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    // --- timeline_status_icon tests ---
+
+    #[test]
+    fn timeline_result_takes_priority() {
+        let (icon, _) =
+            timeline_status_icon(Some(TaskState::InProgress), Some(BuildResult::Succeeded));
+        assert_eq!(icon, "✓");
+    }
+
+    #[test]
+    fn timeline_in_progress_state() {
+        let (icon, color) = timeline_status_icon(Some(TaskState::InProgress), None);
+        assert_eq!(icon, "⏳");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn timeline_pending_state() {
+        let (icon, color) = timeline_status_icon(Some(TaskState::Pending), None);
+        assert_eq!(icon, "○");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    // --- truncate tests ---
+
+    #[test]
+    fn truncate_short_string() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_exact_length() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_long_string() {
+        assert_eq!(truncate("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_multibyte_safe() {
+        // "café" = 5 bytes (é = 2 bytes), truncate at 4 should not split é
+        let result = truncate("café", 4);
+        assert_eq!(result, "caf");
+    }
+
+    #[test]
+    fn truncate_empty() {
+        assert_eq!(truncate("", 5), "");
+    }
+
+    #[test]
+    fn truncate_zero_len() {
+        assert_eq!(truncate("hello", 0), "");
+    }
+}
