@@ -1,10 +1,11 @@
 use chrono::Utc;
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
-use ratatui::Frame;
 
+use super::helpers::truncate;
 use crate::app::{App, View};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -47,7 +48,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("  ●  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("mscxa / OAP", Style::default().fg(Color::White)),
+        Span::styled(&app.org_project_label, Style::default().fg(Color::White)),
         Span::styled(refresh_text, Style::default().fg(Color::DarkGray)),
         error_span,
     ]));
@@ -79,12 +80,4 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         );
     f.render_widget(tabs, chunks[1]);
-}
-
-fn truncate(s: &str, max_len: usize) -> &str {
-    if s.len() > max_len {
-        &s[..max_len]
-    } else {
-        s
-    }
 }

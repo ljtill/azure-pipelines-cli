@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
 
 use crate::app::{App, InputMode};
 
@@ -43,10 +43,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, def)| {
-            let folder = def
-                .path
-                .trim_start_matches('\\')
-                .replace('\\', " / ");
+            let folder = def.path.trim_start_matches('\\').replace('\\', " / ");
 
             ListItem::new(Line::from(vec![
                 Span::styled(
@@ -63,10 +60,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = format!(
-        " All Pipelines ({}) ",
-        app.filtered_pipelines.len()
-    );
+    let title = format!(" All Pipelines ({}) ", app.filtered_pipelines.len());
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::NONE)
