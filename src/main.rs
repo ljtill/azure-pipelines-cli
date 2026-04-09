@@ -146,9 +146,10 @@ fn init_tracing() {
         return;
     };
 
-    let log_dir = dirs::home_dir()
-        .map(|h| h.join(".local/state/pipelines"))
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+    let log_dir = match dirs::home_dir() {
+        Some(h) => h.join(".local/state/pipelines"),
+        None => return, // No home directory — skip file logging
+    };
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join("debug.log");
 
