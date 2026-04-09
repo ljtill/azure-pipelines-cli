@@ -272,16 +272,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Create and push tag
-        run: |
-          git tag -a "${{ needs.version.outputs.tag }}" -m "Release ${{ needs.version.outputs.tag }}"
-          git push origin "${{ needs.version.outputs.tag }}"
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -297,6 +287,7 @@ jobs:
             DRAFT_FLAG="--draft"
           fi
           gh release create "${{ needs.version.outputs.tag }}" \
+            --target "${{ github.sha }}" \
             --title "${{ needs.version.outputs.tag }}" \
             --notes-file artifacts/release-notes.md \
             $DRAFT_FLAG \
