@@ -1,0 +1,70 @@
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::Frame;
+
+pub fn draw(f: &mut Frame) {
+    let area = centered_rect(60, 70, f.area());
+
+    f.render_widget(Clear, area);
+
+    let help_text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Navigation", Style::default().add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from("  ↑ / ↓          Move selection up / down"),
+        Line::from("  Enter          Drill into selected item"),
+        Line::from("  Esc            Go back to previous view"),
+        Line::from("  PgUp / PgDn    Scroll log content"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Views", Style::default().add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from("  1              Dashboard (grouped by folder)"),
+        Line::from("  2              All Pipelines (flat list)"),
+        Line::from("  3              Active Runs"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Actions", Style::default().add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from("  /              Search / filter (Pipelines view)"),
+        Line::from("  r              Force data refresh"),
+        Line::from("  ?              Toggle this help"),
+        Line::from("  q              Quit"),
+        Line::from(""),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Help — Keybindings ")
+        .title_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(Color::Black));
+
+    let help = Paragraph::new(help_text).block(block);
+    f.render_widget(help, area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Percentage(percent_y),
+        Constraint::Percentage((100 - percent_y) / 2),
+    ])
+    .split(r);
+
+    Layout::horizontal([
+        Constraint::Percentage((100 - percent_x) / 2),
+        Constraint::Percentage(percent_x),
+        Constraint::Percentage((100 - percent_x) / 2),
+    ])
+    .split(popup_layout[1])[1]
+}

@@ -1,0 +1,53 @@
+pub struct Endpoints {
+    base_url: String,
+}
+
+impl Endpoints {
+    pub fn new(organization: &str, project: &str) -> Self {
+        Self {
+            base_url: format!(
+                "https://dev.azure.com/{}/{}/_apis",
+                organization, project
+            ),
+        }
+    }
+
+    pub fn definitions(&self) -> String {
+        format!("{}/build/definitions?api-version=7.1", self.base_url)
+    }
+
+    pub fn builds_active(&self) -> String {
+        format!(
+            "{}/build/builds?statusFilter=inProgress&api-version=7.1&$top=100",
+            self.base_url
+        )
+    }
+
+    pub fn builds_recent(&self) -> String {
+        format!(
+            "{}/build/builds?api-version=7.1&$top=100&queryOrder=startTimeDescending",
+            self.base_url
+        )
+    }
+
+    pub fn builds_for_definition(&self, definition_id: u32) -> String {
+        format!(
+            "{}/build/builds?definitions={}&api-version=7.1&$top=20&queryOrder=startTimeDescending",
+            self.base_url, definition_id
+        )
+    }
+
+    pub fn build_timeline(&self, build_id: u32) -> String {
+        format!(
+            "{}/build/builds/{}/timeline?api-version=7.1",
+            self.base_url, build_id
+        )
+    }
+
+    pub fn build_log(&self, build_id: u32, log_id: u32) -> String {
+        format!(
+            "{}/build/builds/{}/logs/{}?api-version=7.1",
+            self.base_url, build_id, log_id
+        )
+    }
+}
