@@ -33,7 +33,7 @@ impl AdoClient {
 
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
         let token = self.auth.token().await?;
-        tracing::debug!(method = "GET", url, "api request");
+        tracing::debug!(method = "GET", url = url_without_query(url), "api request");
         let resp = self
             .http
             .get(url)
@@ -53,7 +53,7 @@ impl AdoClient {
             let full_url = paginated_url(url, continuation_token.as_deref())?;
 
             let token = self.auth.token().await?;
-            tracing::debug!(method = "GET", url = %full_url, "api paginated request");
+            tracing::debug!(method = "GET", url = %url_without_query(full_url.as_str()), "api paginated request");
             let resp = self
                 .http
                 .get(full_url)
@@ -82,7 +82,11 @@ impl AdoClient {
 
     async fn get_text(&self, url: &str) -> Result<String> {
         let token = self.auth.token().await?;
-        tracing::debug!(method = "GET", url, "api text request");
+        tracing::debug!(
+            method = "GET",
+            url = url_without_query(url),
+            "api text request"
+        );
         let resp = self
             .http
             .get(url)
@@ -95,7 +99,11 @@ impl AdoClient {
 
     async fn patch_json<B: serde::Serialize>(&self, url: &str, body: &B) -> Result<()> {
         let token = self.auth.token().await?;
-        tracing::debug!(method = "PATCH", url, "api request");
+        tracing::debug!(
+            method = "PATCH",
+            url = url_without_query(url),
+            "api request"
+        );
         self.http
             .patch(url)
             .bearer_auth(&token)
@@ -112,7 +120,7 @@ impl AdoClient {
         body: &B,
     ) -> Result<T> {
         let token = self.auth.token().await?;
-        tracing::debug!(method = "POST", url, "api request");
+        tracing::debug!(method = "POST", url = url_without_query(url), "api request");
         let resp = self
             .http
             .post(url)
@@ -223,6 +231,11 @@ fn paginated_url(base_url: &str, continuation_token: Option<&str>) -> Result<Url
             .append_pair("continuationToken", token);
     }
     Ok(url)
+}
+
+/// Return the URL portion before the query string for logging.
+fn url_without_query(url: &str) -> &str {
+    url.split('?').next().unwrap_or(url)
 }
 
 #[cfg(test)]
