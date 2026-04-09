@@ -271,8 +271,8 @@ impl LogViewerState {
                         .timeline_rows
                         .iter()
                         .enumerate()
+                        .take(index)
                         .rev()
-                        .take(index + 1)
                         .find(|(_, r)| {
                             matches!(r, TimelineRow::Job { id, .. } if id == parent_job_id)
                         })
@@ -285,8 +285,8 @@ impl LogViewerState {
                         .timeline_rows
                         .iter()
                         .enumerate()
+                        .take(index)
                         .rev()
-                        .take(index + 1)
                         .find(|(_, r)| {
                             matches!(r, TimelineRow::Stage { id, .. } if id == parent_stage_id)
                         })

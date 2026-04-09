@@ -1,6 +1,19 @@
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+
 const API_VERSION: &str = "7.1";
 const TOP_BUILDS: u32 = 100;
 const TOP_DEFINITION_BUILDS: u32 = 20;
+
+/// Characters that must be percent-encoded in URL path segments.
+const PATH_SEGMENT_ENCODE: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'#')
+    .add(b'?')
+    .add(b'/')
+    .add(b'&')
+    .add(b'=')
+    .add(b'+')
+    .add(b'%');
 
 #[derive(Clone)]
 pub struct Endpoints {
@@ -10,9 +23,11 @@ pub struct Endpoints {
 
 impl Endpoints {
     pub fn new(organization: &str, project: &str) -> Self {
+        let org = utf8_percent_encode(organization, PATH_SEGMENT_ENCODE).to_string();
+        let proj = utf8_percent_encode(project, PATH_SEGMENT_ENCODE).to_string();
         Self {
-            base_url: format!("https://dev.azure.com/{}/{}/_apis", organization, project),
-            web_base_url: format!("https://dev.azure.com/{}/{}", organization, project),
+            base_url: format!("https://dev.azure.com/{}/{}/_apis", org, proj),
+            web_base_url: format!("https://dev.azure.com/{}/{}", org, proj),
         }
     }
 
@@ -223,5 +238,12 @@ mod tests {
             ep().web_definition(10),
             format!("{WEB_BASE}/_build?definitionId=10")
         );
+    }
+
+    #[test]
+    fn endpoints_encode_special_characters() {
+        let ep = Endpoints::new("my org", "my project");
+        assert!(ep.definitions().contains("my%20org"));
+        assert!(ep.definitions().contains("my%20project"));
     }
 }

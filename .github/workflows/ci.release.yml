@@ -245,6 +245,15 @@ jobs:
           echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
+      - name: Update Cargo.toml version
+        shell: bash
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+          echo "Updated Cargo.toml to version ${VERSION}"
+          grep '^version' Cargo.toml
+
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
@@ -273,7 +282,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: artifacts/
           merge-multiple: true

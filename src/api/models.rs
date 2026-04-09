@@ -158,13 +158,6 @@ pub struct ListResponse<T> {
 // --- Pipeline Definitions ---
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct DefinitionListResponse {
-    pub value: Vec<PipelineDefinition>,
-    #[allow(dead_code)]
-    pub count: u32,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 pub struct PipelineDefinition {
     pub id: u32,
     pub name: String,
@@ -593,8 +586,8 @@ mod tests {
             ],
             "count": 2
         }"#;
-        let resp: DefinitionListResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(resp.count, 2);
+        let resp: ListResponse<PipelineDefinition> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.count, Some(2));
         assert_eq!(resp.value.len(), 2);
         assert_eq!(resp.value[0].name, "CI");
         assert_eq!(resp.value[1].path, "\\Deploy");

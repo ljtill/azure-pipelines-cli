@@ -908,4 +908,218 @@ mod tests {
             Some("approval-gate-1".to_string())
         );
     }
+
+    // =======================================================================
+    // Regression: find_timeline_parent_index with large timelines
+    // =======================================================================
+
+    #[test]
+    fn find_timeline_parent_index_large_timeline() {
+        // 2 stages × 2 jobs × 3 tasks = 14 rows when fully expanded.
+        let timeline = BuildTimeline {
+            records: vec![
+                // Stage 1
+                make_record(
+                    "s1",
+                    None,
+                    "Stage 1",
+                    "Stage",
+                    1,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    None,
+                ),
+                make_record(
+                    "p1",
+                    Some("s1"),
+                    "Job 1",
+                    "Phase",
+                    1,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    None,
+                ),
+                make_record(
+                    "t1",
+                    Some("p1"),
+                    "Task A",
+                    "Task",
+                    1,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(10),
+                ),
+                make_record(
+                    "t2",
+                    Some("p1"),
+                    "Task B",
+                    "Task",
+                    2,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(11),
+                ),
+                make_record(
+                    "t3",
+                    Some("p1"),
+                    "Task C",
+                    "Task",
+                    3,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(12),
+                ),
+                make_record(
+                    "p2",
+                    Some("s1"),
+                    "Job 2",
+                    "Phase",
+                    2,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    None,
+                ),
+                make_record(
+                    "t4",
+                    Some("p2"),
+                    "Task D",
+                    "Task",
+                    1,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(13),
+                ),
+                make_record(
+                    "t5",
+                    Some("p2"),
+                    "Task E",
+                    "Task",
+                    2,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(14),
+                ),
+                make_record(
+                    "t6",
+                    Some("p2"),
+                    "Task F",
+                    "Task",
+                    3,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(15),
+                ),
+                // Stage 2
+                make_record(
+                    "s2",
+                    None,
+                    "Stage 2",
+                    "Stage",
+                    2,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    None,
+                ),
+                make_record(
+                    "p3",
+                    Some("s2"),
+                    "Job 3",
+                    "Phase",
+                    1,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    None,
+                ),
+                make_record(
+                    "t7",
+                    Some("p3"),
+                    "Task G",
+                    "Task",
+                    1,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(16),
+                ),
+                make_record(
+                    "t8",
+                    Some("p3"),
+                    "Task H",
+                    "Task",
+                    2,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(17),
+                ),
+                make_record(
+                    "t9",
+                    Some("p3"),
+                    "Task I",
+                    "Task",
+                    3,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(18),
+                ),
+            ],
+        };
+
+        let state = state_with_expanded_timeline(
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+            timeline,
+        );
+
+        // Expected expanded layout:
+        //  0: Stage "s1"
+        //  1:   Job "p1"
+        //  2:     Task "t1"  (parent_job_id = "p1")
+        //  3:     Task "t2"
+        //  4:     Task "t3"
+        //  5:   Job "p2"
+        //  6:     Task "t4"
+        //  ...
+        // 9:  Stage "s2"
+        // 10:   Job "p3"
+        // 11:     Task "t7"
+        // ...
+
+        let rows = state.timeline_rows();
+        assert!(rows.len() >= 14, "expected ≥14 rows, got {}", rows.len());
+
+        // Task at index 2 → parent should be Job at index 1.
+        assert_eq!(
+            state.find_timeline_parent_index(2),
+            Some(1),
+            "Task at idx 2 should find parent Job at idx 1"
+        );
+
+        // Job at index 1 → parent should be Stage at index 0.
+        assert_eq!(
+            state.find_timeline_parent_index(1),
+            Some(0),
+            "Job at idx 1 should find parent Stage at idx 0"
+        );
+
+        // Stage at index 0 → no parent.
+        assert_eq!(
+            state.find_timeline_parent_index(0),
+            None,
+            "Stage at idx 0 should have no parent"
+        );
+
+        // Task in stage 2 should also find its parent job correctly.
+        let s2_task_idx = rows
+            .iter()
+            .position(|r| matches!(r, TimelineRow::Task { name, .. } if name == "Task G"))
+            .expect("Task G should be in rows");
+        let s2_job_idx = rows
+            .iter()
+            .position(|r| matches!(r, TimelineRow::Job { id, .. } if id == "p3"))
+            .expect("Job p3 should be in rows");
+        assert_eq!(
+            state.find_timeline_parent_index(s2_task_idx),
+            Some(s2_job_idx),
+            "Task G should find parent Job p3"
+        );
+    }
 }

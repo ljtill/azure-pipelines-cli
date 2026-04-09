@@ -72,6 +72,10 @@ definition_ids = [42, 99]          # only show these pipeline definition IDs
 check_for_updates = true  # set to false to disable background update checks
 ```
 
+### Debug Logging
+
+Set `RUST_LOG=debug` (or `info`, `trace`) to enable file-based logging at `~/.local/state/pipelines/debug.log`. Logs are appended without rotation — remove the file manually if it grows large.
+
 ## Usage
 
 ```bash

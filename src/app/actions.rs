@@ -693,6 +693,13 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
 
 /// Open a URL in the platform's default browser.
 fn open_url(url: &str) -> std::io::Result<std::process::Child> {
+    // Only allow https:// URLs to prevent command injection
+    if !url.starts_with("https://") {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "only https:// URLs are supported",
+        ));
+    }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open").arg(url).spawn()

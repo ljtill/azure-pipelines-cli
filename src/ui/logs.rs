@@ -204,6 +204,9 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         } else {
             app.log_viewer.log_scroll_offset().min(max_scroll)
         };
+        // Note: ratatui's scroll() accepts u16, so manual scrolling is capped at
+        // ~65k lines. Auto-scroll (follow mode) bypasses this by computing max_scroll
+        // from the full u32 line count. For extremely long logs, use follow mode.
         let scroll_offset = scroll_offset_u32.min(u16::MAX as u32) as u16;
 
         let title_style = if app.log_viewer.is_following() {

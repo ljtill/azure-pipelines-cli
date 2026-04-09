@@ -3,6 +3,9 @@ name = "azure-pipelines-cli"
 version = "0.1.0"
 edition = "2024"
 description = "A terminal dashboard for monitoring Azure DevOps pipelines"
+repository = "https://github.com/ljtill/azure-pipelines-cli"
+readme = "README.md"
+rust-version = "1.85"
 
 [[bin]]
 name = "pipelines"
@@ -36,3 +39,4 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3"
+percent-encoding = "2"

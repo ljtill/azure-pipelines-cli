@@ -47,4 +47,5 @@ pub mod events;
 pub mod ui;
 pub mod update;
 
+// TODO: gate behind a `test-helpers` feature to exclude from release builds
 pub mod test_helpers;

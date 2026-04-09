@@ -8,8 +8,8 @@ fn load_fixture(name: &str) -> String {
 #[test]
 fn deserialize_definitions_fixture() {
     let json = load_fixture("definitions.json");
-    let resp: DefinitionListResponse = serde_json::from_str(&json).unwrap();
-    assert_eq!(resp.count, 2);
+    let resp: ListResponse<PipelineDefinition> = serde_json::from_str(&json).unwrap();
+    assert_eq!(resp.count, Some(2));
     assert_eq!(resp.value.len(), 2);
     assert_eq!(resp.value[0].name, "CI Pipeline");
     assert_eq!(resp.value[1].path, "\\Infra");

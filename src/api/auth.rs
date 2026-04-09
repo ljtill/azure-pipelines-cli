@@ -53,7 +53,12 @@ impl AdoAuth {
         let response = self
             .credential
             .get_token(&[&format!("{ADO_RESOURCE}/.default")], None)
-            .await?;
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Authentication failed — ensure you are logged in with `az login` or `azd auth login`.\n\nUnderlying error: {e}"
+                )
+            })?;
 
         tracing::debug!("auth token refreshed");
         let secret = response.token.secret().to_string();
