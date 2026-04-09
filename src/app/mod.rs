@@ -1,6 +1,7 @@
 pub mod actions;
 mod dashboard;
 mod messages;
+pub mod notifications;
 pub mod run;
 mod timeline;
 
@@ -12,6 +13,8 @@ use std::collections::{BTreeMap, HashSet};
 use chrono::{DateTime, Utc};
 
 use crate::api::models::{Approval, Build, BuildTimeline, PipelineDefinition};
+
+use notifications::Notifications;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -107,7 +110,7 @@ pub struct App {
 
     // Status
     pub last_refresh: Option<DateTime<Utc>>,
-    pub error_message: Option<String>,
+    pub notifications: Notifications,
     pub loading: bool,
 }
 
@@ -193,7 +196,7 @@ impl App {
             filtered_active_builds: Vec::new(),
 
             last_refresh: None,
-            error_message: None,
+            notifications: Notifications::new(10),
             loading: false,
         }
     }

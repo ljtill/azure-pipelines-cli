@@ -31,10 +31,15 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         " ⟳ --".to_string()
     };
 
-    let error_span = if let Some(err) = &app.error_message {
+    let error_span = if let Some(notif) = app.notifications.clone_current() {
+        let (prefix, color) = match notif.level {
+            crate::app::notifications::NotificationLevel::Error => ("⚠", Color::Red),
+            crate::app::notifications::NotificationLevel::Success => ("✓", Color::Green),
+            crate::app::notifications::NotificationLevel::Info => ("ℹ", Color::Cyan),
+        };
         Span::styled(
-            format!("  ⚠ {}", truncate(err, 60)),
-            Style::default().fg(Color::Red),
+            format!("  {} {}", prefix, truncate(&notif.message, 60)),
+            Style::default().fg(color),
         )
     } else {
         Span::raw("")

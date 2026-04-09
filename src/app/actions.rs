@@ -227,7 +227,7 @@ pub fn handle_message(
             app.rebuild_filtered_active_builds();
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
-            app.error_message = None;
+            app.notifications.clear();
         }
         AppMessage::BuildHistory { builds } => {
             app.definition_builds = builds;
@@ -304,9 +304,10 @@ pub fn handle_message(
         }
         AppMessage::Error(msg) => {
             tracing::warn!(error = %msg, "app error");
-            app.error_message = Some(msg);
+            app.notifications.error(msg);
         }
         AppMessage::BuildCancelled => {
+            app.notifications.success("Build cancelled");
             spawn_data_refresh(client, tx);
             if let Some(build) = &app.log_viewer.selected_build {
                 spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
@@ -316,16 +317,22 @@ pub fn handle_message(
             app.selected_builds.clear();
             spawn_data_refresh(client, tx);
             if failed > 0 {
-                app.error_message = Some(format!("Cancelled {cancelled}, {failed} failed"));
+                app.notifications
+                    .error(format!("Cancelled {cancelled}, {failed} failed"));
+            } else {
+                app.notifications
+                    .success(format!("Cancelled {cancelled} build(s)"));
             }
         }
         AppMessage::StageRetried => {
+            app.notifications.success("Stage retried");
             if let Some(build) = &app.log_viewer.selected_build {
                 spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
             }
             spawn_data_refresh(client, tx);
         }
         AppMessage::CheckUpdated => {
+            app.notifications.success("Check updated");
             spawn_data_refresh(client, tx);
             if let Some(build) = &app.log_viewer.selected_build {
                 spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
