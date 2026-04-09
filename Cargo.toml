@@ -6,7 +6,7 @@ description = "A terminal dashboard for monitoring Azure DevOps pipelines"
 
 [dependencies]
 # TUI
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.29"
 
 # Async runtime
