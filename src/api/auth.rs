@@ -55,6 +55,7 @@ impl AdoAuth {
             .get_token(&[&format!("{ADO_RESOURCE}/.default")], None)
             .await?;
 
+        tracing::debug!("auth token refreshed");
         let secret = response.token.secret().to_string();
         let secs_until = response
             .expires_on

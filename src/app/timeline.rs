@@ -4,13 +4,14 @@ use crate::api::models::{BuildResult, TaskState};
 
 use super::App;
 
-type TaskEntry = (
-    String,
-    Option<TaskState>,
-    Option<BuildResult>,
-    Option<String>,
-    u32,
-);
+/// A task record extracted from the timeline for auto-selection.
+struct TaskCandidate {
+    name: String,
+    state: Option<TaskState>,
+    result: Option<BuildResult>,
+    parent_id: Option<String>,
+    log_id: u32,
+}
 
 /// A row in the timeline tree view — Stage, Job, Task, or Checkpoint.
 #[derive(Debug, Clone)]
@@ -55,18 +56,16 @@ impl App {
     /// Returns (row_index, log_id) if found. Ensures parent stage/job are expanded.
     pub fn auto_select_log_entry(&mut self) -> Option<(usize, u32)> {
         let timeline = self.build_timeline.as_ref()?;
-        let tasks: Vec<TaskEntry> = timeline
+        let tasks: Vec<TaskCandidate> = timeline
             .records
             .iter()
             .filter(|r| r.record_type == "Task" && r.log.is_some())
-            .map(|r| {
-                (
-                    r.name.clone(),
-                    r.state,
-                    r.result,
-                    r.parent_id.clone(),
-                    r.log.as_ref().unwrap().id,
-                )
+            .map(|r| TaskCandidate {
+                name: r.name.clone(),
+                state: r.state,
+                result: r.result,
+                parent_id: r.parent_id.clone(),
+                log_id: r.log.as_ref().unwrap().id,
             })
             .collect();
 
@@ -83,19 +82,19 @@ impl App {
         let best_idx = if is_running {
             tasks
                 .iter()
-                .rposition(|t| t.1 == Some(TaskState::InProgress))
+                .rposition(|t| t.state == Some(TaskState::InProgress))
                 .or(Some(tasks.len() - 1))
         } else {
             tasks
                 .iter()
-                .rposition(|t| t.2 == Some(BuildResult::Failed))
+                .rposition(|t| t.result == Some(BuildResult::Failed))
                 .or(Some(tasks.len() - 1))
         };
         let best_idx = best_idx?;
-        let (best_name, _, _, parent_job_id, log_id) = &tasks[best_idx];
-        let log_id = *log_id;
-        let best_name = best_name.clone();
-        let parent_job_id = parent_job_id.clone();
+        let best = &tasks[best_idx];
+        let log_id = best.log_id;
+        let best_name = best.name.clone();
+        let parent_job_id = best.parent_id.clone();
 
         // Walk up the ancestor chain to expand all parent nodes.
         if let Some(timeline) = self.build_timeline.as_ref() {

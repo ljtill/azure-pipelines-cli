@@ -14,6 +14,7 @@ pub fn poll_event(timeout: Duration) -> Result<Option<Event>> {
 }
 
 /// The action requested by the user after handling a key event.
+#[derive(Debug)]
 pub enum Action {
     None,
     Quit,

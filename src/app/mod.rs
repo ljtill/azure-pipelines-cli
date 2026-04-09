@@ -224,6 +224,7 @@ impl App {
     }
 
     pub fn navigate_to_log_viewer(&mut self, build: Build) {
+        tracing::info!(build_id = build.id, "navigating to log viewer");
         self.selected_build = Some(build);
         self.build_timeline = None;
         self.timeline_rows.clear();

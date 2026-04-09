@@ -33,6 +33,7 @@ impl AdoClient {
 
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
         let token = self.auth.token().await?;
+        tracing::debug!(method = "GET", url, "api request");
         let resp = self
             .http
             .get(url)
@@ -46,6 +47,7 @@ impl AdoClient {
 
     async fn get_text(&self, url: &str) -> Result<String> {
         let token = self.auth.token().await?;
+        tracing::debug!(method = "GET", url, "api text request");
         let resp = self
             .http
             .get(url)
@@ -58,6 +60,7 @@ impl AdoClient {
 
     async fn patch_json<B: serde::Serialize>(&self, url: &str, body: &B) -> Result<()> {
         let token = self.auth.token().await?;
+        tracing::debug!(method = "PATCH", url, "api request");
         self.http
             .patch(url)
             .bearer_auth(&token)
@@ -74,6 +77,7 @@ impl AdoClient {
         body: &B,
     ) -> Result<T> {
         let token = self.auth.token().await?;
+        tracing::debug!(method = "POST", url, "api request");
         let resp = self
             .http
             .post(url)
