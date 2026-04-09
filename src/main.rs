@@ -79,6 +79,7 @@ async fn run(
     let mut app = App::new(
         &config.azure_devops.organization,
         &config.azure_devops.project,
+        config,
     );
     let refresh_interval = Duration::from_secs(config.display.refresh_interval_secs);
     let log_refresh_interval = Duration::from_secs(config.display.log_refresh_interval_secs);

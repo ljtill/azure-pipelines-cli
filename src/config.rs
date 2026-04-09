@@ -9,7 +9,6 @@ pub struct Config {
     #[serde(default)]
     pub display: DisplayConfig,
     #[serde(default)]
-    #[allow(dead_code)]
     pub filters: FiltersConfig,
 }
 
@@ -36,11 +35,13 @@ impl Default for DisplayConfig {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Default, Deserialize)]
 pub struct FiltersConfig {
+    /// Only show definitions under these folder paths (e.g. `["\\Infra", "\\Deploy"]`).
+    /// Empty means show all folders.
     #[serde(default)]
     pub folders: Vec<String>,
+    /// Only show these specific definition IDs. Empty means show all.
     #[serde(default)]
     pub definition_ids: Vec<u32>,
 }

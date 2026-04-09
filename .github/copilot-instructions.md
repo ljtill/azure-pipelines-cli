@@ -29,6 +29,8 @@
 
 ## Key conventions
 
+- This repository uses a direct-to-`main` workflow. Commit and push straight to `main` by default.
+- Do not create worktrees, feature branches, or PR-only flows here unless explicitly asked.
 - Keep network orchestration out of UI modules. New remote work should normally be modeled as `Action` -> `spawn_*` helper in `main.rs` -> `AppMessage` -> `handle_message`.
 - Preserve `log_generation` behavior when touching log/timeline code. It is the stale-response guard that prevents old async log/timeline results from overwriting the newly selected build.
 - Azure DevOps status/result strings are treated case-insensitively in current code. Reuse `eq_ignore_ascii_case` and the shared UI helpers rather than matching a single exact casing.

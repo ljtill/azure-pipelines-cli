@@ -90,6 +90,10 @@ pub struct App {
     pub show_help: bool,
     pub org_project_label: String,
 
+    // Filters
+    pub filter_folders: Vec<String>,
+    pub filter_definition_ids: Vec<u32>,
+
     // Data
     pub definitions: Vec<PipelineDefinition>,
     pub recent_builds: Vec<Build>,
@@ -135,7 +139,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(organization: &str, project: &str) -> Self {
+    pub fn new(organization: &str, project: &str, config: &crate::config::Config) -> Self {
         Self {
             view: View::Dashboard,
             previous_view: None,
@@ -143,6 +147,8 @@ impl App {
             running: true,
             show_help: false,
             org_project_label: format!("{} / {}", organization, project),
+            filter_folders: config.filters.folders.clone(),
+            filter_definition_ids: config.filters.definition_ids.clone(),
 
             definitions: Vec::new(),
             recent_builds: Vec::new(),
@@ -183,6 +189,19 @@ impl App {
         }
     }
 
+    /// Check if a definition passes the configured filters.
+    fn matches_filter(&self, def: &PipelineDefinition) -> bool {
+        if !self.filter_definition_ids.is_empty() && !self.filter_definition_ids.contains(&def.id) {
+            return false;
+        }
+        if !self.filter_folders.is_empty()
+            && !self.filter_folders.iter().any(|f| def.path.starts_with(f))
+        {
+            return false;
+        }
+        true
+    }
+
     /// Rebuild the dashboard rows from definitions + latest builds, grouped by folder.
     pub fn rebuild_dashboard_rows(&mut self) {
         let mut rows = Vec::new();
@@ -190,6 +209,9 @@ impl App {
             BTreeMap::new();
 
         for def in &self.definitions {
+            if !self.matches_filter(def) {
+                continue;
+            }
             let folder = if def.path.is_empty() || def.path == "\\" {
                 "\\".to_string()
             } else {
@@ -231,13 +253,13 @@ impl App {
 
     /// Rebuild the filtered pipelines list from search query.
     pub fn rebuild_filtered_pipelines(&mut self) {
+        let base = self.definitions.iter().filter(|d| self.matches_filter(d));
+
         if self.search_query.is_empty() {
-            self.filtered_pipelines = self.definitions.clone();
+            self.filtered_pipelines = base.cloned().collect();
         } else {
             let q = self.search_query.to_lowercase();
-            self.filtered_pipelines = self
-                .definitions
-                .iter()
+            self.filtered_pipelines = base
                 .filter(|d| {
                     d.name.to_lowercase().contains(&q) || d.path.to_lowercase().contains(&q)
                 })
