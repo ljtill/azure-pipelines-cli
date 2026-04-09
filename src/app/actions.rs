@@ -129,6 +129,7 @@ pub fn handle_action(
             let _ = open_url(&url);
         }
         Action::CancelBuild(build_id) => {
+            tracing::info!(build_id, "cancelling build");
             spawn_api(
                 client,
                 tx,
@@ -138,6 +139,7 @@ pub fn handle_action(
             );
         }
         Action::CancelBuilds(build_ids) => {
+            tracing::info!(count = build_ids.len(), "cancelling builds");
             let client = client.clone();
             let tx = tx.clone();
             tokio::spawn(async move {
@@ -163,6 +165,7 @@ pub fn handle_action(
             build_id,
             stage_ref_name,
         } => {
+            tracing::info!(build_id, stage = stage_ref_name, "retrying stage");
             spawn_api(
                 client,
                 tx,
@@ -172,6 +175,7 @@ pub fn handle_action(
             );
         }
         Action::QueuePipeline(definition_id) => {
+            tracing::info!(definition_id, "queuing pipeline");
             spawn_api(
                 client,
                 tx,
@@ -189,6 +193,7 @@ pub fn handle_action(
             );
         }
         Action::ApproveCheck(approval_id) => {
+            tracing::info!("approving check");
             spawn_api(
                 client,
                 tx,
@@ -201,6 +206,7 @@ pub fn handle_action(
             );
         }
         Action::RejectCheck(approval_id) => {
+            tracing::info!("rejecting check");
             spawn_api(
                 client,
                 tx,

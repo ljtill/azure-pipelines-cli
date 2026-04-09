@@ -100,14 +100,28 @@ async fn main() -> Result<()> {
     let mut guard = TerminalGuard::new()?;
 
     let config = match early_config {
-        Some(c) => c,
+        Some(c) => {
+            tracing::info!(
+                org = c.azure_devops.organization,
+                project = c.azure_devops.project,
+                "app starting"
+            );
+            c
+        }
         None => {
             // No config file — run interactive setup inside the TUI.
             let result =
                 azure_pipelines_cli::ui::setup::run_setup(&mut guard.terminal, &config_path);
 
             match result {
-                Ok(Some(config)) => config,
+                Ok(Some(config)) => {
+                    tracing::info!(
+                        org = config.azure_devops.organization,
+                        project = config.azure_devops.project,
+                        "config created via setup"
+                    );
+                    config
+                }
                 Ok(None) => return Ok(()),
                 Err(e) => return Err(e),
             }
@@ -119,6 +133,8 @@ async fn main() -> Result<()> {
         &config.azure_devops.project,
     )
     .await?;
+
+    tracing::info!("api client connected");
 
     app::run::run(&mut guard.terminal, client, &config).await
 }

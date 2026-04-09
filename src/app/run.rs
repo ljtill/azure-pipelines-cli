@@ -45,6 +45,11 @@ pub async fn run(
         });
     }
 
+    tracing::info!(
+        refresh_secs = config.display.refresh_interval_secs,
+        "event loop starting"
+    );
+
     loop {
         if !app.running {
             break;
@@ -105,6 +110,8 @@ pub async fn run(
             _ = ui_tick.tick() => {}
         }
     }
+
+    tracing::info!("app shutting down");
 
     Ok(())
 }
