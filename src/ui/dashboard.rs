@@ -9,6 +9,9 @@ use super::theme;
 use crate::app::{App, DashboardRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
+    // Fixed overhead: indent(4) + icon(2) + build_info(~75) = ~81
+    let name_width = (area.width as usize).saturating_sub(81).clamp(15, 60);
+
     let items: Vec<ListItem> = app
         .dashboard_rows
         .iter()
@@ -53,7 +56,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 ListItem::new(Line::from(vec![
                     Span::raw("    "),
                     Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
-                    Span::styled(format!("{:<40} ", definition.name), theme::TEXT),
+                    Span::styled(
+                        format!(
+                            "{:<width$} ",
+                            truncate(&definition.name, name_width),
+                            width = name_width
+                        ),
+                        theme::TEXT,
+                    ),
                     Span::styled(build_info, theme::MUTED),
                 ]))
                 .style(if i == app.dashboard_nav.index() {

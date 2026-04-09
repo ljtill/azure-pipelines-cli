@@ -4,7 +4,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
-use super::helpers::{build_elapsed, draw_search_bar};
+use super::helpers::{build_elapsed, draw_search_bar, truncate};
 use super::theme;
 use crate::app::{App, InputMode};
 
@@ -26,6 +26,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         draw_search_bar(f, chunks[0], &app.search_query, app.input_mode);
     }
 
+    // Fixed overhead: check(2) + icon(4) + build_number(16) + branch(27) + requestor(21) + elapsed(10) = 80
+    let name_width = (area.width as usize).saturating_sub(81).clamp(15, 60);
+
     let items: Vec<ListItem> = app
         .filtered_active_builds
         .iter()
@@ -45,7 +48,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     },
                 ),
                 Span::styled(" ⏳ ", theme::WARNING),
-                Span::styled(format!("{:<36} ", build.definition.name), theme::TEXT),
+                Span::styled(
+                    format!(
+                        "{:<width$} ",
+                        truncate(&build.definition.name, name_width),
+                        width = name_width
+                    ),
+                    theme::TEXT,
+                ),
                 Span::styled(format!("#{:<14} ", build.build_number), theme::MUTED),
                 Span::styled(format!("{:<26} ", build.short_branch()), theme::BRANCH),
                 Span::styled(format!("{:<20} ", build.requestor()), theme::MUTED),
