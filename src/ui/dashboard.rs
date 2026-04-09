@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
-use super::helpers::{build_elapsed, status_icon};
+use super::helpers::{build_elapsed, status_icon, truncate};
 use crate::app::{App, DashboardRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -41,11 +41,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
                 let build_info = if let Some(b) = latest_build {
                     let branch = b.short_branch();
-                    let branch_display = if branch.len() > 25 {
-                        format!("{}…", &branch[..24])
-                    } else {
-                        branch
-                    };
+                    let branch_display = truncate(&branch, 25);
                     let elapsed = build_elapsed(b);
                     format!(
                         "#{:<14} {:<26} {:<20} {}",

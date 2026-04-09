@@ -18,7 +18,7 @@ impl AdoClient {
     pub async fn new(organization: &str, project: &str) -> Result<Self> {
         let auth = AdoAuth::new().await?;
         let http = Client::builder()
-            .user_agent("azure-pipelines-cli/0.1.0")
+            .user_agent(concat!("azure-pipelines-cli/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .build()?;

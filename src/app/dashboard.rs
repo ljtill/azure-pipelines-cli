@@ -17,6 +17,26 @@ pub enum DashboardRow {
     },
 }
 
+/// Normalize an ADO definition path to a canonical folder key.
+/// Empty or `\\` paths become `\\`; everything else is kept as-is.
+fn folder_key(path: &str) -> String {
+    if path.is_empty() || path == "\\" {
+        "\\".to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+/// Convert a raw folder key (e.g. `\\Infra\\Deploy`) to a display-friendly string.
+fn folder_display(key: &str) -> String {
+    let display = key.trim_start_matches('\\').replace('\\', " / ");
+    if display.is_empty() {
+        "Root".to_string()
+    } else {
+        display
+    }
+}
+
 impl App {
     /// Check if a definition passes the configured filters.
     fn matches_filter(&self, def: &PipelineDefinition) -> bool {
@@ -41,11 +61,7 @@ impl App {
             if !self.matches_filter(def) {
                 continue;
             }
-            let folder = if def.path.is_empty() || def.path == "\\" {
-                "\\".to_string()
-            } else {
-                def.path.clone()
-            };
+            let folder = folder_key(&def.path);
             let latest = self.latest_builds_by_def.get(&def.id).cloned();
             by_folder
                 .entry(folder)
@@ -53,17 +69,10 @@ impl App {
                 .push((def.clone(), latest));
         }
 
-        for (folder, pipelines) in &by_folder {
-            let display_path = folder.trim_start_matches('\\').replace('\\', " / ");
-            let display_path = if display_path.is_empty() {
-                "Root".to_string()
-            } else {
-                display_path
-            };
-
-            let collapsed = self.collapsed_folders.contains(folder);
+        for (key, pipelines) in &by_folder {
+            let collapsed = self.collapsed_folders.contains(key);
             rows.push(DashboardRow::FolderHeader {
-                path: display_path,
+                path: folder_display(key),
                 collapsed,
             });
 
@@ -168,19 +177,9 @@ impl App {
 
     fn find_folder_key_for_display(&self, display_path: &str) -> Option<String> {
         for def in &self.definitions {
-            let folder = if def.path.is_empty() || def.path == "\\" {
-                "\\".to_string()
-            } else {
-                def.path.clone()
-            };
-            let display = folder.trim_start_matches('\\').replace('\\', " / ");
-            let display = if display.is_empty() {
-                "Root".to_string()
-            } else {
-                display
-            };
-            if display == display_path {
-                return Some(folder);
+            let key = folder_key(&def.path);
+            if folder_display(&key) == display_path {
+                return Some(key);
             }
         }
         None

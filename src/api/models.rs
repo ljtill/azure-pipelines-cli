@@ -208,27 +208,6 @@ pub struct IdentityRef {
     pub display_name: String,
 }
 
-// --- Build Logs ---
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct BuildLogListResponse {
-    pub value: Vec<BuildLogEntry>,
-    pub count: u32,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct BuildLogEntry {
-    pub id: u32,
-    #[serde(rename = "type")]
-    pub log_type: Option<String>,
-    #[serde(rename = "lineCount")]
-    pub line_count: Option<u32>,
-    #[serde(rename = "createdOn")]
-    pub created_on: Option<DateTime<Utc>>,
-}
-
 // --- Build Timeline (stages/jobs/tasks) ---
 
 #[derive(Debug, Clone, Deserialize)]

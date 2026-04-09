@@ -208,7 +208,7 @@ fn handle_action(
         }
         Action::OpenInBrowser(url) => {
             // Fire-and-forget: open the URL in the default browser
-            let _ = std::process::Command::new("open").arg(&url).spawn();
+            let _ = open_url(&url);
         }
         Action::CancelBuild(build_id) => {
             let client = client.clone();
@@ -655,5 +655,30 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
                     .await;
             }
         });
+    }
+}
+
+/// Open a URL in the platform's default browser.
+fn open_url(url: &str) -> std::io::Result<std::process::Child> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(url).spawn()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open").arg(url).spawn()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "unsupported platform",
+        ))
     }
 }
