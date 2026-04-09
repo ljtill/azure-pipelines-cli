@@ -32,6 +32,34 @@ enum Command {
     Update,
 }
 
+/// RAII guard that sets up and restores the terminal on drop.
+struct TerminalGuard {
+    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+}
+
+impl TerminalGuard {
+    fn new() -> Result<Self> {
+        enable_raw_mode()?;
+        let mut stdout = std::io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = Terminal::new(backend)?;
+        Ok(Self { terminal })
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        );
+        let _ = self.terminal.show_cursor();
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing with file-based output (avoids polluting the TUI).
@@ -48,7 +76,7 @@ async fn main() -> Result<()> {
     // Pre-TUI checks: ensure Azure CLI or Developer CLI is available.
     check_azure_cli()?;
 
-    // Panic hook to restore terminal
+    // Panic hook to restore terminal (safety net — Drop also restores).
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         let _ = disable_raw_mode();
@@ -59,60 +87,18 @@ async fn main() -> Result<()> {
     // Resolve config path and check if it exists.
     let (config_path, config_exists) = Config::resolve_path(cli.config.as_ref())?;
 
+    let mut guard = TerminalGuard::new()?;
+
     let config = if config_exists {
         Config::load(Some(&config_path))?
     } else {
         // No config file — run interactive setup inside the TUI.
-        enable_raw_mode()?;
-        let mut stdout = std::io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-
-        let result = azure_pipelines_cli::ui::setup::run_setup(&mut terminal, &config_path);
+        let result = azure_pipelines_cli::ui::setup::run_setup(&mut guard.terminal, &config_path);
 
         match result {
-            Ok(Some(config)) => {
-                // Setup complete — hand off the terminal to the dashboard.
-                let client = AdoClient::new(
-                    &config.azure_devops.organization,
-                    &config.azure_devops.project,
-                )
-                .await?;
-
-                let run_result = app::run::run(&mut terminal, client, &config).await;
-
-                disable_raw_mode()?;
-                execute!(
-                    terminal.backend_mut(),
-                    LeaveAlternateScreen,
-                    DisableMouseCapture
-                )?;
-                terminal.show_cursor()?;
-
-                return run_result;
-            }
-            Ok(None) => {
-                // User pressed Esc — clean exit.
-                disable_raw_mode()?;
-                execute!(
-                    terminal.backend_mut(),
-                    LeaveAlternateScreen,
-                    DisableMouseCapture
-                )?;
-                terminal.show_cursor()?;
-                return Ok(());
-            }
-            Err(e) => {
-                disable_raw_mode()?;
-                execute!(
-                    terminal.backend_mut(),
-                    LeaveAlternateScreen,
-                    DisableMouseCapture
-                )?;
-                terminal.show_cursor()?;
-                return Err(e);
-            }
+            Ok(Some(config)) => config,
+            Ok(None) => return Ok(()),
+            Err(e) => return Err(e),
         }
     };
 
@@ -122,25 +108,7 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    // Terminal setup
-    enable_raw_mode()?;
-    let mut stdout = std::io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let result = app::run::run(&mut terminal, client, &config).await;
-
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    result
+    app::run::run(&mut guard.terminal, client, &config).await
 }
 
 async fn run_update() -> Result<()> {
