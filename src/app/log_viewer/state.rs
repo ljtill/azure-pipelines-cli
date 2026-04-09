@@ -22,7 +22,7 @@ pub struct LogViewerState {
     pub(super) followed_task_name: String,
     pub(super) followed_log_id: Option<u32>,
     pub(super) log_entries_nav: ListNav,
-    pub(super) log_scroll_offset: u16,
+    pub(super) log_scroll_offset: u32,
     /// The view to return to when pressing Esc from LogViewer.
     pub(super) return_to_view: View,
 }
@@ -107,7 +107,7 @@ impl LogViewerState {
         self.followed_log_id
     }
 
-    pub fn log_scroll_offset(&self) -> u16 {
+    pub fn log_scroll_offset(&self) -> u32 {
         self.log_scroll_offset
     }
 
@@ -148,7 +148,7 @@ impl LogViewerState {
     }
 
     #[allow(dead_code)]
-    pub fn set_log_scroll_offset(&mut self, offset: u16) {
+    pub fn set_log_scroll_offset(&mut self, offset: u32) {
         self.log_scroll_offset = offset;
     }
 
@@ -156,12 +156,12 @@ impl LogViewerState {
         self.log_generation = generation;
     }
 
-    pub fn scroll_up(&mut self, amount: u16) {
+    pub fn scroll_up(&mut self, amount: u32) {
         self.log_auto_scroll = false;
         self.log_scroll_offset = self.log_scroll_offset.saturating_sub(amount);
     }
 
-    pub fn scroll_down(&mut self, amount: u16) {
+    pub fn scroll_down(&mut self, amount: u32) {
         self.log_scroll_offset = self.log_scroll_offset.saturating_add(amount);
     }
 

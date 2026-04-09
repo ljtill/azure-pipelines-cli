@@ -195,15 +195,16 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             .map(|l| Line::from(Span::raw(l.as_str())))
             .collect();
 
-        let total_lines = lines.len() as u16;
-        let visible_height = area.height.saturating_sub(2);
+        let total_lines = lines.len() as u32;
+        let visible_height = area.height.saturating_sub(2) as u32;
         let max_scroll = total_lines.saturating_sub(visible_height);
 
-        let scroll_offset = if app.log_viewer.log_auto_scroll() {
+        let scroll_offset_u32 = if app.log_viewer.log_auto_scroll() {
             max_scroll
         } else {
             app.log_viewer.log_scroll_offset().min(max_scroll)
         };
+        let scroll_offset = scroll_offset_u32.min(u16::MAX as u32) as u16;
 
         let title_style = if app.log_viewer.is_following() {
             theme::FOLLOW_TITLE
