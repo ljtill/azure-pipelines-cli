@@ -5,13 +5,26 @@ const TOP_DEFINITION_BUILDS: u32 = 20;
 #[derive(Clone)]
 pub struct Endpoints {
     base_url: String,
+    web_base_url: String,
 }
 
 impl Endpoints {
     pub fn new(organization: &str, project: &str) -> Self {
         Self {
             base_url: format!("https://dev.azure.com/{}/{}/_apis", organization, project),
+            web_base_url: format!("https://dev.azure.com/{}/{}", organization, project),
         }
+    }
+
+    pub fn web_build(&self, build_id: u32) -> String {
+        format!("{}/_build/results?buildId={}", self.web_base_url, build_id)
+    }
+
+    pub fn web_definition(&self, definition_id: u32) -> String {
+        format!(
+            "{}/_build?definitionId={}",
+            self.web_base_url, definition_id
+        )
     }
 
     pub fn definitions(&self) -> String {
@@ -191,6 +204,24 @@ mod tests {
         assert_eq!(
             ep().approvals_update(),
             format!("{BASE}/pipelines/approvals?api-version=7.1")
+        );
+    }
+
+    const WEB_BASE: &str = "https://dev.azure.com/myorg/myproj";
+
+    #[test]
+    fn web_build_url() {
+        assert_eq!(
+            ep().web_build(42),
+            format!("{WEB_BASE}/_build/results?buildId=42")
+        );
+    }
+
+    #[test]
+    fn web_definition_url() {
+        assert_eq!(
+            ep().web_definition(10),
+            format!("{WEB_BASE}/_build?definitionId=10")
         );
     }
 }
