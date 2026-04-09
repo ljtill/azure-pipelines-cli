@@ -26,8 +26,8 @@ Create `~/.config/azure-pipelines-cli/config.toml`:
 
 ```toml
 [azure_devops]
-organization = "mscxa"
-project = "OAP"
+organization = "your-org"
+project = "your-project"
 
 [display]
 refresh_interval_secs = 30
