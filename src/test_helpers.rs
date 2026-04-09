@@ -204,7 +204,12 @@ pub fn make_app() -> App {
     app.latest_builds_by_def.insert(2, b2);
     app.latest_builds_by_def.insert(3, b3);
 
-    app.rebuild_dashboard_rows();
+    app.dashboard.rebuild(
+        &app.definitions,
+        &app.latest_builds_by_def,
+        &app.filter_folders,
+        &app.filter_definition_ids,
+    );
     app.pipelines.rebuild(
         &app.definitions,
         &app.filter_folders,
@@ -276,7 +281,7 @@ mod tests {
         let app = make_app();
         assert_eq!(app.definitions.len(), 3);
         assert_eq!(app.recent_builds.len(), 3);
-        assert!(!app.dashboard_rows.is_empty());
+        assert!(!app.dashboard.rows.is_empty());
         assert!(!app.pipelines.filtered.is_empty());
     }
 }

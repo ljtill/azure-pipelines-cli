@@ -396,14 +396,18 @@ fn c_sets_confirm_on_active_runs() {
 fn o_opens_browser_on_dashboard() {
     let mut app = test_app();
     app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
-    app.rebuild_dashboard_rows();
-    app.dashboard_nav.set_len(app.dashboard_rows.len());
+    app.dashboard.rebuild(
+        &app.definitions,
+        &app.latest_builds_by_def,
+        &app.filter_folders,
+        &app.filter_definition_ids,
+    );
     // Row 0 is a folder header; move to row 1 which is the pipeline
-    app.dashboard_nav.down();
+    app.dashboard.nav.down();
 
     // Verify we are on a Pipeline row
     assert!(matches!(
-        app.dashboard_rows.get(app.dashboard_nav.index()),
+        app.dashboard.rows.get(app.dashboard.nav.index()),
         Some(DashboardRow::Pipeline { .. })
     ));
 

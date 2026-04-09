@@ -207,7 +207,12 @@ pub fn handle_message(
             app.active_builds = active_builds;
             app.pending_approvals = pending_approvals;
 
-            app.rebuild_dashboard_rows();
+            app.dashboard.rebuild(
+                &app.definitions,
+                &app.latest_builds_by_def,
+                &app.filter_folders,
+                &app.filter_definition_ids,
+            );
             app.pipelines.rebuild(
                 &app.definitions,
                 &app.filter_folders,
@@ -564,7 +569,12 @@ mod tests {
         app.recent_builds = recent;
         app.active_builds = vec![];
         app.pending_approvals = vec![];
-        app.rebuild_dashboard_rows();
+        app.dashboard.rebuild(
+            &app.definitions,
+            &app.latest_builds_by_def,
+            &app.filter_folders,
+            &app.filter_definition_ids,
+        );
         app.pipelines.rebuild(
             &app.definitions,
             &app.filter_folders,
@@ -581,7 +591,7 @@ mod tests {
 
         assert_eq!(app.definitions.len(), 2);
         assert_eq!(app.pipelines.filtered.len(), 2);
-        assert!(!app.dashboard_rows.is_empty());
+        assert!(!app.dashboard.rows.is_empty());
         assert!(app.last_refresh.is_some());
         assert!(!app.loading);
     }
@@ -609,7 +619,12 @@ mod tests {
         app.latest_builds_by_def.clear();
         app.active_builds = vec![];
         app.pending_approvals = vec![];
-        app.rebuild_dashboard_rows();
+        app.dashboard.rebuild(
+            &app.definitions,
+            &app.latest_builds_by_def,
+            &app.filter_folders,
+            &app.filter_definition_ids,
+        );
         app.pipelines.rebuild(
             &app.definitions,
             &app.filter_folders,

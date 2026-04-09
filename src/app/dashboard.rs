@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::api::models::{Build, PipelineDefinition};
 
-use super::App;
+use super::nav;
 
 /// A row in the dashboard grouped view — either a folder header or a pipeline entry.
 #[derive(Debug, Clone)]
@@ -37,50 +37,61 @@ fn folder_display(key: &str) -> String {
     }
 }
 
-impl App {
-    /// Check if a definition passes the configured filters.
-    pub fn matches_filter(&self, def: &PipelineDefinition) -> bool {
-        if !self.filter_definition_ids.is_empty() && !self.filter_definition_ids.contains(&def.id) {
-            return false;
-        }
-        if !self.filter_folders.is_empty()
-            && !self.filter_folders.iter().any(|f| def.path.starts_with(f))
-        {
-            return false;
-        }
-        true
+/// Check if a definition passes the configured filters.
+fn matches_filter(
+    def: &PipelineDefinition,
+    filter_definition_ids: &[u32],
+    filter_folders: &[String],
+) -> bool {
+    if !filter_definition_ids.is_empty() && !filter_definition_ids.contains(&def.id) {
+        return false;
     }
-
-    /// Check if a build's definition passes the configured ID filter.
-    ///
-    /// Only `filter_definition_ids` is checked here. Folder filters are **not**
-    /// applied because [`Build`] payloads from the ADO API do not include the
-    /// definition's folder path — they only carry a [`BuildDefinitionRef`] with
-    /// `id` and `name`. This means a folder-only filter config (no ID filter)
-    /// will show *all* active builds regardless of which folder their definition
-    /// lives in. If both folder and ID filters are set, only the ID filter
-    /// narrows the Active Runs view.
-    pub fn matches_build_filter(&self, build: &Build) -> bool {
-        if !self.filter_definition_ids.is_empty()
-            && !self.filter_definition_ids.contains(&build.definition.id)
-        {
-            return false;
-        }
-        true
+    if !filter_folders.is_empty() && !filter_folders.iter().any(|f| def.path.starts_with(f)) {
+        return false;
     }
+    true
+}
 
+fn find_folder_key_for_display(
+    display_path: &str,
+    definitions: &[PipelineDefinition],
+) -> Option<String> {
+    for def in definitions {
+        let key = folder_key(&def.path);
+        if folder_display(&key) == display_path {
+            return Some(key);
+        }
+    }
+    None
+}
+
+/// State for the Dashboard grouped-by-folder view.
+#[derive(Debug, Default)]
+pub struct DashboardState {
+    pub rows: Vec<DashboardRow>,
+    pub collapsed_folders: HashSet<String>,
+    pub nav: nav::ListNav,
+}
+
+impl DashboardState {
     /// Rebuild the dashboard rows from definitions + latest builds, grouped by folder.
-    pub fn rebuild_dashboard_rows(&mut self) {
+    pub fn rebuild(
+        &mut self,
+        definitions: &[PipelineDefinition],
+        latest_builds_by_def: &BTreeMap<u32, Build>,
+        filter_folders: &[String],
+        filter_definition_ids: &[u32],
+    ) {
         let mut rows = Vec::new();
         let mut by_folder: BTreeMap<String, Vec<(PipelineDefinition, Option<Build>)>> =
             BTreeMap::new();
 
-        for def in &self.definitions {
-            if !self.matches_filter(def) {
+        for def in definitions {
+            if !matches_filter(def, filter_definition_ids, filter_folders) {
                 continue;
             }
             let folder = folder_key(&def.path);
-            let latest = self.latest_builds_by_def.get(&def.id).cloned();
+            let latest = latest_builds_by_def.get(&def.id).cloned();
             by_folder
                 .entry(folder)
                 .or_default()
@@ -105,21 +116,20 @@ impl App {
             }
         }
 
-        self.dashboard_rows = rows;
-        self.dashboard_nav.set_len(self.dashboard_rows.len());
+        self.rows = rows;
+        self.nav.set_len(self.rows.len());
     }
 
     /// Toggle collapse state for a folder at the given dashboard row index.
-    pub fn toggle_folder_at(&mut self, index: usize) -> bool {
-        if let Some(DashboardRow::FolderHeader { path, .. }) = self.dashboard_rows.get(index) {
-            let folder_key = self.find_folder_key_for_display(path);
-            if let Some(key) = folder_key {
+    pub fn toggle_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
+        if let Some(DashboardRow::FolderHeader { path, .. }) = self.rows.get(index) {
+            let fk = find_folder_key_for_display(path, definitions);
+            if let Some(key) = fk {
                 if self.collapsed_folders.contains(&key) {
                     self.collapsed_folders.remove(&key);
                 } else {
                     self.collapsed_folders.insert(key);
                 }
-                self.rebuild_dashboard_rows();
                 return true;
             }
         }
@@ -127,16 +137,15 @@ impl App {
     }
 
     /// Collapse the folder at the given dashboard index.
-    pub fn collapse_folder_at(&mut self, index: usize) -> bool {
+    pub fn collapse_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
         if let Some(DashboardRow::FolderHeader {
             path, collapsed, ..
-        }) = self.dashboard_rows.get(index)
+        }) = self.rows.get(index)
             && !collapsed
         {
-            let folder_key = self.find_folder_key_for_display(path);
-            if let Some(key) = folder_key {
+            let fk = find_folder_key_for_display(path, definitions);
+            if let Some(key) = fk {
                 self.collapsed_folders.insert(key);
-                self.rebuild_dashboard_rows();
                 return true;
             }
         }
@@ -144,16 +153,15 @@ impl App {
     }
 
     /// Expand the folder at the given dashboard index.
-    pub fn expand_folder_at(&mut self, index: usize) -> bool {
+    pub fn expand_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
         if let Some(DashboardRow::FolderHeader {
             path, collapsed, ..
-        }) = self.dashboard_rows.get(index)
+        }) = self.rows.get(index)
             && *collapsed
         {
-            let folder_key = self.find_folder_key_for_display(path);
-            if let Some(key) = folder_key {
+            let fk = find_folder_key_for_display(path, definitions);
+            if let Some(key) = fk {
                 self.collapsed_folders.remove(&key);
-                self.rebuild_dashboard_rows();
                 return true;
             }
         }
@@ -163,7 +171,7 @@ impl App {
     /// Find the dashboard row index of the parent folder for a pipeline row.
     pub fn find_parent_folder_index(&self, pipeline_index: usize) -> Option<usize> {
         for i in (0..pipeline_index).rev() {
-            if let Some(DashboardRow::FolderHeader { .. }) = self.dashboard_rows.get(i) {
+            if let Some(DashboardRow::FolderHeader { .. }) = self.rows.get(i) {
                 return Some(i);
             }
         }
@@ -173,19 +181,9 @@ impl App {
     /// Check if a dashboard row is a folder header.
     pub fn is_folder_header(&self, index: usize) -> bool {
         matches!(
-            self.dashboard_rows.get(index),
+            self.rows.get(index),
             Some(DashboardRow::FolderHeader { .. })
         )
-    }
-
-    fn find_folder_key_for_display(&self, display_path: &str) -> Option<String> {
-        for def in &self.definitions {
-            let key = folder_key(&def.path);
-            if folder_display(&key) == display_path {
-                return Some(key);
-            }
-        }
-        None
     }
 }
 
@@ -193,7 +191,9 @@ impl App {
 mod tests {
     use super::*;
     use crate::api::models::*;
+    use crate::app::App;
     use crate::test_helpers::*;
+    use std::collections::BTreeMap;
 
     // --- folder_key / folder_display ---
 
@@ -224,62 +224,57 @@ mod tests {
 
     #[test]
     fn matches_filter_no_filters_passes_all() {
-        let app = App::new("o", "p", &make_config());
         let def = make_definition(1, "P", "\\");
-        assert!(app.matches_filter(&def));
+        assert!(matches_filter(&def, &[], &[]));
     }
 
     #[test]
     fn matches_filter_by_definition_id() {
-        let mut cfg = make_config();
-        cfg.filters.definition_ids = vec![1, 2];
-        let app = App::new("o", "p", &cfg);
-        assert!(app.matches_filter(&make_definition(1, "P", "\\")));
-        assert!(!app.matches_filter(&make_definition(99, "P", "\\")));
+        let ids = vec![1u32, 2];
+        assert!(matches_filter(&make_definition(1, "P", "\\"), &ids, &[]));
+        assert!(!matches_filter(&make_definition(99, "P", "\\"), &ids, &[]));
     }
 
     #[test]
     fn matches_filter_by_folder() {
-        let mut cfg = make_config();
-        cfg.filters.folders = vec!["\\Infra".to_string()];
-        let app = App::new("o", "p", &cfg);
-        assert!(app.matches_filter(&make_definition(1, "P", "\\Infra")));
-        assert!(app.matches_filter(&make_definition(2, "P", "\\Infra\\Deploy")));
-        assert!(!app.matches_filter(&make_definition(3, "P", "\\")));
+        let folders = vec!["\\Infra".to_string()];
+        assert!(matches_filter(
+            &make_definition(1, "P", "\\Infra"),
+            &[],
+            &folders
+        ));
+        assert!(matches_filter(
+            &make_definition(2, "P", "\\Infra\\Deploy"),
+            &[],
+            &folders
+        ));
+        assert!(!matches_filter(
+            &make_definition(3, "P", "\\"),
+            &[],
+            &folders
+        ));
     }
 
-    #[test]
-    fn matches_build_filter_by_definition_id() {
-        let mut cfg = make_config();
-        cfg.filters.definition_ids = vec![1];
-        let app = App::new("o", "p", &cfg);
-        let mut build = make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded));
-        build.definition.id = 1;
-        assert!(app.matches_build_filter(&build));
-        build.definition.id = 99;
-        assert!(!app.matches_build_filter(&build));
-    }
-
-    // --- rebuild_dashboard_rows ---
+    // --- rebuild ---
 
     #[test]
     fn rebuild_dashboard_groups_by_folder() {
-        let mut app = App::new("o", "p", &make_config());
-        app.definitions = vec![
+        let definitions = vec![
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
             make_definition(3, "Lint", "\\"),
         ];
-        app.rebuild_dashboard_rows();
+        let mut state = DashboardState::default();
+        state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
 
         // Should have: Root folder header + 2 pipelines, then Infra folder header + 1 pipeline
         // BTreeMap sorts keys, so "\" comes before "\Infra"
-        assert_eq!(app.dashboard_rows.len(), 5); // 2 headers + 3 pipelines
+        assert_eq!(state.rows.len(), 5); // 2 headers + 3 pipelines
         assert!(
-            matches!(&app.dashboard_rows[0], DashboardRow::FolderHeader { path, .. } if path == "Root")
+            matches!(&state.rows[0], DashboardRow::FolderHeader { path, .. } if path == "Root")
         );
         assert!(
-            matches!(&app.dashboard_rows[3], DashboardRow::FolderHeader { path, .. } if path == "Infra")
+            matches!(&state.rows[3], DashboardRow::FolderHeader { path, .. } if path == "Infra")
         );
     }
 
@@ -323,23 +318,25 @@ mod tests {
 
     #[test]
     fn toggle_folder_collapses_and_expands() {
-        let mut app = App::new("o", "p", &make_config());
-        app.definitions = vec![
+        let definitions = vec![
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\"),
         ];
-        app.rebuild_dashboard_rows();
+        let mut state = DashboardState::default();
+        state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
         // Row 0 is Root folder header (expanded), rows 1-2 are pipelines
-        assert_eq!(app.dashboard_rows.len(), 3);
+        assert_eq!(state.rows.len(), 3);
 
-        app.toggle_folder_at(0); // collapse
-        assert_eq!(app.dashboard_rows.len(), 1); // only header
+        state.toggle_folder_at(0, &definitions); // collapse
+        state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
+        assert_eq!(state.rows.len(), 1); // only header
 
-        app.toggle_folder_at(0); // expand
-        assert_eq!(app.dashboard_rows.len(), 3);
+        state.toggle_folder_at(0, &definitions); // expand
+        state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
+        assert_eq!(state.rows.len(), 3);
     }
 
-    // --- matches_build_filter / folder limitation ---
+    // --- folder filter does not restrict active builds ---
 
     #[test]
     fn folder_filter_does_not_restrict_active_builds() {

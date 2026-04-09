@@ -6,7 +6,7 @@ pub mod nav;
 pub mod notifications;
 pub mod run;
 
-pub use dashboard::DashboardRow;
+pub use dashboard::{DashboardRow, DashboardState};
 pub use log_viewer::{LogViewerState, TimelineRow};
 
 /// State for the Build History drill-in view.
@@ -183,8 +183,9 @@ pub struct App {
     pub active_builds: Vec<Build>,
     pub pending_approvals: Vec<Approval>,
     pub latest_builds_by_def: BTreeMap<u32, Build>,
-    pub dashboard_rows: Vec<DashboardRow>,
-    pub collapsed_folders: HashSet<String>,
+
+    // Dashboard view
+    pub dashboard: DashboardState,
 
     // Build history (for selected pipeline)
     pub build_history: BuildHistoryState,
@@ -197,9 +198,6 @@ pub struct App {
 
     // Active Runs view
     pub active_runs: ActiveRunsState,
-
-    // List navigation
-    pub dashboard_nav: nav::ListNav,
 
     // Pipelines view
     pub pipelines: PipelinesState,
@@ -227,8 +225,8 @@ impl App {
             active_builds: Vec::new(),
             pending_approvals: Vec::new(),
             latest_builds_by_def: BTreeMap::new(),
-            dashboard_rows: Vec::new(),
-            collapsed_folders: HashSet::new(),
+
+            dashboard: DashboardState::default(),
 
             build_history: BuildHistoryState::default(),
 
@@ -237,8 +235,6 @@ impl App {
             confirm_prompt: None,
 
             active_runs: ActiveRunsState::default(),
-
-            dashboard_nav: nav::ListNav::default(),
 
             pipelines: PipelinesState::default(),
 
@@ -312,7 +308,7 @@ impl App {
 
     pub fn current_nav_mut(&mut self) -> &mut nav::ListNav {
         match self.view {
-            View::Dashboard => &mut self.dashboard_nav,
+            View::Dashboard => &mut self.dashboard.nav,
             View::Pipelines => &mut self.pipelines.nav,
             View::ActiveRuns => &mut self.active_runs.nav,
             View::BuildHistory => &mut self.build_history.nav,
@@ -421,7 +417,7 @@ mod tests {
 
         app.view = View::Dashboard;
         app.current_nav_mut().set_len(5);
-        assert_eq!(app.dashboard_nav.index(), 0);
+        assert_eq!(app.dashboard.nav.index(), 0);
 
         app.view = View::Pipelines;
         app.current_nav_mut().set_len(3);

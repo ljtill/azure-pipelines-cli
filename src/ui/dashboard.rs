@@ -13,7 +13,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let name_width = (area.width as usize).saturating_sub(81).clamp(15, 60);
 
     let items: Vec<ListItem> = app
-        .dashboard_rows
+        .dashboard
+        .rows
         .iter()
         .enumerate()
         .map(|(i, row)| match row {
@@ -23,7 +24,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled(format!(" {} ", icon), theme::ARROW),
                     Span::styled(path.to_string(), theme::FOLDER),
                 ]))
-                .style(if i == app.dashboard_nav.index() {
+                .style(if i == app.dashboard.nav.index() {
                     theme::SELECTED
                 } else {
                     Style::default()
@@ -66,7 +67,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     Span::styled(build_info, theme::MUTED),
                 ]))
-                .style(if i == app.dashboard_nav.index() {
+                .style(if i == app.dashboard.nav.index() {
                     theme::SELECTED
                 } else {
                     Style::default()
@@ -83,6 +84,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.dashboard_nav.index()));
+    state.select(Some(app.dashboard.nav.index()));
     f.render_stateful_widget(list, area, &mut state);
 }

@@ -160,19 +160,43 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Left/Right for folder collapse/expand on Dashboard
         KeyCode::Left if app.view == View::Dashboard => {
-            let idx = app.dashboard_nav.index();
-            if app.is_folder_header(idx) {
-                app.collapse_folder_at(idx);
-            } else if let Some(folder_idx) = app.find_parent_folder_index(idx) {
-                app.collapse_folder_at(folder_idx);
-                app.dashboard_nav.set_index(folder_idx);
+            let idx = app.dashboard.nav.index();
+            if app.dashboard.is_folder_header(idx) {
+                if app.dashboard.collapse_folder_at(idx, &app.definitions) {
+                    app.dashboard.rebuild(
+                        &app.definitions,
+                        &app.latest_builds_by_def,
+                        &app.filter_folders,
+                        &app.filter_definition_ids,
+                    );
+                }
+            } else if let Some(folder_idx) = app.dashboard.find_parent_folder_index(idx) {
+                if app
+                    .dashboard
+                    .collapse_folder_at(folder_idx, &app.definitions)
+                {
+                    app.dashboard.rebuild(
+                        &app.definitions,
+                        &app.latest_builds_by_def,
+                        &app.filter_folders,
+                        &app.filter_definition_ids,
+                    );
+                }
+                app.dashboard.nav.set_index(folder_idx);
             }
             Action::None
         }
         KeyCode::Right if app.view == View::Dashboard => {
-            let idx = app.dashboard_nav.index();
-            if app.is_folder_header(idx) {
-                app.expand_folder_at(idx);
+            let idx = app.dashboard.nav.index();
+            if app.dashboard.is_folder_header(idx) {
+                if app.dashboard.expand_folder_at(idx, &app.definitions) {
+                    app.dashboard.rebuild(
+                        &app.definitions,
+                        &app.latest_builds_by_def,
+                        &app.filter_folders,
+                        &app.filter_definition_ids,
+                    );
+                }
             } else {
                 return handle_enter(app);
             }
@@ -279,7 +303,7 @@ fn handle_open_in_browser(app: &App) -> Action {
     let url = match app.view {
         View::Dashboard => {
             if let Some(crate::app::DashboardRow::Pipeline { definition, .. }) =
-                app.dashboard_rows.get(app.dashboard_nav.index())
+                app.dashboard.rows.get(app.dashboard.nav.index())
             {
                 Some(app.endpoints_web_definition(definition.id))
             } else {
@@ -413,7 +437,7 @@ fn handle_queue_request(app: &mut App) -> Action {
     let (def_id, def_name) = match app.view {
         View::Dashboard => {
             if let Some(crate::app::DashboardRow::Pipeline { definition, .. }) =
-                app.dashboard_rows.get(app.dashboard_nav.index())
+                app.dashboard.rows.get(app.dashboard.nav.index())
             {
                 (definition.id, definition.name.clone())
             } else {
@@ -535,10 +559,18 @@ fn rebuild_search_results(app: &mut App) {
 fn handle_enter(app: &mut App) -> Action {
     match app.view {
         View::Dashboard => {
-            if let Some(row) = app.dashboard_rows.get(app.dashboard_nav.index()) {
+            if let Some(row) = app.dashboard.rows.get(app.dashboard.nav.index()) {
                 match row {
                     crate::app::DashboardRow::FolderHeader { .. } => {
-                        app.toggle_folder_at(app.dashboard_nav.index());
+                        let idx = app.dashboard.nav.index();
+                        if app.dashboard.toggle_folder_at(idx, &app.definitions) {
+                            app.dashboard.rebuild(
+                                &app.definitions,
+                                &app.latest_builds_by_def,
+                                &app.filter_folders,
+                                &app.filter_definition_ids,
+                            );
+                        }
                         Action::None
                     }
                     crate::app::DashboardRow::Pipeline { definition, .. } => {
