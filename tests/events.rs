@@ -36,7 +36,7 @@ fn key_1_switches_to_dashboard() {
 #[test]
 fn key_2_switches_to_pipelines() {
     let mut app = test_app();
-    app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
+    app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     let action = handle_key(&mut app, key(KeyCode::Char('2')));
     assert_eq!(app.view, View::Pipelines);
     assert!(!app.pipelines.filtered.is_empty());
@@ -221,11 +221,11 @@ fn enter_commits_search() {
 fn enter_on_pipelines_fetches_history() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
+    app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     app.pipelines.rebuild(
-        &app.definitions,
-        &app.filter_folders,
-        &app.filter_definition_ids,
+        &app.data.definitions,
+        &app.filters.folders,
+        &app.filters.definition_ids,
         &app.search.query,
     );
     app.pipelines.nav.set_len(app.pipelines.filtered.len());
@@ -242,10 +242,10 @@ fn enter_on_pipelines_fetches_history() {
 fn enter_on_active_runs_fetches_timeline() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.active_builds = vec![make_build(42, BuildStatus::InProgress, None)];
+    app.data.active_builds = vec![make_build(42, BuildStatus::InProgress, None)];
     app.active_runs.rebuild(
-        &app.active_builds,
-        &app.filter_definition_ids,
+        &app.data.active_builds,
+        &app.filters.definition_ids,
         &app.search.query,
     );
 
@@ -334,10 +334,10 @@ fn confirm_blocks_other_keys() {
 fn space_toggles_in_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.active_builds = vec![make_build(10, BuildStatus::InProgress, None)];
+    app.data.active_builds = vec![make_build(10, BuildStatus::InProgress, None)];
     app.active_runs.rebuild(
-        &app.active_builds,
-        &app.filter_definition_ids,
+        &app.data.active_builds,
+        &app.filters.definition_ids,
         &app.search.query,
     );
 
@@ -369,10 +369,10 @@ fn space_noop_on_other_views() {
 fn c_sets_confirm_on_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.active_builds = vec![make_build(7, BuildStatus::InProgress, None)];
+    app.data.active_builds = vec![make_build(7, BuildStatus::InProgress, None)];
     app.active_runs.rebuild(
-        &app.active_builds,
-        &app.filter_definition_ids,
+        &app.data.active_builds,
+        &app.filters.definition_ids,
         &app.search.query,
     );
 
@@ -395,12 +395,12 @@ fn c_sets_confirm_on_active_runs() {
 #[test]
 fn o_opens_browser_on_dashboard() {
     let mut app = test_app();
-    app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
+    app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     app.dashboard.rebuild(
-        &app.definitions,
-        &app.latest_builds_by_def,
-        &app.filter_folders,
-        &app.filter_definition_ids,
+        &app.data.definitions,
+        &app.data.latest_builds_by_def,
+        &app.filters.folders,
+        &app.filters.definition_ids,
     );
     // Row 0 is a folder header; move to row 1 which is the pipeline
     app.dashboard.nav.down();
@@ -450,15 +450,15 @@ fn f_outside_log_viewer_is_noop() {
 fn arrow_keys_navigate_list() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.definitions = vec![
+    app.data.definitions = vec![
         make_definition(1, "Pipeline 1", "\\"),
         make_definition(2, "Pipeline 2", "\\"),
         make_definition(3, "Pipeline 3", "\\"),
     ];
     app.pipelines.rebuild(
-        &app.definitions,
-        &app.filter_folders,
-        &app.filter_definition_ids,
+        &app.data.definitions,
+        &app.filters.folders,
+        &app.filters.definition_ids,
         &app.search.query,
     );
     app.pipelines.nav.set_len(app.pipelines.filtered.len());
@@ -477,15 +477,15 @@ fn arrow_keys_navigate_list() {
 fn home_and_end_keys() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.definitions = vec![
+    app.data.definitions = vec![
         make_definition(1, "Pipeline 1", "\\"),
         make_definition(2, "Pipeline 2", "\\"),
         make_definition(3, "Pipeline 3", "\\"),
     ];
     app.pipelines.rebuild(
-        &app.definitions,
-        &app.filter_folders,
-        &app.filter_definition_ids,
+        &app.data.definitions,
+        &app.filters.folders,
+        &app.filters.definition_ids,
         &app.search.query,
     );
     app.pipelines.nav.set_len(app.pipelines.filtered.len());

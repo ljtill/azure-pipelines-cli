@@ -178,7 +178,7 @@ pub fn make_app() -> App {
     let def1 = make_definition(1, "CI Pipeline", "\\");
     let def2 = make_definition(2, "Deploy Pipeline", "\\Infra");
     let def3 = make_definition(3, "Infra Lint", "\\Infra");
-    app.definitions = vec![def1.clone(), def2.clone(), def3.clone()];
+    app.data.definitions = vec![def1.clone(), def2.clone(), def3.clone()];
 
     // 3 recent builds, one per definition
     let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
@@ -199,21 +199,21 @@ pub fn make_app() -> App {
         name: "Infra Lint".to_string(),
     };
 
-    app.recent_builds = vec![b1.clone(), b2.clone(), b3.clone()];
-    app.latest_builds_by_def.insert(1, b1);
-    app.latest_builds_by_def.insert(2, b2);
-    app.latest_builds_by_def.insert(3, b3);
+    app.data.recent_builds = vec![b1.clone(), b2.clone(), b3.clone()];
+    app.data.latest_builds_by_def.insert(1, b1);
+    app.data.latest_builds_by_def.insert(2, b2);
+    app.data.latest_builds_by_def.insert(3, b3);
 
     app.dashboard.rebuild(
-        &app.definitions,
-        &app.latest_builds_by_def,
-        &app.filter_folders,
-        &app.filter_definition_ids,
+        &app.data.definitions,
+        &app.data.latest_builds_by_def,
+        &app.filters.folders,
+        &app.filters.definition_ids,
     );
     app.pipelines.rebuild(
-        &app.definitions,
-        &app.filter_folders,
-        &app.filter_definition_ids,
+        &app.data.definitions,
+        &app.filters.folders,
+        &app.filters.definition_ids,
         &app.search.query,
     );
 
@@ -279,8 +279,8 @@ mod tests {
     #[test]
     fn make_app_populates_state() {
         let app = make_app();
-        assert_eq!(app.definitions.len(), 3);
-        assert_eq!(app.recent_builds.len(), 3);
+        assert_eq!(app.data.definitions.len(), 3);
+        assert_eq!(app.data.recent_builds.len(), 3);
         assert!(!app.dashboard.rows.is_empty());
         assert!(!app.pipelines.filtered.is_empty());
     }

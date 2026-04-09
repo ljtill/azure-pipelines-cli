@@ -195,33 +195,33 @@ pub fn handle_message(
                 approvals = pending_approvals.len(),
                 "data refresh received"
             );
-            app.definitions = definitions;
+            app.data.definitions = definitions;
 
             let mut map: BTreeMap<u32, models::Build> = BTreeMap::new();
             for build in &recent_builds {
                 map.entry(build.definition.id)
                     .or_insert_with(|| build.clone());
             }
-            app.latest_builds_by_def = map;
-            app.recent_builds = recent_builds;
-            app.active_builds = active_builds;
-            app.pending_approvals = pending_approvals;
+            app.data.latest_builds_by_def = map;
+            app.data.recent_builds = recent_builds;
+            app.data.active_builds = active_builds;
+            app.data.pending_approvals = pending_approvals;
 
             app.dashboard.rebuild(
-                &app.definitions,
-                &app.latest_builds_by_def,
-                &app.filter_folders,
-                &app.filter_definition_ids,
+                &app.data.definitions,
+                &app.data.latest_builds_by_def,
+                &app.filters.folders,
+                &app.filters.definition_ids,
             );
             app.pipelines.rebuild(
-                &app.definitions,
-                &app.filter_folders,
-                &app.filter_definition_ids,
+                &app.data.definitions,
+                &app.filters.folders,
+                &app.filters.definition_ids,
                 &app.search.query,
             );
             app.active_runs.rebuild(
-                &app.active_builds,
-                &app.filter_definition_ids,
+                &app.data.active_builds,
+                &app.filters.definition_ids,
                 &app.search.query,
             );
             app.last_refresh = Some(chrono::Utc::now());
@@ -560,36 +560,36 @@ mod tests {
         let recent = vec![b1.clone()];
 
         // Apply the same mutations handle_message(DataRefresh) would.
-        app.definitions = defs;
+        app.data.definitions = defs;
         let mut map: BTreeMap<u32, Build> = BTreeMap::new();
         for b in &recent {
             map.entry(b.definition.id).or_insert_with(|| b.clone());
         }
-        app.latest_builds_by_def = map;
-        app.recent_builds = recent;
-        app.active_builds = vec![];
-        app.pending_approvals = vec![];
+        app.data.latest_builds_by_def = map;
+        app.data.recent_builds = recent;
+        app.data.active_builds = vec![];
+        app.data.pending_approvals = vec![];
         app.dashboard.rebuild(
-            &app.definitions,
-            &app.latest_builds_by_def,
-            &app.filter_folders,
-            &app.filter_definition_ids,
+            &app.data.definitions,
+            &app.data.latest_builds_by_def,
+            &app.filters.folders,
+            &app.filters.definition_ids,
         );
         app.pipelines.rebuild(
-            &app.definitions,
-            &app.filter_folders,
-            &app.filter_definition_ids,
+            &app.data.definitions,
+            &app.filters.folders,
+            &app.filters.definition_ids,
             &app.search.query,
         );
         app.active_runs.rebuild(
-            &app.active_builds,
-            &app.filter_definition_ids,
+            &app.data.active_builds,
+            &app.filters.definition_ids,
             &app.search.query,
         );
         app.last_refresh = Some(chrono::Utc::now());
         app.loading = false;
 
-        assert_eq!(app.definitions.len(), 2);
+        assert_eq!(app.data.definitions.len(), 2);
         assert_eq!(app.pipelines.filtered.len(), 2);
         assert!(!app.dashboard.rows.is_empty());
         assert!(app.last_refresh.is_some());
@@ -611,35 +611,35 @@ mod tests {
     #[test]
     fn data_refresh_replaces_previous_data() {
         let mut app = make_app();
-        assert_eq!(app.definitions.len(), 3); // make_app seeds 3
+        assert_eq!(app.data.definitions.len(), 3); // make_app seeds 3
 
         // Simulate a DataRefresh with only 1 definition
-        app.definitions = vec![make_definition(99, "Only", "\\")];
-        app.recent_builds = vec![];
-        app.latest_builds_by_def.clear();
-        app.active_builds = vec![];
-        app.pending_approvals = vec![];
+        app.data.definitions = vec![make_definition(99, "Only", "\\")];
+        app.data.recent_builds = vec![];
+        app.data.latest_builds_by_def.clear();
+        app.data.active_builds = vec![];
+        app.data.pending_approvals = vec![];
         app.dashboard.rebuild(
-            &app.definitions,
-            &app.latest_builds_by_def,
-            &app.filter_folders,
-            &app.filter_definition_ids,
+            &app.data.definitions,
+            &app.data.latest_builds_by_def,
+            &app.filters.folders,
+            &app.filters.definition_ids,
         );
         app.pipelines.rebuild(
-            &app.definitions,
-            &app.filter_folders,
-            &app.filter_definition_ids,
+            &app.data.definitions,
+            &app.filters.folders,
+            &app.filters.definition_ids,
             &app.search.query,
         );
         app.active_runs.rebuild(
-            &app.active_builds,
-            &app.filter_definition_ids,
+            &app.data.active_builds,
+            &app.filters.definition_ids,
             &app.search.query,
         );
         app.last_refresh = Some(chrono::Utc::now());
         app.loading = false;
 
-        assert_eq!(app.definitions.len(), 1);
+        assert_eq!(app.data.definitions.len(), 1);
         assert_eq!(app.pipelines.filtered.len(), 1);
         assert_eq!(app.active_runs.filtered.len(), 0);
     }

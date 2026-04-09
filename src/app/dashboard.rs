@@ -283,15 +283,15 @@ mod tests {
     #[test]
     fn rebuild_filtered_pipelines_with_search() {
         let mut app = App::new("o", "p", &make_config());
-        app.definitions = vec![
+        app.data.definitions = vec![
             make_definition(1, "CI Pipeline", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
         ];
         app.search.query = "ci".to_string();
         app.pipelines.rebuild(
-            &app.definitions,
-            &app.filter_folders,
-            &app.filter_definition_ids,
+            &app.data.definitions,
+            &app.filters.folders,
+            &app.filters.definition_ids,
             &app.search.query,
         );
         assert_eq!(app.pipelines.filtered.len(), 1);
@@ -301,14 +301,14 @@ mod tests {
     #[test]
     fn rebuild_filtered_pipelines_empty_search_shows_all() {
         let mut app = App::new("o", "p", &make_config());
-        app.definitions = vec![
+        app.data.definitions = vec![
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
         ];
         app.pipelines.rebuild(
-            &app.definitions,
-            &app.filter_folders,
-            &app.filter_definition_ids,
+            &app.data.definitions,
+            &app.filters.folders,
+            &app.filters.definition_ids,
             &app.search.query,
         );
         assert_eq!(app.pipelines.filtered.len(), 2);
@@ -351,11 +351,11 @@ mod tests {
         let mut build = make_build(1, BuildStatus::InProgress, None);
         build.definition.id = 99; // not in any ID allowlist
         build.definition.name = "Outside Infra".to_string();
-        app.active_builds = vec![build];
+        app.data.active_builds = vec![build];
 
         app.active_runs.rebuild(
-            &app.active_builds,
-            &app.filter_definition_ids,
+            &app.data.active_builds,
+            &app.filters.definition_ids,
             &app.search.query,
         );
 
@@ -375,12 +375,12 @@ mod tests {
         let mut b2 = make_build(2, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b2.definition.name = "Deploy".to_string();
         b2.status = BuildStatus::InProgress;
-        app.active_builds = vec![b1, b2];
+        app.data.active_builds = vec![b1, b2];
 
         app.search.query = "deploy".to_string();
         app.active_runs.rebuild(
-            &app.active_builds,
-            &app.filter_definition_ids,
+            &app.data.active_builds,
+            &app.filters.definition_ids,
             &app.search.query,
         );
         assert_eq!(app.active_runs.filtered.len(), 1);

@@ -72,7 +72,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     let sel_count = app.active_runs.selected.len();
     let filtered = app.active_runs.filtered.len();
-    let total = app.active_builds.len();
+    let total = app.data.active_builds.len();
     let title = if sel_count > 0 {
         format!(
             " Active Runs ({} / {}) — {} selected ",

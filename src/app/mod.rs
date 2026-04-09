@@ -111,6 +111,23 @@ use crate::api::models::{Approval, Build, PipelineDefinition};
 
 use notifications::Notifications;
 
+/// Shared API data refreshed periodically from Azure DevOps.
+#[derive(Debug, Default)]
+pub struct CoreData {
+    pub definitions: Vec<PipelineDefinition>,
+    pub recent_builds: Vec<Build>,
+    pub active_builds: Vec<Build>,
+    pub pending_approvals: Vec<Approval>,
+    pub latest_builds_by_def: BTreeMap<u32, Build>,
+}
+
+/// Filter configuration from config.toml.
+#[derive(Debug, Default, Clone)]
+pub struct FilterConfig {
+    pub folders: Vec<String>,
+    pub definition_ids: Vec<u32>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Dashboard,
@@ -174,15 +191,10 @@ pub struct App {
     endpoints: Endpoints,
 
     // Filters
-    pub filter_folders: Vec<String>,
-    pub filter_definition_ids: Vec<u32>,
+    pub filters: FilterConfig,
 
     // Data
-    pub definitions: Vec<PipelineDefinition>,
-    pub recent_builds: Vec<Build>,
-    pub active_builds: Vec<Build>,
-    pub pending_approvals: Vec<Approval>,
-    pub latest_builds_by_def: BTreeMap<u32, Build>,
+    pub data: CoreData,
 
     // Dashboard view
     pub dashboard: DashboardState,
@@ -217,14 +229,12 @@ impl App {
             show_help: false,
             org_project_label: format!("{} / {}", organization, project),
             endpoints: Endpoints::new(organization, project),
-            filter_folders: config.filters.folders.clone(),
-            filter_definition_ids: config.filters.definition_ids.clone(),
+            filters: FilterConfig {
+                folders: config.filters.folders.clone(),
+                definition_ids: config.filters.definition_ids.clone(),
+            },
 
-            definitions: Vec::new(),
-            recent_builds: Vec::new(),
-            active_builds: Vec::new(),
-            pending_approvals: Vec::new(),
-            latest_builds_by_def: BTreeMap::new(),
+            data: CoreData::default(),
 
             dashboard: DashboardState::default(),
 
@@ -253,9 +263,9 @@ impl App {
             self.search.mode = InputMode::Normal;
             self.search.query.clear();
             self.pipelines.rebuild(
-                &self.definitions,
-                &self.filter_folders,
-                &self.filter_definition_ids,
+                &self.data.definitions,
+                &self.filters.folders,
+                &self.filters.definition_ids,
                 &self.search.query,
             );
             return;

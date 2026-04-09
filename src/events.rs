@@ -130,9 +130,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.search.query.clear();
             app.view = View::Pipelines;
             app.pipelines.rebuild(
-                &app.definitions,
-                &app.filter_folders,
-                &app.filter_definition_ids,
+                &app.data.definitions,
+                &app.filters.folders,
+                &app.filters.definition_ids,
                 &app.search.query,
             );
             Action::None
@@ -141,8 +141,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.search.query.clear();
             app.view = View::ActiveRuns;
             app.active_runs.rebuild(
-                &app.active_builds,
-                &app.filter_definition_ids,
+                &app.data.active_builds,
+                &app.filters.definition_ids,
                 &app.search.query,
             );
             Action::None
@@ -162,24 +162,24 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Left if app.view == View::Dashboard => {
             let idx = app.dashboard.nav.index();
             if app.dashboard.is_folder_header(idx) {
-                if app.dashboard.collapse_folder_at(idx, &app.definitions) {
+                if app.dashboard.collapse_folder_at(idx, &app.data.definitions) {
                     app.dashboard.rebuild(
-                        &app.definitions,
-                        &app.latest_builds_by_def,
-                        &app.filter_folders,
-                        &app.filter_definition_ids,
+                        &app.data.definitions,
+                        &app.data.latest_builds_by_def,
+                        &app.filters.folders,
+                        &app.filters.definition_ids,
                     );
                 }
             } else if let Some(folder_idx) = app.dashboard.find_parent_folder_index(idx) {
                 if app
                     .dashboard
-                    .collapse_folder_at(folder_idx, &app.definitions)
+                    .collapse_folder_at(folder_idx, &app.data.definitions)
                 {
                     app.dashboard.rebuild(
-                        &app.definitions,
-                        &app.latest_builds_by_def,
-                        &app.filter_folders,
-                        &app.filter_definition_ids,
+                        &app.data.definitions,
+                        &app.data.latest_builds_by_def,
+                        &app.filters.folders,
+                        &app.filters.definition_ids,
                     );
                 }
                 app.dashboard.nav.set_index(folder_idx);
@@ -189,12 +189,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Right if app.view == View::Dashboard => {
             let idx = app.dashboard.nav.index();
             if app.dashboard.is_folder_header(idx) {
-                if app.dashboard.expand_folder_at(idx, &app.definitions) {
+                if app.dashboard.expand_folder_at(idx, &app.data.definitions) {
                     app.dashboard.rebuild(
-                        &app.definitions,
-                        &app.latest_builds_by_def,
-                        &app.filter_folders,
-                        &app.filter_definition_ids,
+                        &app.data.definitions,
+                        &app.data.latest_builds_by_def,
+                        &app.filters.folders,
+                        &app.filters.definition_ids,
                     );
                 }
             } else {
@@ -537,17 +537,17 @@ fn rebuild_search_results(app: &mut App) {
     match app.view {
         View::Pipelines => {
             app.pipelines.rebuild(
-                &app.definitions,
-                &app.filter_folders,
-                &app.filter_definition_ids,
+                &app.data.definitions,
+                &app.filters.folders,
+                &app.filters.definition_ids,
                 &app.search.query,
             );
             app.pipelines.nav.set_index(0);
         }
         View::ActiveRuns => {
             app.active_runs.rebuild(
-                &app.active_builds,
-                &app.filter_definition_ids,
+                &app.data.active_builds,
+                &app.filters.definition_ids,
                 &app.search.query,
             );
             app.active_runs.nav.set_index(0);
@@ -563,12 +563,12 @@ fn handle_enter(app: &mut App) -> Action {
                 match row {
                     crate::app::DashboardRow::FolderHeader { .. } => {
                         let idx = app.dashboard.nav.index();
-                        if app.dashboard.toggle_folder_at(idx, &app.definitions) {
+                        if app.dashboard.toggle_folder_at(idx, &app.data.definitions) {
                             app.dashboard.rebuild(
-                                &app.definitions,
-                                &app.latest_builds_by_def,
-                                &app.filter_folders,
-                                &app.filter_definition_ids,
+                                &app.data.definitions,
+                                &app.data.latest_builds_by_def,
+                                &app.filters.folders,
+                                &app.filters.definition_ids,
                             );
                         }
                         Action::None

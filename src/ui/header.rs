@@ -46,9 +46,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("")
     };
 
-    let approvals_span = if !app.pending_approvals.is_empty() {
+    let approvals_span = if !app.data.pending_approvals.is_empty() {
         Span::styled(
-            format!("  ⏸ {} pending", app.pending_approvals.len()),
+            format!("  ⏸ {} pending", app.data.pending_approvals.len()),
             theme::APPROVAL,
         )
     } else {
