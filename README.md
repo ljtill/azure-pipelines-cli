@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/ins
 Pin a specific version:
 
 ```sh
-VERSION=0.2.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
+VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
 ```
 
 ### Windows (PowerShell)
@@ -76,25 +76,29 @@ azure-pipelines-cli --config /path/to/config.toml
 
 ## Keybindings
 
-| Key          | Action                                         |
-|--------------|-------------------------------------------------|
-| ↑ / ↓        | Navigate list items                             |
-| Enter        | Drill into selected item / expand-collapse folder |
-| Esc          | Go back to previous view                        |
-| 1 / 2 / 3    | Switch between Dashboard / Pipelines / Active Runs |
-| /            | Search / filter (Pipelines / Active Runs)        |
-| Space        | Select / deselect build (Active Runs)            |
-| Q            | Queue pipeline run                               |
-| R            | Retry failed stage (Log Viewer)                  |
-| A            | Approve check (Log Viewer, on checkpoint row)    |
-| D            | Reject check (Log Viewer, on checkpoint row)     |
-| c            | Cancel build (Active Runs / Log Viewer)         |
-| o            | Open in browser                                 |
-| r            | Force data refresh                              |
-| f            | Follow latest active task (Log Viewer)          |
-| PgUp / PgDn  | Scroll log content                              |
-| ?            | Toggle help overlay                             |
-| q            | Quit (root views) / Go back (child views)       |
+| Key          | Action                                                |
+|--------------|-------------------------------------------------------|
+| ↑ / ↓        | Navigate list items                                   |
+| ← / →        | Collapse / expand folder (Dashboard) or tree node (Log Viewer) |
+| Home / End   | Jump to first / last item                             |
+| Enter        | Drill into selected item / expand-collapse folder     |
+| Esc          | Go back to previous view                              |
+| 1 / 2 / 3    | Switch between Dashboard / Pipelines / Active Runs   |
+| /            | Search / filter (Pipelines / Active Runs)             |
+| Space        | Select / deselect build (Active Runs)                 |
+| Q            | Queue pipeline run                                    |
+| R            | Retry failed stage (Log Viewer)                       |
+| A            | Approve check (Log Viewer, on checkpoint row)         |
+| D            | Reject check (Log Viewer, on checkpoint row)          |
+| c            | Cancel build (Active Runs / Build History / Log Viewer) |
+| o            | Open in browser                                       |
+| r            | Force data refresh                                    |
+| f            | Follow latest active task (Log Viewer)                |
+| PgUp / PgDn  | Scroll log content                                   |
+| Mouse scroll | Scroll log content (Log Viewer)                       |
+| ?            | Toggle help overlay                                   |
+| Ctrl+C       | Quit                                                  |
+| q            | Quit (root views) / Go back (child views)             |
 
 ## Authentication
 
