@@ -26,12 +26,17 @@ Create `~/.config/azure-pipelines-cli/config.toml`:
 
 ```toml
 [azure_devops]
-organization = "mscxa"
-project = "OAP"
+organization = "your-org"
+project = "your-project"
 
 [display]
 refresh_interval_secs = 30
 log_refresh_interval_secs = 5
+
+# Optional: filter which pipelines are shown
+[filters]
+folders = ["\\Infra", "\\Deploy"]  # only show these folder paths (prefix match)
+definition_ids = [42, 99]          # only show these pipeline definition IDs
 ```
 
 ## Usage

@@ -1,10 +1,10 @@
-use chrono::Utc;
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
-use ratatui::Frame;
 
+use super::helpers::build_elapsed;
 use crate::app::App;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -13,12 +13,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, build)| {
-            let elapsed = if let Some(start) = build.start_time {
-                let dur = Utc::now().signed_duration_since(start);
-                format!("{}m {}s", dur.num_minutes(), dur.num_seconds() % 60)
-            } else {
-                "queued".to_string()
-            };
+            let elapsed = build_elapsed(build);
 
             ListItem::new(Line::from(vec![
                 Span::styled(" ⏳ ", Style::default().fg(Color::Yellow)),
