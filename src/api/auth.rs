@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use azure_core::credentials::TokenCredential;
-use azure_identity::DefaultAzureCredential;
+use azure_core::{credentials::TokenCredential, time::OffsetDateTime};
+use azure_identity::DeveloperToolsCredential;
 use tokio::sync::RwLock;
 
 const ADO_RESOURCE: &str = "499b84ac-1321-427f-aa17-267ca6975798";
@@ -23,7 +23,7 @@ pub struct AdoAuth {
 
 impl AdoAuth {
     pub async fn new() -> Result<Self> {
-        let credential: Arc<dyn TokenCredential> = DefaultAzureCredential::new()?;
+        let credential: Arc<dyn TokenCredential> = DeveloperToolsCredential::new(None)?;
         Ok(Self {
             credential,
             cache: Arc::new(RwLock::new(None)),
@@ -52,14 +52,14 @@ impl AdoAuth {
 
         let response = self
             .credential
-            .get_token(&[&format!("{ADO_RESOURCE}/.default")])
+            .get_token(&[&format!("{ADO_RESOURCE}/.default")], None)
             .await?;
 
         let secret = response.token.secret().to_string();
         let secs_until = response
             .expires_on
             .unix_timestamp()
-            .saturating_sub(azure_core::date::OffsetDateTime::now_utc().unix_timestamp());
+            .saturating_sub(OffsetDateTime::now_utc().unix_timestamp());
         let expires_on = if secs_until > EXPIRY_MARGIN.as_secs() as i64 {
             std::time::Instant::now()
                 + std::time::Duration::from_secs(

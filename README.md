@@ -12,7 +12,7 @@ Built with [ratatui](https://ratatui.rs/) and designed to run inside [Ghostty](h
 - **Build History** — Drill into a pipeline's recent builds
 - **Log Viewer** — Drill into a build to view live log output
 - **Auto-refresh** — Background polling with configurable interval (default 30s)
-- **Azure CLI auth** — Uses `DefaultAzureCredential` (Azure CLI → managed identity chain)
+- **Azure CLI auth** — Uses `DeveloperToolsCredential` (Azure CLI / Azure Developer CLI chain)
 
 ## Installation
 
@@ -65,10 +65,9 @@ azure-pipelines-cli --config /path/to/config.toml
 
 ## Authentication
 
-Uses the Azure SDK `DefaultAzureCredential` chain, which tries (in order):
+Uses the Azure SDK `DeveloperToolsCredential`, which tries local developer credentials in this order:
 
-1. Environment variables
-2. Azure CLI (`az login`)
-3. Managed Identity
+1. Azure CLI (`az login`)
+2. Azure Developer CLI (`azd auth login`)
 
-For local development, ensure you're logged in with `az login`.
+For local development, ensure you're logged in with `az login` or `azd auth login`.
