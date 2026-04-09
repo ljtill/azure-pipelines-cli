@@ -186,7 +186,8 @@ fn init_tracing(level: &str) {
 
     let Ok(file) = std::fs::OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(true)
         .open(&log_path)
     else {
         return;
