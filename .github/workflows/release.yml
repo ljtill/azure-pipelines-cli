@@ -110,7 +110,10 @@ jobs:
 
           # Try AI-generated release notes via GitHub Models
           echo "Attempting AI-generated release notes..."
-          gh extension install github/gh-models 2>/dev/null || true
+          if ! gh extension list | grep -q gh-models; then
+            echo "Installing gh-models extension..."
+            gh extension install github/gh-models || echo "::warning::gh-models extension install failed"
+          fi
 
           PROMPT="You are a release notes writer for an open-source CLI tool called azure-pipelines-cli (a TUI dashboard for Azure DevOps Pipelines).
 
@@ -126,11 +129,12 @@ jobs:
           Commits:
           ${COMMIT_LOG}"
 
-          if echo "$PROMPT" | gh models run openai/gpt-5-mini > ai-notes.md 2>/dev/null && [ -s ai-notes.md ]; then
+          if echo "$PROMPT" | gh models run openai/gpt-4.1-mini > ai-notes.md 2>ai-notes-err.txt && [ -s ai-notes.md ]; then
             echo "AI release notes generated successfully"
             cp ai-notes.md release-notes.md
           else
-            echo "AI generation failed, falling back to conventional commit parsing"
+            echo "::warning::AI generation failed: $(cat ai-notes-err.txt 2>/dev/null)"
+            echo "Falling back to conventional commit parsing"
 
             # Shell-based fallback: group commits by type
             FEATURES=""
