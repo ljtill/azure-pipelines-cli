@@ -1,9 +1,10 @@
+pub mod actions;
 mod dashboard;
 mod messages;
+pub mod run;
 mod timeline;
 
 pub use dashboard::DashboardRow;
-pub use messages::AppMessage;
 pub use timeline::TimelineRow;
 
 use std::collections::{BTreeMap, HashSet};
@@ -111,7 +112,6 @@ pub struct App {
 }
 
 /// State for the log viewer screen — reset as a unit on navigation.
-#[derive(Default)]
 pub struct LogViewerState {
     pub selected_build: Option<Build>,
     pub build_timeline: Option<BuildTimeline>,
@@ -127,6 +127,30 @@ pub struct LogViewerState {
     pub followed_log_id: Option<u32>,
     pub log_entries_index: usize,
     pub log_scroll_offset: u16,
+    /// The view to return to when pressing Esc from LogViewer.
+    pub return_to_view: View,
+}
+
+impl Default for LogViewerState {
+    fn default() -> Self {
+        Self {
+            selected_build: None,
+            build_timeline: None,
+            timeline_rows: Vec::new(),
+            collapsed_stages: HashSet::new(),
+            collapsed_jobs: HashSet::new(),
+            log_content: Vec::new(),
+            log_auto_scroll: false,
+            log_generation: 0,
+            timeline_initialized: false,
+            follow_mode: false,
+            followed_task_name: String::new(),
+            followed_log_id: None,
+            log_entries_index: 0,
+            log_scroll_offset: 0,
+            return_to_view: View::BuildHistory,
+        }
+    }
 }
 
 impl App {
@@ -187,10 +211,23 @@ impl App {
         }
         match self.view {
             View::LogViewer => {
-                self.view = View::BuildHistory;
+                let return_to = self.log_viewer.return_to_view;
                 let next_gen = self.log_viewer.log_generation + 1;
                 self.log_viewer = LogViewerState::default();
                 self.log_viewer.log_generation = next_gen;
+
+                match return_to {
+                    View::BuildHistory => {
+                        self.view = View::BuildHistory;
+                    }
+                    _ => {
+                        // Returning to a top-level view — clean up build history state
+                        self.view = return_to;
+                        self.selected_definition = None;
+                        self.definition_builds.clear();
+                        self.builds_index = 0;
+                    }
+                }
             }
             View::BuildHistory => {
                 self.view = self.previous_view.unwrap_or(View::Dashboard);
@@ -262,12 +299,14 @@ impl App {
 
     pub fn navigate_to_log_viewer(&mut self, build: Build) {
         tracing::info!(build_id = build.id, "navigating to log viewer");
+        let return_to = self.view;
         let next_gen = self.log_viewer.log_generation + 1;
         self.log_viewer = LogViewerState {
             selected_build: Some(build),
             log_auto_scroll: true,
             follow_mode: true,
             log_generation: next_gen,
+            return_to_view: return_to,
             ..Default::default()
         };
         self.view = View::LogViewer;

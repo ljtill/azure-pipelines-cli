@@ -1,17 +1,6 @@
-use std::time::Duration;
-
-use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{App, ConfirmAction, ConfirmPrompt, InputMode, View};
-
-pub fn poll_event(timeout: Duration) -> Result<Option<Event>> {
-    if event::poll(timeout)? {
-        Ok(Some(event::read()?))
-    } else {
-        Ok(None)
-    }
-}
 
 /// The action requested by the user after handling a key event.
 #[derive(Debug)]
