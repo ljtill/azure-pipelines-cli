@@ -3,7 +3,7 @@
 ## Build, test, and lint
 
 - Build: `cargo build`
-- Run locally: `cargo run -- --config ~/.config/azure-pipelines-cli/config.toml`
+- Run locally: `cargo run -- --config ~/.config/pipelines/config.toml`
 - Install the binary from the repo root: `cargo install --path .`
 - Test all: `cargo test`
 - Run a single test: `cargo test <test_name_substring>` (there are currently no committed Rust tests, so this is the form to use when tests are added)
@@ -29,7 +29,7 @@ cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo
 
 ## Runtime and configuration
 
-- Config is loaded from `--config <path>` when provided; otherwise `src/config.rs` prefers `$XDG_CONFIG_HOME/azure-pipelines-cli/config.toml` and falls back to `~/.config/azure-pipelines-cli/config.toml`, even on macOS.
+- Config is loaded from `--config <path>` when provided; otherwise `src/config.rs` prefers `$XDG_CONFIG_HOME/pipelines/config.toml` and falls back to `~/.config/pipelines/config.toml`, even on macOS.
 - Required config keys are `[azure_devops].organization` and `[azure_devops].project`.
 - Display refresh defaults live in `DisplayConfig`: 30 seconds for main data refresh and 5 seconds for log refresh.
 - Authentication is via `azure_identity::DefaultAzureCredential`; local development usually depends on `az login`.

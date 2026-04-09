@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
 }
 
 /// Initialize tracing to log to a file (if RUST_LOG is set).
-/// Logs go to `~/.local/state/azure-pipelines-cli/debug.log`.
+/// Logs go to `~/.local/state/pipelines/debug.log`.
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::fmt;
@@ -80,7 +80,7 @@ fn init_tracing() {
     };
 
     let log_dir = dirs::home_dir()
-        .map(|h| h.join(".local/state/azure-pipelines-cli"))
+        .map(|h| h.join(".local/state/pipelines"))
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join("debug.log");

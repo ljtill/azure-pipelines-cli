@@ -47,7 +47,7 @@ cargo install --path .
 
 ## Configuration
 
-Create `~/.config/azure-pipelines-cli/config.toml`:
+Create `~/.config/pipelines/config.toml`:
 
 ```toml
 [azure_devops]

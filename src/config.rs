@@ -89,7 +89,7 @@ pub fn default_config_path() -> Result<PathBuf> {
         .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
         .context("Could not determine config directory")?;
 
-    Ok(config_dir.join("azure-pipelines-cli").join("config.toml"))
+    Ok(config_dir.join("pipelines").join("config.toml"))
 }
 
 #[cfg(test)]
@@ -152,7 +152,7 @@ refresh_interval_secs = 30
         unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
         assert_eq!(
             path,
-            PathBuf::from("/test/custom/xdg/azure-pipelines-cli/config.toml")
+            PathBuf::from("/test/custom/xdg/pipelines/config.toml")
         );
     }
 
@@ -162,8 +162,8 @@ refresh_interval_secs = 30
         let path = default_config_path().unwrap();
         let path_str = path.to_string_lossy();
         assert!(
-            path_str.contains("azure-pipelines-cli/config.toml"),
-            "Expected path to contain 'azure-pipelines-cli/config.toml', got: {path_str}"
+            path_str.contains("pipelines/config.toml"),
+            "Expected path to contain 'pipelines/config.toml', got: {path_str}"
         );
     }
 
