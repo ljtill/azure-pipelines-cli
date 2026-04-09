@@ -1,0 +1,278 @@
+name: Install
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REPO: ljtill/azure-pipelines-cli
+
+jobs:
+  # ------------------------------------------------------------------
+  # Guard: skip everything if no GitHub Release exists yet
+  # ------------------------------------------------------------------
+  check-release:
+    name: Check Release Exists
+    runs-on: ubuntu-latest
+    outputs:
+      has_release: ${{ steps.check.outputs.has_release }}
+      latest_version: ${{ steps.check.outputs.latest_version }}
+      previous_version: ${{ steps.check.outputs.previous_version }}
+    steps:
+      - name: Query GitHub Releases
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fetch all release tags sorted newest-first
+          TAGS=$(gh api "repos/${{ env.REPO }}/releases" \
+            --jq '.[].tag_name' 2>/dev/null || true)
+
+          if [ -z "$TAGS" ]; then
+            echo "No releases found — skipping install/update tests"
+            echo "has_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LATEST=$(echo "$TAGS" | head -1 | sed 's/^v//')
+          echo "Latest release: $LATEST"
+          echo "has_release=true" >> "$GITHUB_OUTPUT"
+          echo "latest_version=$LATEST" >> "$GITHUB_OUTPUT"
+
+          # Find a previous version for self-update testing
+          PREVIOUS=$(echo "$TAGS" | sed -n '2p' | sed 's/^v//')
+          if [ -z "$PREVIOUS" ]; then
+            echo "Only one release exists — self-update tests will be skipped"
+            echo "previous_version=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Previous release: $PREVIOUS"
+            echo "previous_version=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ------------------------------------------------------------------
+  # Install script E2E: install.sh (Linux / macOS)
+  # ------------------------------------------------------------------
+  install-sh:
+    name: Install Script (Unix)
+    needs: check-release
+    if: needs.check-release.outputs.has_release == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install via install.sh (latest)
+        run: |
+          sh install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify binary exists and is executable
+        run: |
+          test -x "$HOME/.local/bin/pipelines"
+          echo "Binary exists and is executable"
+
+      - name: Smoke test — pipelines --help
+        run: pipelines --help
+
+      - name: Clean up before pinned-version test
+        run: rm -f "$HOME/.local/bin/pipelines"
+
+      - name: Install via install.sh (pinned version)
+        env:
+          VERSION: ${{ needs.check-release.outputs.latest_version }}
+        run: sh install.sh
+
+      - name: Verify pinned version
+        run: |
+          INSTALLED=$("$HOME/.local/bin/pipelines" --version 2>&1 || true)
+          EXPECTED="${{ needs.check-release.outputs.latest_version }}"
+          echo "Installed: $INSTALLED"
+          echo "Expected version to contain: $EXPECTED"
+          echo "$INSTALLED" | grep -q "$EXPECTED"
+
+      - name: Clean up before custom dir test
+        run: rm -f "$HOME/.local/bin/pipelines"
+
+      - name: Install via install.sh (custom INSTALL_DIR)
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/custom-bin
+        run: sh install.sh
+
+      - name: Verify custom install dir
+        run: |
+          test -x "${{ runner.temp }}/custom-bin/pipelines"
+          "${{ runner.temp }}/custom-bin/pipelines" --help
+
+  # ------------------------------------------------------------------
+  # Install script E2E: install.ps1 (Windows)
+  # ------------------------------------------------------------------
+  install-ps1:
+    name: Install Script (Windows)
+    needs: check-release
+    if: needs.check-release.outputs.has_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install via install.ps1 (latest)
+        shell: pwsh
+        run: |
+          .\install.ps1
+          "$HOME\.local\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+
+      - name: Verify binary exists
+        shell: pwsh
+        run: |
+          $path = Join-Path $HOME '.local\bin\pipelines.exe'
+          if (-not (Test-Path $path)) { throw "Binary not found at $path" }
+          Write-Host "Binary exists at $path"
+
+      - name: Smoke test — pipelines --help
+        shell: pwsh
+        run: pipelines --help
+
+      - name: Clean up before pinned-version test
+        shell: pwsh
+        run: Remove-Item -Force (Join-Path $HOME '.local\bin\pipelines.exe') -ErrorAction SilentlyContinue
+
+      - name: Install via install.ps1 (pinned version)
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.check-release.outputs.latest_version }}
+        run: .\install.ps1
+
+      - name: Verify pinned version
+        shell: pwsh
+        run: |
+          $path = Join-Path $HOME '.local\bin\pipelines.exe'
+          $output = & $path --version 2>&1 | Out-String
+          $expected = "${{ needs.check-release.outputs.latest_version }}"
+          Write-Host "Installed: $output"
+          Write-Host "Expected version to contain: $expected"
+          if ($output -notmatch [regex]::Escape($expected)) { throw "Version mismatch" }
+
+      - name: Clean up before custom dir test
+        shell: pwsh
+        run: Remove-Item -Force (Join-Path $HOME '.local\bin\pipelines.exe') -ErrorAction SilentlyContinue
+
+      - name: Install via install.ps1 (custom INSTALL_DIR)
+        shell: pwsh
+        env:
+          INSTALL_DIR: ${{ runner.temp }}\custom-bin
+        run: .\install.ps1
+
+      - name: Verify custom install dir
+        shell: pwsh
+        run: |
+          $path = Join-Path "${{ runner.temp }}\custom-bin" 'pipelines.exe'
+          if (-not (Test-Path $path)) { throw "Binary not found at $path" }
+          & $path --help
+
+  # ------------------------------------------------------------------
+  # Self-update E2E (Unix)
+  # ------------------------------------------------------------------
+  self-update:
+    name: Self-Update (Unix)
+    needs: check-release
+    if: >-
+      needs.check-release.outputs.has_release == 'true' &&
+      needs.check-release.outputs.previous_version != ''
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install older version
+        env:
+          VERSION: ${{ needs.check-release.outputs.previous_version }}
+        run: |
+          sh install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify older version is installed
+        run: |
+          INSTALLED=$(pipelines --version 2>&1 || true)
+          EXPECTED="${{ needs.check-release.outputs.previous_version }}"
+          echo "Installed: $INSTALLED"
+          echo "$INSTALLED" | grep -q "$EXPECTED"
+
+      - name: Run pipelines update
+        run: pipelines update
+
+      - name: Verify updated to latest version
+        run: |
+          INSTALLED=$(pipelines --version 2>&1 || true)
+          EXPECTED="${{ needs.check-release.outputs.latest_version }}"
+          echo "After update: $INSTALLED"
+          echo "Expected: $EXPECTED"
+          echo "$INSTALLED" | grep -q "$EXPECTED"
+
+      - name: Verify symlink points to versioned binary
+        run: |
+          LINK_TARGET=$(readlink "$HOME/.local/bin/pipelines")
+          EXPECTED_DIR="$HOME/.local/share/pipelines/versions/${{ needs.check-release.outputs.latest_version }}"
+          echo "Symlink target: $LINK_TARGET"
+          echo "Expected directory: $EXPECTED_DIR"
+          echo "$LINK_TARGET" | grep -q "${{ needs.check-release.outputs.latest_version }}"
+
+      - name: Verify versions directory exists
+        run: |
+          ls -la "$HOME/.local/share/pipelines/versions/"
+          test -d "$HOME/.local/share/pipelines/versions/${{ needs.check-release.outputs.latest_version }}"
+
+  # ------------------------------------------------------------------
+  # Self-update E2E (Windows)
+  # ------------------------------------------------------------------
+  self-update-windows:
+    name: Self-Update (Windows)
+    needs: check-release
+    if: >-
+      needs.check-release.outputs.has_release == 'true' &&
+      needs.check-release.outputs.previous_version != ''
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install older version
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.check-release.outputs.previous_version }}
+        run: |
+          .\install.ps1
+          "$HOME\.local\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+
+      - name: Verify older version is installed
+        shell: pwsh
+        run: |
+          $output = pipelines --version 2>&1 | Out-String
+          $expected = "${{ needs.check-release.outputs.previous_version }}"
+          Write-Host "Installed: $output"
+          if ($output -notmatch [regex]::Escape($expected)) { throw "Version mismatch" }
+
+      - name: Run pipelines update
+        shell: pwsh
+        run: pipelines update
+
+      - name: Verify updated to latest version
+        shell: pwsh
+        run: |
+          $output = pipelines --version 2>&1 | Out-String
+          $expected = "${{ needs.check-release.outputs.latest_version }}"
+          Write-Host "After update: $output"
+          if ($output -notmatch [regex]::Escape($expected)) { throw "Version mismatch" }
+
+      - name: Verify versions directory exists
+        shell: pwsh
+        run: |
+          $dir = Join-Path $HOME '.local\share\pipelines\versions'
+          Get-ChildItem -Path $dir
+          $versionDir = Join-Path $dir "${{ needs.check-release.outputs.latest_version }}"
+          if (-not (Test-Path $versionDir)) { throw "Version directory not found: $versionDir" }
