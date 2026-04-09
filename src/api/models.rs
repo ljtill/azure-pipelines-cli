@@ -254,20 +254,10 @@ pub struct TimelineRecord {
 
 // --- Pipeline Run (queue) ---
 
-#[derive(Debug, serde::Serialize)]
-pub struct RunPipelineRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resources: Option<RunPipelineResources>,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct RunPipelineResources {
-    pub repositories: serde_json::Value,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct PipelineRun {
     pub id: u32,
+    #[allow(dead_code)]
     pub name: String,
 }
 

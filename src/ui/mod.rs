@@ -43,21 +43,31 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
+    // Show confirmation prompt if active
+    if let Some(prompt) = &app.confirm_prompt {
+        let footer = Paragraph::new(Line::from(vec![Span::styled(
+            format!(" {}", prompt.message),
+            Style::default().fg(Color::Yellow),
+        )]));
+        f.render_widget(footer, area);
+        return;
+    }
+
     let hints = match app.view {
         crate::app::View::Dashboard => {
-            "↑↓ navigate  ←→ collapse/expand  Enter drill-in  1/2/3 tabs  r refresh  ? help  q quit"
+            "↑↓ navigate  ←→ collapse/expand  Enter drill-in  R queue  o open  1/2/3 tabs  r refresh  ? help  q quit"
         }
         crate::app::View::Pipelines => {
-            "↑↓ navigate  Enter drill-in  / search  1/2/3 tabs  r refresh  ? help  q quit"
+            "↑↓ navigate  Enter drill-in  R queue  o open  / search  1/2/3 tabs  r refresh  ? help  q quit"
         }
         crate::app::View::ActiveRuns => {
-            "↑↓ navigate  Enter view logs  1/2/3 tabs  r refresh  ? help  q quit"
+            "↑↓ navigate  Enter view logs  c cancel  o open  1/2/3 tabs  r refresh  ? help  q quit"
         }
         crate::app::View::BuildHistory => {
-            "↑↓ navigate  Enter view logs  Esc back  r refresh  ? help  q quit"
+            "↑↓ navigate  Enter view logs  R queue  o open  Esc back  r refresh  ? help  q quit"
         }
         crate::app::View::LogViewer => {
-            "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  PgUp/PgDn scroll  Esc back  q quit"
+            "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  c cancel  o open  PgUp/Dn scroll  Esc back  q quit"
         }
     };
 

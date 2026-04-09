@@ -24,6 +24,7 @@ pub enum AppMessage {
     StageRetried,
     PipelineQueued {
         build: Build,
+        #[allow(dead_code)]
         definition_id: u32,
     },
     Error(String),

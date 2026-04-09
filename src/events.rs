@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::{App, InputMode, View};
+use crate::app::{App, ConfirmAction, ConfirmPrompt, InputMode, View};
 
 pub fn poll_event(timeout: Duration) -> Result<Option<Event>> {
     if event::poll(timeout)? {
@@ -22,12 +22,21 @@ pub enum Action {
     FetchBuildLog { build_id: u32, log_id: u32 },
     FetchTimeline(u32),
     FollowLatest,
+    OpenInBrowser(String),
+    CancelBuild(u32),
+    RetryStage { build_id: u32, stage_ref_name: String },
+    QueuePipeline(u32),
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     // Ctrl+C always quits
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Action::Quit;
+    }
+
+    // Confirmation prompt — only accept y/n/Esc
+    if app.confirm_prompt.is_some() {
+        return handle_confirm_key(app, key);
     }
 
     // Search mode input
@@ -55,6 +64,26 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('/') if app.view == View::Pipelines => {
             app.input_mode = InputMode::Search;
             Action::None
+        }
+
+        // Open in browser
+        KeyCode::Char('o') => handle_open_in_browser(app),
+
+        // Cancel build
+        KeyCode::Char('c') if app.view == View::LogViewer || app.view == View::ActiveRuns => {
+            handle_cancel_request(app)
+        }
+
+        // Retry stage (Shift+R)
+        KeyCode::Char('R') if app.view == View::LogViewer => handle_retry_request(app),
+
+        // Queue pipeline (Shift+R)
+        KeyCode::Char('R')
+            if app.view == View::Dashboard
+                || app.view == View::Pipelines
+                || app.view == View::BuildHistory =>
+        {
+            handle_queue_request(app)
         }
 
         // Tab switching
@@ -86,10 +115,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Left if app.view == View::Dashboard => {
             let idx = app.dashboard_index;
             if app.is_folder_header(idx) {
-                // On a folder header: collapse it
                 app.collapse_folder_at(idx);
             } else {
-                // On a pipeline row: collapse parent folder and jump to its header
                 if let Some(folder_idx) = app.find_parent_folder_index(idx) {
                     app.collapse_folder_at(folder_idx);
                     app.dashboard_index = folder_idx;
@@ -100,10 +127,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Right if app.view == View::Dashboard => {
             let idx = app.dashboard_index;
             if app.is_folder_header(idx) {
-                // On a collapsed folder header: expand it
                 app.expand_folder_at(idx);
             } else {
-                // On a pipeline row: drill in (same as Enter)
                 return handle_enter(app);
             }
             Action::None
@@ -117,15 +142,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                     app.collapse_timeline_node(idx);
                 }
                 Some("job") => {
-                    // If expanded, collapse; otherwise jump to parent stage
-                    if !app.collapse_timeline_node(idx)
-                        && let Some(parent_idx) = app.find_timeline_parent_index(idx)
-                    {
-                        app.log_entries_index = parent_idx;
+                    if !app.collapse_timeline_node(idx) {
+                        if let Some(parent_idx) = app.find_timeline_parent_index(idx) {
+                            app.log_entries_index = parent_idx;
+                        }
                     }
                 }
                 Some("task") => {
-                    // Jump to parent job
                     if let Some(parent_idx) = app.find_timeline_parent_index(idx) {
                         app.log_entries_index = parent_idx;
                     }
@@ -141,7 +164,6 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                     app.expand_timeline_node(idx);
                 }
                 Some("task") => {
-                    // View log (same as Enter)
                     return handle_enter(app);
                 }
                 _ => {}
@@ -169,6 +191,158 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         _ => Action::None,
     }
+}
+
+fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => {
+            let prompt = app.confirm_prompt.take().unwrap();
+            match prompt.action {
+                ConfirmAction::CancelBuild { build_id } => Action::CancelBuild(build_id),
+                ConfirmAction::RetryStage {
+                    build_id,
+                    stage_ref_name,
+                } => Action::RetryStage {
+                    build_id,
+                    stage_ref_name,
+                },
+                ConfirmAction::QueuePipeline { definition_id } => {
+                    Action::QueuePipeline(definition_id)
+                }
+            }
+        }
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+            app.confirm_prompt = None;
+            Action::None
+        }
+        _ => Action::None,
+    }
+}
+
+fn handle_open_in_browser(app: &App) -> Action {
+    let url = match app.view {
+        View::Dashboard => {
+            if let Some(crate::app::DashboardRow::Pipeline { definition, .. }) =
+                app.dashboard_rows.get(app.dashboard_index)
+            {
+                Some(app.endpoints_web_definition(definition.id))
+            } else {
+                None
+            }
+        }
+        View::Pipelines => app
+            .filtered_pipelines
+            .get(app.pipelines_index)
+            .map(|def| app.endpoints_web_definition(def.id)),
+        View::ActiveRuns => app
+            .active_builds
+            .get(app.active_runs_index)
+            .map(|b| app.endpoints_web_build(b.id)),
+        View::BuildHistory => app
+            .definition_builds
+            .get(app.builds_index)
+            .map(|b| app.endpoints_web_build(b.id)),
+        View::LogViewer => app
+            .selected_build
+            .as_ref()
+            .map(|b| app.endpoints_web_build(b.id)),
+    };
+
+    match url {
+        Some(url) => Action::OpenInBrowser(url),
+        None => Action::None,
+    }
+}
+
+fn handle_cancel_request(app: &mut App) -> Action {
+    let build = match app.view {
+        View::LogViewer => app.selected_build.as_ref(),
+        View::ActiveRuns => app.active_builds.get(app.active_runs_index),
+        _ => None,
+    };
+
+    if let Some(build) = build {
+        if build.status.is_in_progress() {
+            app.confirm_prompt = Some(ConfirmPrompt {
+                message: format!("Cancel build #{}?  [y/N]", build.build_number),
+                action: ConfirmAction::CancelBuild { build_id: build.id },
+            });
+        }
+    }
+    Action::None
+}
+
+fn handle_retry_request(app: &mut App) -> Action {
+    let idx = app.log_entries_index;
+    if app.timeline_row_kind(idx) != Some("stage") {
+        return Action::None;
+    }
+    let stage_ref_name = match app.timeline_stage_ref_name(idx) {
+        Some(name) => name,
+        None => return Action::None,
+    };
+    let build_id = match &app.selected_build {
+        Some(b) => b.id,
+        None => return Action::None,
+    };
+    let build_number = app
+        .selected_build
+        .as_ref()
+        .map(|b| b.build_number.as_str())
+        .unwrap_or("?");
+    let stage_name = match &app.timeline_rows.get(idx) {
+        Some(crate::app::TimelineRow::Stage { name, .. }) => name.clone(),
+        _ => stage_ref_name.clone(),
+    };
+
+    app.confirm_prompt = Some(ConfirmPrompt {
+        message: format!(
+            "Retry stage \"{}\" in build #{}?  [y/N]",
+            stage_name, build_number
+        ),
+        action: ConfirmAction::RetryStage {
+            build_id,
+            stage_ref_name,
+        },
+    });
+    Action::None
+}
+
+fn handle_queue_request(app: &mut App) -> Action {
+    let (def_id, def_name) = match app.view {
+        View::Dashboard => {
+            if let Some(crate::app::DashboardRow::Pipeline { definition, .. }) =
+                app.dashboard_rows.get(app.dashboard_index)
+            {
+                (definition.id, definition.name.clone())
+            } else {
+                return Action::None;
+            }
+        }
+        View::Pipelines => {
+            if let Some(def) = app.filtered_pipelines.get(app.pipelines_index) {
+                (def.id, def.name.clone())
+            } else {
+                return Action::None;
+            }
+        }
+        View::BuildHistory => {
+            if let Some(def) = &app.selected_definition {
+                (def.id, def.name.clone())
+            } else {
+                return Action::None;
+            }
+        }
+        _ => return Action::None,
+    };
+
+    app.confirm_prompt = Some(ConfirmPrompt {
+        message: format!("Queue new run of \"{}\"?  [y/N]", def_name),
+        action: ConfirmAction::QueuePipeline {
+            definition_id: def_id,
+        },
+    });
+    Action::None
 }
 
 fn handle_search_key(app: &mut App, key: KeyEvent) -> Action {
@@ -246,20 +420,18 @@ fn handle_enter(app: &mut App) -> Action {
             let idx = app.log_entries_index;
             match app.timeline_row_kind(idx) {
                 Some("stage") | Some("job") => {
-                    // Toggle collapse
                     app.toggle_timeline_node(idx);
                     Action::None
                 }
                 Some("task") => {
-                    // Switch to inspect mode and fetch this task's log
                     app.follow_mode = false;
-                    if let Some(log_id) = app.timeline_task_log_id(idx)
-                        && let Some(build) = &app.selected_build
-                    {
-                        return Action::FetchBuildLog {
-                            build_id: build.id,
-                            log_id,
-                        };
+                    if let Some(log_id) = app.timeline_task_log_id(idx) {
+                        if let Some(build) = &app.selected_build {
+                            return Action::FetchBuildLog {
+                                build_id: build.id,
+                                log_id,
+                            };
+                        }
                     }
                     Action::None
                 }

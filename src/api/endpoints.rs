@@ -1,14 +1,12 @@
 #[derive(Clone)]
 pub struct Endpoints {
     base_url: String,
-    web_url: String,
 }
 
 impl Endpoints {
     pub fn new(organization: &str, project: &str) -> Self {
         Self {
             base_url: format!("https://dev.azure.com/{}/{}/_apis", organization, project),
-            web_url: format!("https://dev.azure.com/{}/{}", organization, project),
         }
     }
 
@@ -70,19 +68,5 @@ impl Endpoints {
             "{}/pipelines/{}/runs?api-version=7.1",
             self.base_url, pipeline_id
         )
-    }
-
-    // Web UI URLs for opening in browser
-
-    pub fn web_build(&self, build_id: u32) -> String {
-        format!("{}/_build/results?buildId={}", self.web_url, build_id)
-    }
-
-    pub fn web_definition(&self, definition_id: u32) -> String {
-        format!("{}/_build?definitionId={}", self.web_url, definition_id)
-    }
-
-    pub fn web_active_builds(&self) -> String {
-        format!("{}/_build?view=runs", self.web_url)
     }
 }

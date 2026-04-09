@@ -206,6 +206,76 @@ fn handle_action(
                 }
             }
         }
+        Action::OpenInBrowser(url) => {
+            // Fire-and-forget: open the URL in the default browser
+            let _ = std::process::Command::new("open").arg(&url).spawn();
+        }
+        Action::CancelBuild(build_id) => {
+            let client = client.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                match client.cancel_build(build_id).await {
+                    Ok(()) => {
+                        let _ = tx.send(AppMessage::BuildCancelled).await;
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(AppMessage::Error(format!("Cancel build: {e}")))
+                            .await;
+                    }
+                }
+            });
+        }
+        Action::RetryStage {
+            build_id,
+            stage_ref_name,
+        } => {
+            let client = client.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                match client.retry_stage(build_id, &stage_ref_name).await {
+                    Ok(()) => {
+                        let _ = tx.send(AppMessage::StageRetried).await;
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(AppMessage::Error(format!("Retry stage: {e}")))
+                            .await;
+                    }
+                }
+            });
+        }
+        Action::QueuePipeline(definition_id) => {
+            let client = client.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                match client.run_pipeline(definition_id).await {
+                    Ok(run) => {
+                        // Fetch the full build object so we can navigate to it
+                        match client.get_build(run.id).await {
+                            Ok(build) => {
+                                let _ = tx
+                                    .send(AppMessage::PipelineQueued {
+                                        build,
+                                        definition_id,
+                                    })
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _ = tx
+                                    .send(AppMessage::Error(format!("Fetch queued build: {e}")))
+                                    .await;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(AppMessage::Error(format!("Queue pipeline: {e}")))
+                            .await;
+                    }
+                }
+            });
+        }
         Action::None => {}
     }
 }
@@ -306,6 +376,82 @@ fn handle_message(
         }
         AppMessage::Error(msg) => {
             app.error_message = Some(msg);
+        }
+        AppMessage::BuildCancelled => {
+            // Trigger a data refresh to update build status
+            spawn_data_refresh(client, tx);
+            // If we're viewing this build's logs, refresh timeline too
+            if let Some(build) = &app.selected_build {
+                let client = client.clone();
+                let tx = tx.clone();
+                let build_id = build.id;
+                let generation = app.log_generation;
+                tokio::spawn(async move {
+                    if let Ok(timeline) = client.get_build_timeline(build_id).await {
+                        let _ = tx
+                            .send(AppMessage::Timeline {
+                                build_id,
+                                timeline,
+                                generation,
+                                is_refresh: true,
+                            })
+                            .await;
+                    }
+                });
+            }
+        }
+        AppMessage::StageRetried => {
+            // Refresh timeline to show the retried stage
+            if let Some(build) = &app.selected_build {
+                let client = client.clone();
+                let tx = tx.clone();
+                let build_id = build.id;
+                let generation = app.log_generation;
+                tokio::spawn(async move {
+                    if let Ok(timeline) = client.get_build_timeline(build_id).await {
+                        let _ = tx
+                            .send(AppMessage::Timeline {
+                                build_id,
+                                timeline,
+                                generation,
+                                is_refresh: true,
+                            })
+                            .await;
+                    }
+                });
+            }
+            spawn_data_refresh(client, tx);
+        }
+        AppMessage::PipelineQueued {
+            build,
+            definition_id: _,
+        } => {
+            // Navigate to the new build's log viewer
+            let build_id = build.id;
+            app.navigate_to_log_viewer(build);
+            // Fetch its timeline
+            let client = client.clone();
+            let tx = tx.clone();
+            let generation = app.log_generation;
+            tokio::spawn(async move {
+                match client.get_build_timeline(build_id).await {
+                    Ok(timeline) => {
+                        let _ = tx
+                            .send(AppMessage::Timeline {
+                                build_id,
+                                timeline,
+                                generation,
+                                is_refresh: false,
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(AppMessage::Error(format!("Fetch timeline: {e}")))
+                            .await;
+                    }
+                }
+            });
         }
     }
 }

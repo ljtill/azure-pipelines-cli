@@ -49,6 +49,7 @@ pub struct App {
     pub running: bool,
     pub show_help: bool,
     pub org_project_label: String,
+    web_base_url: String,
 
     // Filters
     pub filter_folders: Vec<String>,
@@ -110,6 +111,7 @@ impl App {
             running: true,
             show_help: false,
             org_project_label: format!("{} / {}", organization, project),
+            web_base_url: format!("https://dev.azure.com/{}/{}", organization, project),
             filter_folders: config.filters.folders.clone(),
             filter_definition_ids: config.filters.definition_ids.clone(),
 
@@ -256,5 +258,18 @@ impl App {
     pub fn move_down(&mut self) {
         let idx = self.current_index();
         self.set_current_index(idx + 1);
+    }
+
+    // Web URL helpers for opening in browser
+
+    pub fn endpoints_web_build(&self, build_id: u32) -> String {
+        format!("{}/_build/results?buildId={}", self.web_base_url, build_id)
+    }
+
+    pub fn endpoints_web_definition(&self, definition_id: u32) -> String {
+        format!(
+            "{}/_build?definitionId={}",
+            self.web_base_url, definition_id
+        )
     }
 }
