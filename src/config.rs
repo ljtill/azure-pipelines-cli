@@ -81,7 +81,13 @@ impl Config {
 }
 
 pub fn default_config_path() -> Result<PathBuf> {
-    let config_dir = dirs::config_dir().context("Could not determine config directory")?;
+    // Prefer XDG_CONFIG_HOME (~/.config) over platform default (~/Library/Application Support on macOS)
+    let config_dir = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
+        .context("Could not determine config directory")?;
+
     Ok(config_dir
         .join("pipelines-dashboard")
         .join("config.toml"))
