@@ -109,6 +109,7 @@ pub struct App {
     pub log_content: Vec<String>,
     pub log_auto_scroll: bool,
     pub log_generation: u64,
+    pub timeline_initialized: bool,
 
     // List state indices
     pub dashboard_index: usize,
@@ -155,6 +156,7 @@ impl App {
             log_content: Vec::new(),
             log_auto_scroll: true,
             log_generation: 0,
+            timeline_initialized: false,
 
             dashboard_index: 0,
             pipelines_index: 0,
@@ -288,6 +290,7 @@ impl App {
         self.log_scroll_offset = 0;
         self.log_auto_scroll = true;
         self.log_generation += 1;
+        self.timeline_initialized = false;
         self.view = View::LogViewer;
     }
 
@@ -462,6 +465,23 @@ impl App {
         }
 
         stages.sort_by_key(|s| s.order.unwrap_or(999));
+
+        // On first load, pre-collapse all stages and jobs so the user gets
+        // a compact overview. auto_select_log_entry() will expand only the
+        // relevant path afterward.
+        if !self.timeline_initialized {
+            self.timeline_initialized = true;
+            for stage in &stages {
+                self.collapsed_stages.insert(stage.id.clone());
+                if let Some(phase_children) = children_of.get(&stage.id) {
+                    for child in phase_children {
+                        if child.record_type == "Phase" || child.record_type == "Job" {
+                            self.collapsed_jobs.insert(child.id.clone());
+                        }
+                    }
+                }
+            }
+        }
 
         let mut rows = Vec::new();
 
