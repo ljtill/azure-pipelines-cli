@@ -2,8 +2,9 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
+use super::helpers::draw_search_bar;
 use crate::app::{App, InputMode};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -20,22 +21,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let list_area = if show_search { chunks[1] } else { chunks[0] };
 
     if show_search {
-        let search = Paragraph::new(Line::from(vec![
-            Span::styled(" / ", Style::default().fg(Color::Yellow)),
-            Span::raw(&app.search_query),
-            if app.input_mode == InputMode::Search {
-                Span::styled("▌", Style::default().fg(Color::Cyan))
-            } else {
-                Span::raw("")
-            },
-        ]))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Filter ")
-                .title_style(Style::default().fg(Color::Yellow)),
-        );
-        f.render_widget(search, chunks[0]);
+        draw_search_bar(f, chunks[0], &app.search_query, app.input_mode);
     }
 
     let items: Vec<ListItem> = app

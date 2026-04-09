@@ -1,6 +1,12 @@
+use ratatui::Frame;
+use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::api::models::{Build, BuildResult, BuildStatus, TaskState};
+use crate::app::InputMode;
 
 /// Shared status → (icon, color) mapping for build status and result.
 pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'static str, Color) {
@@ -77,6 +83,26 @@ pub fn build_elapsed(build: &Build) -> String {
     }
 
     String::new()
+}
+
+/// Render a search/filter bar. Call only when the search bar should be visible.
+pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: InputMode) {
+    let search = Paragraph::new(Line::from(vec![
+        Span::styled(" / ", Style::default().fg(Color::Yellow)),
+        Span::raw(query),
+        if input_mode == InputMode::Search {
+            Span::styled("▌", Style::default().fg(Color::Cyan))
+        } else {
+            Span::raw("")
+        },
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Filter ")
+            .title_style(Style::default().fg(Color::Yellow)),
+    );
+    f.render_widget(search, area);
 }
 
 /// Truncate a string to at most `max_len` characters, safe for multi-byte UTF-8.

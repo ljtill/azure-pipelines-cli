@@ -168,28 +168,7 @@ fn handle_action(
             });
         }
         Action::FetchTimeline(build_id) => {
-            let client = client.clone();
-            let tx = tx.clone();
-            let generation = app.log_generation;
-            tokio::spawn(async move {
-                match client.get_build_timeline(build_id).await {
-                    Ok(timeline) => {
-                        let _ = tx
-                            .send(AppMessage::Timeline {
-                                build_id,
-                                timeline,
-                                generation,
-                                is_refresh: false,
-                            })
-                            .await;
-                    }
-                    Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::Error(format!("Fetch timeline: {e}")))
-                            .await;
-                    }
-                }
-            });
+            spawn_timeline_fetch(client, tx, build_id, app.log_generation, false);
         }
         Action::FetchBuildLog { build_id, log_id } => {
             spawn_log_fetch(client, tx, build_id, log_id, app.log_generation);
@@ -445,22 +424,7 @@ fn handle_message(
             spawn_data_refresh(client, tx);
             // If we're viewing this build's logs, refresh timeline too
             if let Some(build) = &app.selected_build {
-                let client = client.clone();
-                let tx = tx.clone();
-                let build_id = build.id;
-                let generation = app.log_generation;
-                tokio::spawn(async move {
-                    if let Ok(timeline) = client.get_build_timeline(build_id).await {
-                        let _ = tx
-                            .send(AppMessage::Timeline {
-                                build_id,
-                                timeline,
-                                generation,
-                                is_refresh: true,
-                            })
-                            .await;
-                    }
-                });
+                spawn_timeline_fetch(client, tx, build.id, app.log_generation, true);
             }
         }
         AppMessage::BuildsCancelled { cancelled, failed } => {
@@ -473,22 +437,7 @@ fn handle_message(
         AppMessage::StageRetried => {
             // Refresh timeline to show the retried stage
             if let Some(build) = &app.selected_build {
-                let client = client.clone();
-                let tx = tx.clone();
-                let build_id = build.id;
-                let generation = app.log_generation;
-                tokio::spawn(async move {
-                    if let Ok(timeline) = client.get_build_timeline(build_id).await {
-                        let _ = tx
-                            .send(AppMessage::Timeline {
-                                build_id,
-                                timeline,
-                                generation,
-                                is_refresh: true,
-                            })
-                            .await;
-                    }
-                });
+                spawn_timeline_fetch(client, tx, build.id, app.log_generation, true);
             }
             spawn_data_refresh(client, tx);
         }
@@ -496,22 +445,7 @@ fn handle_message(
             // Refresh approvals + timeline
             spawn_data_refresh(client, tx);
             if let Some(build) = &app.selected_build {
-                let client = client.clone();
-                let tx = tx.clone();
-                let build_id = build.id;
-                let generation = app.log_generation;
-                tokio::spawn(async move {
-                    if let Ok(timeline) = client.get_build_timeline(build_id).await {
-                        let _ = tx
-                            .send(AppMessage::Timeline {
-                                build_id,
-                                timeline,
-                                generation,
-                                is_refresh: true,
-                            })
-                            .await;
-                    }
-                });
+                spawn_timeline_fetch(client, tx, build.id, app.log_generation, true);
             }
         }
         AppMessage::PipelineQueued {
@@ -522,28 +456,7 @@ fn handle_message(
             let build_id = build.id;
             app.navigate_to_log_viewer(build);
             // Fetch its timeline
-            let client = client.clone();
-            let tx = tx.clone();
-            let generation = app.log_generation;
-            tokio::spawn(async move {
-                match client.get_build_timeline(build_id).await {
-                    Ok(timeline) => {
-                        let _ = tx
-                            .send(AppMessage::Timeline {
-                                build_id,
-                                timeline,
-                                generation,
-                                is_refresh: false,
-                            })
-                            .await;
-                    }
-                    Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::Error(format!("Fetch timeline: {e}")))
-                            .await;
-                    }
-                }
-            });
+            spawn_timeline_fetch(client, tx, build_id, app.log_generation, false);
         }
     }
 }
@@ -569,6 +482,36 @@ fn spawn_log_fetch(
             }
             Err(e) => {
                 let _ = tx.send(AppMessage::Error(format!("Fetch log: {e}"))).await;
+            }
+        }
+    });
+}
+
+fn spawn_timeline_fetch(
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    build_id: u32,
+    generation: u64,
+    is_refresh: bool,
+) {
+    let client = client.clone();
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        match client.get_build_timeline(build_id).await {
+            Ok(timeline) => {
+                let _ = tx
+                    .send(AppMessage::Timeline {
+                        build_id,
+                        timeline,
+                        generation,
+                        is_refresh,
+                    })
+                    .await;
+            }
+            Err(e) => {
+                let _ = tx
+                    .send(AppMessage::Error(format!("Fetch timeline: {e}")))
+                    .await;
             }
         }
     });
@@ -612,21 +555,7 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
     if let Some(build) = &app.selected_build
         && build.status.is_in_progress()
     {
-        let client = client.clone();
-        let tx = tx.clone();
-        let build_id = build.id;
-        tokio::spawn(async move {
-            if let Ok(timeline) = client.get_build_timeline(build_id).await {
-                let _ = tx
-                    .send(AppMessage::Timeline {
-                        build_id,
-                        timeline,
-                        generation,
-                        is_refresh: true,
-                    })
-                    .await;
-            }
-        });
+        spawn_timeline_fetch(client, tx, build.id, generation, true);
     }
 
     // Re-fetch log content for the currently viewed task.
