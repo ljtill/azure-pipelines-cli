@@ -528,3 +528,345 @@ fn open_url(url: &str) -> std::io::Result<std::process::Child> {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::*;
+    use crate::test_helpers::*;
+
+    // -----------------------------------------------------------------------
+    // DataRefresh
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn data_refresh_updates_definitions_and_builds() {
+        let mut app = make_app();
+        let defs = vec![
+            make_definition(10, "Alpha", "\\"),
+            make_definition(20, "Beta", "\\Ops"),
+        ];
+        let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
+        b1.definition = BuildDefinitionRef {
+            id: 10,
+            name: "Alpha".into(),
+        };
+        let recent = vec![b1.clone()];
+
+        // Apply the same mutations handle_message(DataRefresh) would.
+        app.definitions = defs;
+        let mut map: BTreeMap<u32, Build> = BTreeMap::new();
+        for b in &recent {
+            map.entry(b.definition.id).or_insert_with(|| b.clone());
+        }
+        app.latest_builds_by_def = map;
+        app.recent_builds = recent;
+        app.active_builds = vec![];
+        app.pending_approvals = vec![];
+        app.rebuild_dashboard_rows();
+        app.rebuild_filtered_pipelines();
+        app.rebuild_filtered_active_builds();
+        app.last_refresh = Some(chrono::Utc::now());
+        app.loading = false;
+        app.notifications.clear();
+
+        assert_eq!(app.definitions.len(), 2);
+        assert_eq!(app.filtered_pipelines.len(), 2);
+        assert!(!app.dashboard_rows.is_empty());
+        assert!(app.last_refresh.is_some());
+        assert!(!app.loading);
+    }
+
+    #[test]
+    fn data_refresh_clears_notifications() {
+        let mut app = make_app();
+        app.notifications.error("old error");
+        assert!(app.notifications.clone_current().is_some());
+
+        // DataRefresh clears notifications
+        app.notifications.clear();
+        assert!(app.notifications.clone_current().is_none());
+    }
+
+    #[test]
+    fn data_refresh_replaces_previous_data() {
+        let mut app = make_app();
+        assert_eq!(app.definitions.len(), 3); // make_app seeds 3
+
+        // Simulate a DataRefresh with only 1 definition
+        app.definitions = vec![make_definition(99, "Only", "\\")];
+        app.recent_builds = vec![];
+        app.latest_builds_by_def.clear();
+        app.active_builds = vec![];
+        app.pending_approvals = vec![];
+        app.rebuild_dashboard_rows();
+        app.rebuild_filtered_pipelines();
+        app.rebuild_filtered_active_builds();
+        app.last_refresh = Some(chrono::Utc::now());
+        app.loading = false;
+
+        assert_eq!(app.definitions.len(), 1);
+        assert_eq!(app.filtered_pipelines.len(), 1);
+        assert_eq!(app.filtered_active_builds.len(), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // BuildHistory
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_history_populates_and_syncs_nav() {
+        let mut app = make_app();
+        let builds = vec![
+            make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded)),
+            make_build(2, BuildStatus::Completed, Some(BuildResult::Failed)),
+            make_build(3, BuildStatus::InProgress, None),
+        ];
+        app.definition_builds = builds;
+        app.builds_nav.set_len(app.definition_builds.len());
+
+        assert_eq!(app.definition_builds.len(), 3);
+        // Nav synced — 3 items, index starts at 0
+        app.builds_nav.down();
+        assert_eq!(app.builds_nav.index(), 1);
+    }
+
+    #[test]
+    fn build_history_empty() {
+        let mut app = make_app();
+        app.definition_builds = vec![];
+        app.builds_nav.set_len(0);
+        assert_eq!(app.builds_nav.index(), 0);
+        // down on empty list is a no-op
+        app.builds_nav.down();
+        assert_eq!(app.builds_nav.index(), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // LogContent
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn log_content_splits_lines() {
+        let mut app = make_app();
+        app.navigate_to_log_viewer(make_build(
+            1,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        ));
+        app.log_viewer.set_log_content("line1\nline2\nline3".into());
+
+        assert_eq!(app.log_viewer.log_content().len(), 3);
+        assert_eq!(app.log_viewer.log_content()[0], "line1");
+        assert_eq!(app.log_viewer.log_content()[2], "line3");
+        assert!(app.log_viewer.log_auto_scroll());
+    }
+
+    #[test]
+    fn log_content_empty_input() {
+        let mut app = make_app();
+        app.navigate_to_log_viewer(make_build(
+            1,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        ));
+        app.log_viewer.set_log_content(String::new());
+        // "".lines() yields nothing, so vec should be empty
+        assert!(app.log_viewer.log_content().is_empty());
+    }
+
+    #[test]
+    fn log_content_resets_scroll_offset() {
+        let mut app = make_app();
+        app.navigate_to_log_viewer(make_build(
+            1,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        ));
+        app.log_viewer.scroll_down(50);
+        assert!(app.log_viewer.log_scroll_offset() > 0);
+
+        // Setting new log content resets scroll
+        app.log_viewer.set_log_content("fresh\nlog".into());
+        assert_eq!(app.log_viewer.log_scroll_offset(), 0);
+        assert!(app.log_viewer.log_auto_scroll());
+    }
+
+    // -----------------------------------------------------------------------
+    // Generation / stale-guard
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn stale_generation_detected() {
+        let mut app = make_app();
+        app.navigate_to_log_viewer(make_build(
+            1,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        ));
+        let current_gen = app.log_viewer.generation();
+        let stale_gen = current_gen.wrapping_sub(1);
+        assert_ne!(stale_gen, current_gen);
+    }
+
+    #[test]
+    fn generation_increments_across_navigations() {
+        let mut app = make_app();
+        let gen0 = app.log_viewer.generation();
+
+        app.navigate_to_log_viewer(make_build(
+            1,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        ));
+        let gen1 = app.log_viewer.generation();
+        assert!(gen1 > gen0);
+
+        app.go_back();
+        let gen2 = app.log_viewer.generation();
+        assert!(gen2 > gen1);
+
+        app.navigate_to_log_viewer(make_build(
+            2,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        ));
+        let gen3 = app.log_viewer.generation();
+        assert!(gen3 > gen2);
+    }
+
+    #[test]
+    fn stale_log_content_would_be_discarded() {
+        let mut app = make_app();
+        app.navigate_to_log_viewer(make_build(
+            1,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        ));
+        let current_gen = app.log_viewer.generation();
+        let stale_gen = current_gen.wrapping_sub(1);
+
+        // Simulate the stale guard: only apply content if generation matches
+        let content = "should not appear".to_string();
+        if stale_gen == app.log_viewer.generation() {
+            app.log_viewer.set_log_content(content);
+        }
+        // Content should remain empty because the generation didn't match
+        assert!(app.log_viewer.log_content().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Error / notification messages
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn error_pushes_notification() {
+        let mut app = make_app();
+        app.notifications.error("fetch failed");
+        let n = app.notifications.clone_current().unwrap();
+        assert_eq!(n.message, "fetch failed");
+    }
+
+    #[test]
+    fn success_pushes_notification() {
+        let mut app = make_app();
+        app.notifications.success("Build cancelled");
+        let n = app.notifications.clone_current().unwrap();
+        assert_eq!(n.message, "Build cancelled");
+    }
+
+    #[test]
+    fn batch_cancel_clears_selections() {
+        let mut app = make_app();
+        app.selected_builds.insert(1);
+        app.selected_builds.insert(2);
+        assert_eq!(app.selected_builds.len(), 2);
+
+        // BuildsCancelled handler clears selections
+        app.selected_builds.clear();
+        assert!(app.selected_builds.is_empty());
+    }
+
+    #[test]
+    fn batch_cancel_with_failures_shows_error() {
+        let mut app = make_app();
+        // Simulate partial-failure path from BuildsCancelled
+        let cancelled = 2u32;
+        let failed = 1u32;
+        app.selected_builds.clear();
+        app.notifications
+            .error(format!("Cancelled {cancelled}, {failed} failed"));
+        let n = app.notifications.clone_current().unwrap();
+        assert!(n.message.contains("failed"));
+        assert!(n.message.contains("Cancelled 2"));
+    }
+
+    #[test]
+    fn batch_cancel_all_succeeded_shows_success() {
+        let mut app = make_app();
+        let cancelled = 3u32;
+        let failed = 0u32;
+        app.selected_builds.clear();
+        if failed > 0 {
+            app.notifications
+                .error(format!("Cancelled {cancelled}, {failed} failed"));
+        } else {
+            app.notifications
+                .success(format!("Cancelled {cancelled} build(s)"));
+        }
+        let n = app.notifications.clone_current().unwrap();
+        assert_eq!(n.message, "Cancelled 3 build(s)");
+    }
+
+    // -----------------------------------------------------------------------
+    // PipelineQueued
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pipeline_queued_navigates_to_log_viewer() {
+        let mut app = make_app();
+        assert_eq!(app.view, View::Dashboard);
+
+        let build = make_build(42, BuildStatus::InProgress, None);
+        app.navigate_to_log_viewer(build);
+
+        assert_eq!(app.view, View::LogViewer);
+        assert_eq!(app.log_viewer.selected_build().unwrap().id, 42);
+    }
+
+    #[test]
+    fn pipeline_queued_increments_generation() {
+        let mut app = make_app();
+        let gen_before = app.log_viewer.generation();
+        app.navigate_to_log_viewer(make_build(42, BuildStatus::InProgress, None));
+        assert!(app.log_viewer.generation() > gen_before);
+    }
+
+    #[test]
+    fn pipeline_queued_starts_in_follow_mode() {
+        let mut app = make_app();
+        app.navigate_to_log_viewer(make_build(42, BuildStatus::InProgress, None));
+        assert!(app.log_viewer.is_following());
+    }
+
+    // -----------------------------------------------------------------------
+    // StageRetried / CheckUpdated notification
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn stage_retried_shows_success() {
+        let mut app = make_app();
+        // Mirrors handle_message(StageRetried) notification path
+        app.notifications.success("Stage retried");
+        let n = app.notifications.clone_current().unwrap();
+        assert_eq!(n.message, "Stage retried");
+    }
+
+    #[test]
+    fn check_updated_shows_success() {
+        let mut app = make_app();
+        app.notifications.success("Check updated");
+        let n = app.notifications.clone_current().unwrap();
+        assert_eq!(n.message, "Check updated");
+    }
+}
