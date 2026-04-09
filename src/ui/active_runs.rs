@@ -2,14 +2,47 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
 use super::helpers::build_elapsed;
-use crate::app::App;
+use crate::app::{App, InputMode};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
+    use ratatui::layout::{Constraint, Layout};
+
+    let show_search = (app.input_mode == InputMode::Search
+        && app.view == crate::app::View::ActiveRuns)
+        || (!app.search_query.is_empty() && app.view == crate::app::View::ActiveRuns);
+
+    let chunks = if show_search {
+        Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(area)
+    } else {
+        Layout::vertical([Constraint::Min(0)]).split(area)
+    };
+
+    let list_area = if show_search { chunks[1] } else { chunks[0] };
+
+    if show_search {
+        let search = Paragraph::new(Line::from(vec![
+            Span::styled(" / ", Style::default().fg(Color::Yellow)),
+            Span::raw(&app.search_query),
+            if app.input_mode == InputMode::Search {
+                Span::styled("▌", Style::default().fg(Color::Cyan))
+            } else {
+                Span::raw("")
+            },
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Filter ")
+                .title_style(Style::default().fg(Color::Yellow)),
+        );
+        f.render_widget(search, chunks[0]);
+    }
+
     let items: Vec<ListItem> = app
-        .active_builds
+        .filtered_active_builds
         .iter()
         .enumerate()
         .map(|(i, build)| {
@@ -54,14 +87,17 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let sel_count = app.selected_builds.len();
+    let filtered = app.filtered_active_builds.len();
+    let total = app.active_builds.len();
     let title = if sel_count > 0 {
         format!(
-            " Active Runs ({}) — {} selected ",
-            app.active_builds.len(),
-            sel_count
+            " Active Runs ({} / {}) — {} selected ",
+            filtered, total, sel_count
         )
+    } else if filtered != total {
+        format!(" Active Runs ({} / {}) ", filtered, total)
     } else {
-        format!(" Active Runs ({}) ", app.active_builds.len())
+        format!(" Active Runs ({}) ", total)
     };
     let list = List::new(items).block(
         Block::default()
@@ -72,5 +108,5 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     let mut state = ListState::default();
     state.select(Some(app.active_runs_index));
-    f.render_stateful_widget(list, area, &mut state);
+    f.render_stateful_widget(list, list_area, &mut state);
 }

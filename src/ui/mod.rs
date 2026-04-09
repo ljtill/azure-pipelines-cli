@@ -61,7 +61,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             "↑↓ navigate  Enter drill-in  Q queue  o open  / search  1/2/3 tabs  r refresh  ? help  q quit"
         }
         crate::app::View::ActiveRuns => {
-            "↑↓ navigate  Space select  c cancel  Enter view logs  o open  1/2/3 tabs  r refresh  ? help  q quit"
+            "↑↓ navigate  Space select  c cancel  / filter  Enter view logs  o open  1/2/3 tabs  r refresh  ? help  q quit"
         }
         crate::app::View::BuildHistory => {
             "↑↓ navigate  Enter view logs  Q queue  o open  Esc back  r refresh  ? help  q quit"

@@ -36,7 +36,7 @@ pub fn draw(f: &mut Frame) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(""),
-        Line::from("  /              Search / filter (Pipelines view)"),
+        Line::from("  /              Search / filter (Pipelines / Active Runs)"),
         Line::from("  Space          Select / deselect (Active Runs)"),
         Line::from("  f              Follow latest active task (Log Viewer)"),
         Line::from("  Q              Queue pipeline run"),

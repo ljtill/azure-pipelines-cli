@@ -61,7 +61,7 @@ azure-pipelines-cli --config /path/to/config.toml
 | Enter        | Drill into selected item / expand-collapse folder |
 | Esc          | Go back to previous view                        |
 | 1 / 2 / 3    | Switch between Dashboard / Pipelines / Active Runs |
-| /            | Search / filter (Pipelines view)                |
+| /            | Search / filter (Pipelines / Active Runs)        |
 | Space        | Select / deselect build (Active Runs)            |
 | Q            | Queue pipeline run                               |
 | R            | Retry failed stage (Log Viewer)                  |

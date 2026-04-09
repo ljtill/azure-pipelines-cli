@@ -62,7 +62,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.follow_mode = true;
             Action::FollowLatest
         }
-        KeyCode::Char('/') if app.view == View::Pipelines => {
+        KeyCode::Char('/') if app.view == View::Pipelines || app.view == View::ActiveRuns => {
             app.input_mode = InputMode::Search;
             Action::None
         }
@@ -72,7 +72,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Multi-select toggle in Active Runs
         KeyCode::Char(' ') if app.view == View::ActiveRuns => {
-            if let Some(build) = app.active_builds.get(app.active_runs_index) {
+            if let Some(build) = app.filtered_active_builds.get(app.active_runs_index) {
                 let id = build.id;
                 if !app.selected_builds.remove(&id) {
                     app.selected_builds.insert(id);
@@ -100,16 +100,20 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Tab switching
         KeyCode::Char('1') => {
+            app.search_query.clear();
             app.view = View::Dashboard;
             Action::None
         }
         KeyCode::Char('2') => {
+            app.search_query.clear();
             app.view = View::Pipelines;
             app.rebuild_filtered_pipelines();
             Action::None
         }
         KeyCode::Char('3') => {
+            app.search_query.clear();
             app.view = View::ActiveRuns;
+            app.rebuild_filtered_active_builds();
             Action::None
         }
 
@@ -248,7 +252,7 @@ fn handle_open_in_browser(app: &App) -> Action {
             .get(app.pipelines_index)
             .map(|def| app.endpoints_web_definition(def.id)),
         View::ActiveRuns => app
-            .active_builds
+            .filtered_active_builds
             .get(app.active_runs_index)
             .map(|b| app.endpoints_web_build(b.id)),
         View::BuildHistory => app
@@ -282,7 +286,7 @@ fn handle_cancel_request(app: &mut App) -> Action {
     // Single cancel: cursor item
     let build = match app.view {
         View::LogViewer => app.selected_build.as_ref(),
-        View::ActiveRuns => app.active_builds.get(app.active_runs_index),
+        View::ActiveRuns => app.filtered_active_builds.get(app.active_runs_index),
         _ => None,
     };
 
@@ -375,24 +379,36 @@ fn handle_search_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
             app.search_query.clear();
-            app.rebuild_filtered_pipelines();
+            rebuild_search_results(app);
         }
         KeyCode::Enter => {
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Backspace => {
             app.search_query.pop();
-            app.rebuild_filtered_pipelines();
-            app.pipelines_index = 0;
+            rebuild_search_results(app);
         }
         KeyCode::Char(c) => {
             app.search_query.push(c);
-            app.rebuild_filtered_pipelines();
-            app.pipelines_index = 0;
+            rebuild_search_results(app);
         }
         _ => {}
     }
     Action::None
+}
+
+fn rebuild_search_results(app: &mut App) {
+    match app.view {
+        View::Pipelines => {
+            app.rebuild_filtered_pipelines();
+            app.pipelines_index = 0;
+        }
+        View::ActiveRuns => {
+            app.rebuild_filtered_active_builds();
+            app.active_runs_index = 0;
+        }
+        _ => {}
+    }
 }
 
 fn handle_enter(app: &mut App) -> Action {
@@ -424,7 +440,7 @@ fn handle_enter(app: &mut App) -> Action {
             }
         }
         View::ActiveRuns => {
-            if let Some(build) = app.active_builds.get(app.active_runs_index).cloned() {
+            if let Some(build) = app.filtered_active_builds.get(app.active_runs_index).cloned() {
                 let build_id = build.id;
                 app.navigate_to_log_viewer(build);
                 Action::FetchTimeline(build_id)

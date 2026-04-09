@@ -99,6 +99,7 @@ pub struct App {
     // Search
     pub search_query: String,
     pub filtered_pipelines: Vec<PipelineDefinition>,
+    pub filtered_active_builds: Vec<Build>,
 
     // Status
     pub last_refresh: Option<DateTime<Utc>>,
@@ -155,6 +156,7 @@ impl App {
 
             search_query: String::new(),
             filtered_pipelines: Vec::new(),
+            filtered_active_builds: Vec::new(),
 
             last_refresh: None,
             error_message: None,
@@ -226,7 +228,7 @@ impl App {
         match self.view {
             View::Dashboard => self.dashboard_rows.len(),
             View::Pipelines => self.filtered_pipelines.len(),
-            View::ActiveRuns => self.active_builds.len(),
+            View::ActiveRuns => self.filtered_active_builds.len(),
             View::BuildHistory => self.definition_builds.len(),
             View::LogViewer => self.timeline_rows.len(),
         }
@@ -277,5 +279,24 @@ impl App {
             "{}/_build?definitionId={}",
             self.web_base_url, definition_id
         )
+    }
+
+    /// Rebuild the filtered active builds list from search query.
+    pub fn rebuild_filtered_active_builds(&mut self) {
+        if self.search_query.is_empty() {
+            self.filtered_active_builds = self.active_builds.clone();
+        } else {
+            let q = self.search_query.to_lowercase();
+            self.filtered_active_builds = self
+                .active_builds
+                .iter()
+                .filter(|b| {
+                    b.definition.name.to_lowercase().contains(&q)
+                        || b.build_number.to_lowercase().contains(&q)
+                        || b.short_branch().to_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect();
+        }
     }
 }

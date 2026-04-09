@@ -327,6 +327,7 @@ fn handle_message(
 
             app.rebuild_dashboard_rows();
             app.rebuild_filtered_pipelines();
+            app.rebuild_filtered_active_builds();
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
             app.error_message = None;
