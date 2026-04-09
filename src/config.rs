@@ -67,7 +67,7 @@ fn default_check_for_updates() -> bool {
 }
 
 fn default_refresh_interval() -> u64 {
-    30
+    15
 }
 
 fn default_log_refresh_interval() -> u64 {
@@ -198,7 +198,7 @@ project = "myproject"
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.azure_devops.organization, "myorg");
         assert_eq!(config.azure_devops.project, "myproject");
-        assert_eq!(config.display.refresh_interval_secs, 30);
+        assert_eq!(config.display.refresh_interval_secs, 15);
         assert_eq!(config.display.log_refresh_interval_secs, 5);
         assert!(config.filters.folders.is_empty());
         assert!(config.filters.definition_ids.is_empty());
