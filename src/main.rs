@@ -56,8 +56,6 @@ async fn main() -> Result<()> {
         original_hook(panic_info);
     }));
 
-    let cli = Cli::parse();
-
     // Resolve config path and check if it exists.
     let (config_path, config_exists) = Config::resolve_path(cli.config.as_ref())?;
 
