@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: write
+  models: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -90,6 +91,8 @@ jobs:
 
       - name: Generate release notes
         id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           LATEST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
           if [ -z "$LATEST_TAG" ]; then
@@ -98,49 +101,79 @@ jobs:
             COMMIT_RANGE="${LATEST_TAG}..HEAD"
           fi
 
-          # Collect commits grouped by conventional commit type
-          FEATURES=""
-          FIXES=""
-          REFACTORS=""
-          DOCS=""
-          CI_CHORES=""
-          OTHER=""
-
-          while IFS= read -r MSG; do
-            [ -z "$MSG" ] && continue
-            BREAKING=""
-            if echo "$MSG" | grep -qE '^[a-z]+(\(.+\))?!:'; then
-              BREAKING=" **BREAKING**"
-            fi
-            # Strip type prefix for the description
-            DESC=$(echo "$MSG" | sed -E 's/^[a-z]+(\([^)]*\))?!?:\s*//')
-            case "$MSG" in
-              feat*)    FEATURES="${FEATURES}- ${DESC}${BREAKING}\n" ;;
-              fix*)     FIXES="${FIXES}- ${DESC}${BREAKING}\n" ;;
-              refactor*) REFACTORS="${REFACTORS}- ${DESC}${BREAKING}\n" ;;
-              docs*)    DOCS="${DOCS}- ${DESC}${BREAKING}\n" ;;
-              ci*|chore*) CI_CHORES="${CI_CHORES}- ${DESC}${BREAKING}\n" ;;
-              *)        OTHER="${OTHER}- ${MSG}${BREAKING}\n" ;;
-            esac
-          done <<< "$(git log "$COMMIT_RANGE" --pretty=format:"%s" 2>/dev/null)"
-
-          # Build changelog markdown
-          CHANGELOG=""
-          [ -n "$FEATURES" ]  && CHANGELOG="${CHANGELOG}## 🚀 Features\n\n${FEATURES}\n"
-          [ -n "$FIXES" ]     && CHANGELOG="${CHANGELOG}## 🐛 Bug Fixes\n\n${FIXES}\n"
-          [ -n "$REFACTORS" ] && CHANGELOG="${CHANGELOG}## ♻️ Refactoring\n\n${REFACTORS}\n"
-          [ -n "$DOCS" ]      && CHANGELOG="${CHANGELOG}## 📖 Documentation\n\n${DOCS}\n"
-          [ -n "$CI_CHORES" ] && CHANGELOG="${CHANGELOG}## 🔧 CI & Chores\n\n${CI_CHORES}\n"
-          [ -n "$OTHER" ]     && CHANGELOG="${CHANGELOG}## Other\n\n${OTHER}\n"
-
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="No notable changes."
+          COMMIT_LOG=$(git log "$COMMIT_RANGE" --pretty=format:"- %s" 2>/dev/null || true)
+          if [ -z "$COMMIT_LOG" ]; then
+            echo "No notable changes." > release-notes.md
+            echo "changelog=release-notes.md" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-          # Write to file (multi-line output is tricky in GITHUB_OUTPUT)
-          echo -e "$CHANGELOG" > release-notes.md
-          cat release-notes.md
+          # Try AI-generated release notes via GitHub Models
+          echo "Attempting AI-generated release notes..."
+          gh extension install github/gh-models 2>/dev/null || true
 
+          PROMPT="You are a release notes writer for an open-source CLI tool called azure-pipelines-cli (a TUI dashboard for Azure DevOps Pipelines).
+
+Given the following git commit messages (using Conventional Commits format), generate clean, polished release notes in Markdown.
+
+Rules:
+- Group changes under these headings (only include sections that have entries): 🚀 Features, 🐛 Bug Fixes, ♻️ Refactoring, 📖 Documentation, 🔧 CI & Maintenance
+- Flag any breaking changes with a ⚠️ BREAKING CHANGE callout
+- Write concise, user-friendly descriptions (not raw commit messages)
+- Do not include commit hashes or author names
+- Output only the Markdown, no preamble
+
+Commits:
+${COMMIT_LOG}"
+
+          if echo "$PROMPT" | gh models run openai/gpt-5-mini > ai-notes.md 2>/dev/null && [ -s ai-notes.md ]; then
+            echo "AI release notes generated successfully"
+            cp ai-notes.md release-notes.md
+          else
+            echo "AI generation failed, falling back to conventional commit parsing"
+
+            # Shell-based fallback: group commits by type
+            FEATURES=""
+            FIXES=""
+            REFACTORS=""
+            DOCS=""
+            CI_CHORES=""
+            OTHER=""
+
+            while IFS= read -r MSG; do
+              [ -z "$MSG" ] && continue
+              BREAKING=""
+              if echo "$MSG" | grep -qE '^[a-z]+(\(.+\))?!:'; then
+                BREAKING=" **BREAKING**"
+              fi
+              DESC=$(echo "$MSG" | sed -E 's/^[a-z]+(\([^)]*\))?!?:\s*//')
+              case "$MSG" in
+                feat*)    FEATURES="${FEATURES}- ${DESC}${BREAKING}\n" ;;
+                fix*)     FIXES="${FIXES}- ${DESC}${BREAKING}\n" ;;
+                refactor*) REFACTORS="${REFACTORS}- ${DESC}${BREAKING}\n" ;;
+                docs*)    DOCS="${DOCS}- ${DESC}${BREAKING}\n" ;;
+                ci*|chore*) CI_CHORES="${CI_CHORES}- ${DESC}${BREAKING}\n" ;;
+                *)        OTHER="${OTHER}- ${MSG}${BREAKING}\n" ;;
+              esac
+            done <<< "$(git log "$COMMIT_RANGE" --pretty=format:"%s" 2>/dev/null)"
+
+            CHANGELOG=""
+            [ -n "$FEATURES" ]  && CHANGELOG="${CHANGELOG}## 🚀 Features\n\n${FEATURES}\n"
+            [ -n "$FIXES" ]     && CHANGELOG="${CHANGELOG}## 🐛 Bug Fixes\n\n${FIXES}\n"
+            [ -n "$REFACTORS" ] && CHANGELOG="${CHANGELOG}## ♻️ Refactoring\n\n${REFACTORS}\n"
+            [ -n "$DOCS" ]      && CHANGELOG="${CHANGELOG}## 📖 Documentation\n\n${DOCS}\n"
+            [ -n "$CI_CHORES" ] && CHANGELOG="${CHANGELOG}## 🔧 CI & Maintenance\n\n${CI_CHORES}\n"
+            [ -n "$OTHER" ]     && CHANGELOG="${CHANGELOG}## Other\n\n${OTHER}\n"
+
+            if [ -z "$CHANGELOG" ]; then
+              CHANGELOG="No notable changes."
+            fi
+
+            echo -e "$CHANGELOG" > release-notes.md
+          fi
+
+          echo "--- Release Notes ---"
+          cat release-notes.md
           echo "changelog=release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Upload release notes
