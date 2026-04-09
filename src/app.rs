@@ -4,6 +4,28 @@ use chrono::{DateTime, Utc};
 
 use crate::api::models::{Build, BuildTimeline, PipelineDefinition};
 
+/// Messages sent from background tasks to the main event loop.
+pub enum AppMessage {
+    DataRefresh {
+        definitions: Vec<PipelineDefinition>,
+        recent_builds: Vec<Build>,
+        active_builds: Vec<Build>,
+    },
+    BuildHistory {
+        builds: Vec<Build>,
+    },
+    Timeline {
+        build_id: u32,
+        timeline: BuildTimeline,
+        generation: u64,
+    },
+    LogContent {
+        content: String,
+        generation: u64,
+    },
+    Error(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Dashboard,
@@ -86,6 +108,7 @@ pub struct App {
     pub collapsed_jobs: std::collections::HashSet<String>,
     pub log_content: Vec<String>,
     pub log_auto_scroll: bool,
+    pub log_generation: u64,
 
     // List state indices
     pub dashboard_index: usize,
@@ -131,6 +154,7 @@ impl App {
             collapsed_jobs: std::collections::HashSet::new(),
             log_content: Vec::new(),
             log_auto_scroll: true,
+            log_generation: 0,
 
             dashboard_index: 0,
             pipelines_index: 0,
@@ -233,6 +257,7 @@ impl App {
                 self.log_content.clear();
                 self.log_entries_index = 0;
                 self.log_scroll_offset = 0;
+                self.log_generation += 1;
             }
             View::BuildHistory => {
                 self.view = self.previous_view.unwrap_or(View::Dashboard);
@@ -262,6 +287,7 @@ impl App {
         self.log_entries_index = 0;
         self.log_scroll_offset = 0;
         self.log_auto_scroll = true;
+        self.log_generation += 1;
         self.view = View::LogViewer;
     }
 

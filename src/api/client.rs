@@ -5,6 +5,7 @@ use super::auth::AdoAuth;
 use super::endpoints::Endpoints;
 use super::models::*;
 
+#[derive(Clone)]
 pub struct AdoClient {
     http: Client,
     auth: AdoAuth,

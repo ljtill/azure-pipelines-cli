@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct Endpoints {
     base_url: String,
 }

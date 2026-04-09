@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 const ADO_RESOURCE: &str = "499b84ac-1321-427f-aa17-267ca6975798";
 
+#[derive(Clone)]
 pub struct AdoAuth {
     credential: Arc<dyn TokenCredential>,
 }
