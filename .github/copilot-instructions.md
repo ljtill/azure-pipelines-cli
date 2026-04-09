@@ -8,8 +8,24 @@
 - Test all: `cargo test`
 - Run a single test: `cargo test <test_name_substring>` (there are currently no committed Rust tests, so this is the form to use when tests are added)
 - Format check: `cargo fmt --check`
-- Clippy: `cargo clippy --all-targets --all-features -- -D warnings`
-- Current baseline: `cargo build` and `cargo test` pass; `cargo fmt --check` reports existing formatting drift in checked-in files, and the strict Clippy command above currently fails on existing warnings, so do not assume a clean lint baseline before making changes.
+- Clippy: `cargo clippy --all-targets -- -D warnings`
+- Current baseline: `cargo build`, `cargo test`, `cargo fmt --check`, and `cargo clippy --all-targets -- -D warnings` all pass cleanly. Keep it that way — do not commit code that introduces new warnings or formatting drift.
+
+## Pre-commit checks
+
+A git pre-commit hook enforces the same checks that CI runs. One-time setup:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+The hook runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` before every commit. If any check fails, the commit is blocked.
+
+Before committing, always run:
+
+```sh
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test
+```
 
 ## Runtime and configuration
 
