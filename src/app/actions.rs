@@ -14,6 +14,40 @@ use super::View;
 use super::log_viewer::TimelineRow;
 use super::messages::{AppMessage, RefreshSource};
 
+// ---------------------------------------------------------------------------
+// Drop guard for async refresh tasks
+// ---------------------------------------------------------------------------
+
+/// Ensures a fallback message is sent if the spawned task exits unexpectedly
+/// (e.g., due to a panic). Call `defuse()` on the happy path to suppress.
+struct RefreshGuard {
+    tx: Option<mpsc::Sender<AppMessage>>,
+    fallback: Option<AppMessage>,
+}
+
+impl RefreshGuard {
+    fn new(tx: mpsc::Sender<AppMessage>, fallback: AppMessage) -> Self {
+        Self {
+            tx: Some(tx),
+            fallback: Some(fallback),
+        }
+    }
+
+    /// Disarm the guard — no fallback message will be sent on drop.
+    fn defuse(&mut self) {
+        self.tx = None;
+        self.fallback = None;
+    }
+}
+
+impl Drop for RefreshGuard {
+    fn drop(&mut self) {
+        if let (Some(tx), Some(msg)) = (self.tx.take(), self.fallback.take()) {
+            let _ = tx.try_send(msg);
+        }
+    }
+}
+
 /// Spawn an async API call on a background task, routing the result to AppMessage.
 fn spawn_api<F, Fut, T>(
     client: &AdoClient,
@@ -295,6 +329,9 @@ pub fn handle_message(
                     if task_changed {
                         spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
                     }
+                } else {
+                    // Build completed or no active task — exit follow mode gracefully
+                    app.log_viewer.enter_inspect_mode();
                 }
             } else {
                 // Refresh in inspect mode: only update tree status, preserve cursor + log
@@ -462,6 +499,14 @@ pub fn spawn_data_refresh(
     let client = client.clone();
     let tx = tx.clone();
     tokio::spawn(async move {
+        let mut guard = RefreshGuard::new(
+            tx.clone(),
+            AppMessage::RefreshError {
+                message: "Data refresh task terminated unexpectedly".into(),
+                source: RefreshSource::Data,
+            },
+        );
+
         let (defs_result, recent_result, active_result, approvals_result) = tokio::join!(
             client.list_definitions(),
             client.list_recent_builds(),
@@ -502,6 +547,8 @@ pub fn spawn_data_refresh(
                     .await;
             }
         }
+
+        guard.defuse();
     });
     true
 }
@@ -554,6 +601,11 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
     let log_client = client.clone();
     let tx = tx.clone();
     tokio::spawn(async move {
+        let mut guard = RefreshGuard::new(
+            tx.clone(),
+            AppMessage::LogRefreshFinished { had_failure: true },
+        );
+
         let timeline_future = async move {
             if should_refresh_timeline {
                 Some(timeline_client.get_build_timeline(build_id).await)
@@ -625,6 +677,8 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
         let _ = tx
             .send(AppMessage::LogRefreshFinished { had_failure })
             .await;
+
+        guard.defuse();
     });
     true
 }
