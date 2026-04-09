@@ -26,6 +26,7 @@ pub fn make_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
         name: name.to_string(),
         path: path.to_string(),
         queue_status: None,
+        latest_build: None,
     }
 }
 

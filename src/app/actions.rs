@@ -207,10 +207,16 @@ pub fn handle_message(
             app.data_refresh_backoff_until = None;
             app.data.definitions = definitions;
 
+            // Seed the map from each definition's latestBuild (full coverage),
+            // then overlay with recent_builds (may be fresher for active pipelines).
             let mut map: BTreeMap<u32, models::Build> = BTreeMap::new();
+            for def in &app.data.definitions {
+                if let Some(build) = &def.latest_build {
+                    map.insert(def.id, *build.clone());
+                }
+            }
             for build in &recent_builds {
-                map.entry(build.definition.id)
-                    .or_insert_with(|| build.clone());
+                map.insert(build.definition.id, build.clone());
             }
             app.data.latest_builds_by_def = map;
             app.data.recent_builds = recent_builds;
@@ -675,8 +681,13 @@ mod tests {
         // Apply the same mutations handle_message(DataRefresh) would.
         app.data.definitions = defs;
         let mut map: BTreeMap<u32, Build> = BTreeMap::new();
+        for def in &app.data.definitions {
+            if let Some(build) = &def.latest_build {
+                map.insert(def.id, *build.clone());
+            }
+        }
         for b in &recent {
-            map.entry(b.definition.id).or_insert_with(|| b.clone());
+            map.insert(b.definition.id, b.clone());
         }
         app.data.latest_builds_by_def = map;
         app.data.recent_builds = recent;
@@ -755,6 +766,64 @@ mod tests {
         assert_eq!(app.data.definitions.len(), 1);
         assert_eq!(app.pipelines.filtered.len(), 1);
         assert_eq!(app.active_runs.filtered.len(), 0);
+    }
+
+    #[test]
+    fn data_refresh_seeds_map_from_definition_latest_build() {
+        let mut app = make_app();
+
+        // Definition carries its own latestBuild — no recent_builds at all.
+        let embedded_build = make_build(500, BuildStatus::Completed, Some(BuildResult::Succeeded));
+        let mut def = make_definition(50, "Rare Pipeline", "\\");
+        def.latest_build = Some(Box::new(embedded_build));
+
+        app.data.definitions = vec![def];
+        let mut map: BTreeMap<u32, Build> = BTreeMap::new();
+        for d in &app.data.definitions {
+            if let Some(build) = &d.latest_build {
+                map.insert(d.id, *build.clone());
+            }
+        }
+        // No recent_builds to overlay
+        app.data.latest_builds_by_def = map;
+        app.data.recent_builds = vec![];
+
+        assert!(app.data.latest_builds_by_def.contains_key(&50));
+        assert_eq!(app.data.latest_builds_by_def[&50].id, 500);
+    }
+
+    #[test]
+    fn data_refresh_recent_builds_overlay_definition_latest_build() {
+        let mut app = make_app();
+
+        // Definition has an older build embedded.
+        let old_build = make_build(500, BuildStatus::Completed, Some(BuildResult::Failed));
+        let mut def = make_definition(50, "Pipeline", "\\");
+        def.latest_build = Some(Box::new(old_build));
+
+        // recent_builds has a newer build for the same definition.
+        let mut newer_build = make_build(501, BuildStatus::Completed, Some(BuildResult::Succeeded));
+        newer_build.definition = BuildDefinitionRef {
+            id: 50,
+            name: "Pipeline".into(),
+        };
+
+        app.data.definitions = vec![def];
+        let mut map: BTreeMap<u32, Build> = BTreeMap::new();
+        for d in &app.data.definitions {
+            if let Some(build) = &d.latest_build {
+                map.insert(d.id, *build.clone());
+            }
+        }
+        let recent = vec![newer_build];
+        for b in &recent {
+            map.insert(b.definition.id, b.clone());
+        }
+        app.data.latest_builds_by_def = map;
+        app.data.recent_builds = recent;
+
+        // recent_builds should win (overlay).
+        assert_eq!(app.data.latest_builds_by_def[&50].id, 501);
     }
 
     // -----------------------------------------------------------------------

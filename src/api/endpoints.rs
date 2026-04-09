@@ -29,7 +29,7 @@ impl Endpoints {
 
     pub fn definitions(&self) -> String {
         format!(
-            "{}/build/definitions?api-version={API_VERSION}",
+            "{}/build/definitions?api-version={API_VERSION}&includeLatestBuilds=true",
             self.base_url
         )
     }
@@ -119,7 +119,7 @@ mod tests {
     fn definitions_url() {
         assert_eq!(
             ep().definitions(),
-            format!("{BASE}/build/definitions?api-version=7.1")
+            format!("{BASE}/build/definitions?api-version=7.1&includeLatestBuilds=true")
         );
     }
 
