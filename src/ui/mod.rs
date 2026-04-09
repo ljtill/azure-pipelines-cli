@@ -6,6 +6,7 @@ pub mod help;
 pub mod helpers;
 pub mod logs;
 pub mod pipelines;
+pub mod setup;
 
 use ratatui::Frame;
 

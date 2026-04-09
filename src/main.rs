@@ -12,7 +12,7 @@ use ratatui::backend::CrosstermBackend;
 
 use azure_pipelines_cli::api::client::AdoClient;
 use azure_pipelines_cli::app;
-use azure_pipelines_cli::config::Config;
+use azure_pipelines_cli::config::{Config, check_azure_cli};
 
 #[derive(Parser)]
 #[command(name = "pipelines", about = "TUI dashboard for Azure DevOps Pipelines")]
@@ -28,6 +28,9 @@ async fn main() -> Result<()> {
     // Controlled via RUST_LOG env var (e.g. RUST_LOG=debug).
     init_tracing();
 
+    // Pre-TUI checks: ensure Azure CLI or Developer CLI is available.
+    check_azure_cli()?;
+
     // Panic hook to restore terminal
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -37,7 +40,66 @@ async fn main() -> Result<()> {
     }));
 
     let cli = Cli::parse();
-    let config = Config::load(cli.config.as_ref())?;
+
+    // Resolve config path and check if it exists.
+    let (config_path, config_exists) = Config::resolve_path(cli.config.as_ref())?;
+
+    let config = if config_exists {
+        Config::load(Some(&config_path))?
+    } else {
+        // No config file — run interactive setup inside the TUI.
+        enable_raw_mode()?;
+        let mut stdout = std::io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+
+        let result = azure_pipelines_cli::ui::setup::run_setup(&mut terminal, &config_path);
+
+        match result {
+            Ok(Some(config)) => {
+                // Setup complete — hand off the terminal to the dashboard.
+                let client = AdoClient::new(
+                    &config.azure_devops.organization,
+                    &config.azure_devops.project,
+                )
+                .await?;
+
+                let run_result = app::run::run(&mut terminal, client, &config).await;
+
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+
+                return run_result;
+            }
+            Ok(None) => {
+                // User pressed Esc — clean exit.
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+                return Ok(());
+            }
+            Err(e) => {
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+                return Err(e);
+            }
+        }
+    };
 
     let client = AdoClient::new(
         &config.azure_devops.organization,

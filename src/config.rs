@@ -79,6 +79,58 @@ impl Config {
 
         Ok(config)
     }
+
+    /// Resolve the config file path, returning whether it exists.
+    pub fn resolve_path(cli_path: Option<&PathBuf>) -> Result<(PathBuf, bool)> {
+        let path = match cli_path {
+            Some(p) => p.clone(),
+            None => default_config_path()?,
+        };
+        let exists = path.exists();
+        Ok((path, exists))
+    }
+
+    /// Write a minimal config file with the given org and project.
+    pub fn write_initial(path: &PathBuf, organization: &str, project: &str) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create config directory {}", parent.display())
+            })?;
+        }
+
+        let contents =
+            format!("[azure_devops]\norganization = \"{organization}\"\nproject = \"{project}\"\n");
+
+        std::fs::write(path, &contents)
+            .with_context(|| format!("Failed to write config to {}", path.display()))?;
+
+        Ok(())
+    }
+}
+
+/// Check that Azure CLI (`az`) or Azure Developer CLI (`azd`) is available on PATH.
+/// Returns `Ok(())` if at least one is found, or an error with install guidance.
+pub fn check_azure_cli() -> Result<()> {
+    if which("az") || which("azd") {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "Azure CLI or Azure Developer CLI is required for authentication.\n\n\
+         Install one of the following:\n\
+         • Azure CLI:           https://aka.ms/install-azure-cli\n\
+         • Azure Developer CLI: https://aka.ms/install-azd\n\n\
+         Then sign in with `az login` or `azd auth login`."
+    );
+}
+
+fn which(cmd: &str) -> bool {
+    std::process::Command::new(cmd)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 pub fn default_config_path() -> Result<PathBuf> {
