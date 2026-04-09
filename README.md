@@ -14,6 +14,7 @@ Built with [ratatui](https://ratatui.rs/) and designed to run inside [Ghostty](h
 - **Queue pipeline** — Trigger a new pipeline run directly from the TUI
 - **Cancel build** — Stop a running build without leaving the terminal
 - **Retry stage** — Re-run a failed stage without re-queuing the entire pipeline
+- **Approve / Reject checks** — Approve or reject environment approval gates inline from the Log Viewer
 - **Open in browser** — Jump to any pipeline or build in the Azure DevOps web UI
 - **Auto-refresh** — Background polling with configurable interval (default 30s)
 - **Azure CLI auth** — Uses `DeveloperToolsCredential` (Azure CLI / Azure Developer CLI chain)
@@ -65,6 +66,8 @@ azure-pipelines-cli --config /path/to/config.toml
 | Space        | Select / deselect build (Active Runs)            |
 | Q            | Queue pipeline run                               |
 | R            | Retry failed stage (Log Viewer)                  |
+| A            | Approve check (Log Viewer, on checkpoint row)    |
+| D            | Reject check (Log Viewer, on checkpoint row)     |
 | c            | Cancel build (Active Runs / Log Viewer)         |
 | o            | Open in browser                                 |
 | r            | Force data refresh                              |

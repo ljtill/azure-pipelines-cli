@@ -12,7 +12,7 @@ type TaskEntry = (
     u32,
 );
 
-/// A row in the timeline tree view — Stage, Job, or Task.
+/// A row in the timeline tree view — Stage, Job, Task, or Checkpoint.
 #[derive(Debug, Clone)]
 pub enum TimelineRow {
     Stage {
@@ -37,6 +37,16 @@ pub enum TimelineRow {
         result: Option<BuildResult>,
         log_id: Option<u32>,
         parent_job_id: String,
+    },
+    Checkpoint {
+        name: String,
+        #[allow(dead_code)]
+        record_type: String,
+        state: Option<TaskState>,
+        result: Option<BuildResult>,
+        approval_id: Option<String>,
+        #[allow(dead_code)]
+        parent_stage_id: String,
     },
 }
 
@@ -232,6 +242,29 @@ impl App {
                 continue;
             }
 
+            // Insert checkpoint rows (approval gates) before jobs
+            if let Some(stage_children) = children_of.get(&stage.id) {
+                for child in stage_children.iter() {
+                    if child.record_type == "Checkpoint" {
+                        // Look for Checkpoint.Approval sub-records
+                        if let Some(cp_children) = children_of.get(&child.id) {
+                            for cp_child in cp_children.iter() {
+                                if cp_child.record_type.starts_with("Checkpoint.Approval") {
+                                    rows.push(TimelineRow::Checkpoint {
+                                        name: cp_child.name.clone(),
+                                        record_type: cp_child.record_type.clone(),
+                                        state: cp_child.state,
+                                        result: cp_child.result,
+                                        approval_id: cp_child.identifier.clone(),
+                                        parent_stage_id: stage.id.clone(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             let mut phases: Vec<_> = children_of
                 .get(&stage.id)
                 .map(|v| {
@@ -318,7 +351,7 @@ impl App {
                     self.rebuild_timeline_rows();
                     return true;
                 }
-                TimelineRow::Task { .. } => {}
+                TimelineRow::Task { .. } | TimelineRow::Checkpoint { .. } => {}
             }
         }
         false
@@ -398,7 +431,7 @@ impl App {
                         })
                         .map(|(i, _)| i);
                 }
-                TimelineRow::Stage { .. } => {}
+                TimelineRow::Stage { .. } | TimelineRow::Checkpoint { .. } => {}
             }
         }
         None
@@ -410,6 +443,7 @@ impl App {
             TimelineRow::Stage { .. } => "stage",
             TimelineRow::Job { .. } => "job",
             TimelineRow::Task { .. } => "task",
+            TimelineRow::Checkpoint { .. } => "checkpoint",
         })
     }
 
@@ -429,6 +463,15 @@ impl App {
         }) = self.timeline_rows.get(index)
         {
             Some(identifier.as_ref().unwrap_or(name).clone())
+        } else {
+            None
+        }
+    }
+
+    /// Get the approval ID for a Checkpoint timeline row at the given index.
+    pub fn timeline_approval_id(&self, index: usize) -> Option<String> {
+        if let Some(TimelineRow::Checkpoint { approval_id, .. }) = self.timeline_rows.get(index) {
+            approval_id.clone()
         } else {
             None
         }

@@ -37,6 +37,22 @@ pub fn timeline_status_icon(
     }
 }
 
+/// Status icon for checkpoint (approval) records.
+pub fn checkpoint_status_icon(
+    state: Option<TaskState>,
+    result: Option<BuildResult>,
+) -> (&'static str, Color) {
+    match result {
+        Some(BuildResult::Succeeded) => ("✓", Color::Green),
+        Some(BuildResult::Failed) | Some(BuildResult::Canceled) => ("✗", Color::Red),
+        _ => match state {
+            Some(TaskState::InProgress) | Some(TaskState::Pending) => ("⏸", Color::Magenta),
+            Some(TaskState::Completed) => ("✓", Color::Green),
+            _ => ("⏸", Color::Magenta),
+        },
+    }
+}
+
 /// Format a build's elapsed time or "ago" string.
 pub fn build_elapsed(build: &Build) -> String {
     use chrono::Utc;

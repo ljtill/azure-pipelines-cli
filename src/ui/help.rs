@@ -41,6 +41,8 @@ pub fn draw(f: &mut Frame) {
         Line::from("  f              Follow latest active task (Log Viewer)"),
         Line::from("  Q              Queue pipeline run"),
         Line::from("  R              Retry failed stage (Log Viewer)"),
+        Line::from("  A              Approve check (Log Viewer, on checkpoint row)"),
+        Line::from("  D              Reject check (Log Viewer, on checkpoint row)"),
         Line::from("  c              Cancel build (Active Runs / Log Viewer)"),
         Line::from("  o              Open in browser"),
         Line::from("  r              Force data refresh"),

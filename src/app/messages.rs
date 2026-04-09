@@ -1,4 +1,4 @@
-use crate::api::models::{Build, BuildTimeline, PipelineDefinition};
+use crate::api::models::{Approval, Build, BuildTimeline, PipelineDefinition};
 
 /// Messages sent from background tasks to the main event loop.
 pub enum AppMessage {
@@ -6,6 +6,7 @@ pub enum AppMessage {
         definitions: Vec<PipelineDefinition>,
         recent_builds: Vec<Build>,
         active_builds: Vec<Build>,
+        pending_approvals: Vec<Approval>,
     },
     BuildHistory {
         builds: Vec<Build>,
@@ -26,6 +27,7 @@ pub enum AppMessage {
         failed: u32,
     },
     StageRetried,
+    CheckUpdated,
     PipelineQueued {
         build: Build,
         #[allow(dead_code)]

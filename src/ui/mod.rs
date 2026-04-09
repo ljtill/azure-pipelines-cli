@@ -67,7 +67,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             "↑↓ navigate  Enter view logs  Q queue  o open  Esc back  r refresh  ? help  q quit"
         }
         crate::app::View::LogViewer => {
-            "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  c cancel  o open  PgUp/Dn scroll  Esc back  q quit"
+            "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  Esc back  q quit"
         }
     };
 

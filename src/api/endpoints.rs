@@ -69,4 +69,15 @@ impl Endpoints {
             self.base_url, pipeline_id
         )
     }
+
+    pub fn approvals_pending(&self) -> String {
+        format!(
+            "{}/pipelines/approvals?state=pending&$expand=steps&api-version=7.1",
+            self.base_url
+        )
+    }
+
+    pub fn approvals_update(&self) -> String {
+        format!("{}/pipelines/approvals?api-version=7.1", self.base_url)
+    }
 }

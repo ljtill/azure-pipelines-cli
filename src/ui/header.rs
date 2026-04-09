@@ -40,6 +40,15 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("")
     };
 
+    let approvals_span = if !app.pending_approvals.is_empty() {
+        Span::styled(
+            format!("  ⏸ {} pending", app.pending_approvals.len()),
+            Style::default().fg(Color::Magenta),
+        )
+    } else {
+        Span::raw("")
+    };
+
     let title = Paragraph::new(Line::from(vec![
         Span::styled(
             " azure-pipelines-cli",
@@ -50,6 +59,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Span::styled("  ●  ", Style::default().fg(Color::DarkGray)),
         Span::styled(&app.org_project_label, Style::default().fg(Color::White)),
         Span::styled(refresh_text, Style::default().fg(Color::DarkGray)),
+        approvals_span,
         error_span,
     ]));
     f.render_widget(title, chunks[0]);

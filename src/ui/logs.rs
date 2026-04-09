@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 
-use super::helpers::timeline_status_icon;
+use super::helpers::{checkpoint_status_icon, timeline_status_icon};
 use crate::app::{App, TimelineRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -127,6 +127,24 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                         Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
                         Span::styled(name.as_str(), Style::default().fg(Color::White)),
                         Span::styled(log_indicator, Style::default().fg(Color::DarkGray)),
+                    ]))
+                    .style(if selected {
+                        Style::default().bg(Color::DarkGray)
+                    } else {
+                        Style::default()
+                    })
+                }
+                TimelineRow::Checkpoint {
+                    name,
+                    state,
+                    result,
+                    ..
+                } => {
+                    let (icon, icon_color) = checkpoint_status_icon(*state, *result);
+                    ListItem::new(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
+                        Span::styled(name.as_str(), Style::default().fg(icon_color)),
                     ]))
                     .style(if selected {
                         Style::default().bg(Color::DarkGray)

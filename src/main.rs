@@ -298,6 +298,44 @@ fn handle_action(
                 }
             });
         }
+        Action::ApproveCheck(approval_id) => {
+            let client = client.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                match client
+                    .update_approval(&approval_id, "approved", "Approved via CLI")
+                    .await
+                {
+                    Ok(()) => {
+                        let _ = tx.send(AppMessage::CheckUpdated).await;
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(AppMessage::Error(format!("Approve check: {e}")))
+                            .await;
+                    }
+                }
+            });
+        }
+        Action::RejectCheck(approval_id) => {
+            let client = client.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                match client
+                    .update_approval(&approval_id, "rejected", "Rejected via CLI")
+                    .await
+                {
+                    Ok(()) => {
+                        let _ = tx.send(AppMessage::CheckUpdated).await;
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(AppMessage::Error(format!("Reject check: {e}")))
+                            .await;
+                    }
+                }
+            });
+        }
         Action::None => {}
     }
 }
@@ -313,6 +351,7 @@ fn handle_message(
             definitions,
             recent_builds,
             active_builds,
+            pending_approvals,
         } => {
             app.definitions = definitions;
 
@@ -324,6 +363,7 @@ fn handle_message(
             app.latest_builds_by_def = map;
             app.recent_builds = recent_builds;
             app.active_builds = active_builds;
+            app.pending_approvals = pending_approvals;
 
             app.rebuild_dashboard_rows();
             app.rebuild_filtered_pipelines();
@@ -452,6 +492,28 @@ fn handle_message(
             }
             spawn_data_refresh(client, tx);
         }
+        AppMessage::CheckUpdated => {
+            // Refresh approvals + timeline
+            spawn_data_refresh(client, tx);
+            if let Some(build) = &app.selected_build {
+                let client = client.clone();
+                let tx = tx.clone();
+                let build_id = build.id;
+                let generation = app.log_generation;
+                tokio::spawn(async move {
+                    if let Ok(timeline) = client.get_build_timeline(build_id).await {
+                        let _ = tx
+                            .send(AppMessage::Timeline {
+                                build_id,
+                                timeline,
+                                generation,
+                                is_refresh: true,
+                            })
+                            .await;
+                    }
+                });
+            }
+        }
         AppMessage::PipelineQueued {
             build,
             definition_id: _,
@@ -516,11 +578,14 @@ fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
     let client = client.clone();
     let tx = tx.clone();
     tokio::spawn(async move {
-        let (defs_result, recent_result, active_result) = tokio::join!(
+        let (defs_result, recent_result, active_result, approvals_result) = tokio::join!(
             client.list_definitions(),
             client.list_recent_builds(),
             client.list_active_builds(),
+            client.list_pending_approvals(),
         );
+
+        let pending_approvals = approvals_result.unwrap_or_default();
 
         match (defs_result, recent_result, active_result) {
             (Ok(definitions), Ok(recent_builds), Ok(active_builds)) => {
@@ -529,6 +594,7 @@ fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
                         definitions,
                         recent_builds,
                         active_builds,
+                        pending_approvals,
                     })
                     .await;
             }

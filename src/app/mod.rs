@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use chrono::{DateTime, Utc};
 
-use crate::api::models::{Build, BuildTimeline, PipelineDefinition};
+use crate::api::models::{Approval, Build, BuildTimeline, PipelineDefinition};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -43,6 +43,12 @@ pub enum ConfirmAction {
     QueuePipeline {
         definition_id: u32,
     },
+    ApproveCheck {
+        approval_id: String,
+    },
+    RejectCheck {
+        approval_id: String,
+    },
 }
 
 /// A pending confirmation prompt shown in the footer.
@@ -69,6 +75,7 @@ pub struct App {
     pub definitions: Vec<PipelineDefinition>,
     pub recent_builds: Vec<Build>,
     pub active_builds: Vec<Build>,
+    pub pending_approvals: Vec<Approval>,
     pub latest_builds_by_def: BTreeMap<u32, Build>,
     pub dashboard_rows: Vec<DashboardRow>,
     pub collapsed_folders: HashSet<String>,
@@ -132,6 +139,7 @@ impl App {
             definitions: Vec::new(),
             recent_builds: Vec::new(),
             active_builds: Vec::new(),
+            pending_approvals: Vec::new(),
             latest_builds_by_def: BTreeMap::new(),
             dashboard_rows: Vec::new(),
             collapsed_folders: HashSet::new(),

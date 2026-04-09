@@ -147,4 +147,32 @@ impl AdoClient {
         let url = self.endpoints.pipeline_runs(pipeline_id);
         self.post_json(&url, &serde_json::json!({})).await
     }
+
+    pub async fn list_pending_approvals(&self) -> Result<Vec<Approval>> {
+        let url = self.endpoints.approvals_pending();
+        let resp: ApprovalListResponse = self.get(&url).await?;
+        Ok(resp.value)
+    }
+
+    pub async fn update_approval(
+        &self,
+        approval_id: &str,
+        status: &str,
+        comment: &str,
+    ) -> Result<()> {
+        let url = self.endpoints.approvals_update();
+        let token = self.auth.token().await?;
+        self.http
+            .patch(&url)
+            .bearer_auth(&token)
+            .json(&serde_json::json!([{
+                "approvalId": approval_id,
+                "status": status,
+                "comment": comment
+            }]))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
 }

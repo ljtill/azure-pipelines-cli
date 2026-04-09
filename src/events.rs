@@ -33,6 +33,8 @@ pub enum Action {
         stage_ref_name: String,
     },
     QueuePipeline(u32),
+    ApproveCheck(String),
+    RejectCheck(String),
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
@@ -94,6 +96,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Retry stage (Shift+R)
         KeyCode::Char('R') if app.view == View::LogViewer => handle_retry_request(app),
+
+        // Approve check (Shift+A)
+        KeyCode::Char('A') if app.view == View::LogViewer => handle_approve_request(app),
+
+        // Reject check (Shift+D)
+        KeyCode::Char('D') if app.view == View::LogViewer => handle_reject_request(app),
 
         // Queue pipeline (Shift+Q)
         KeyCode::Char('Q')
@@ -230,6 +238,8 @@ fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
                 ConfirmAction::QueuePipeline { definition_id } => {
                     Action::QueuePipeline(definition_id)
                 }
+                ConfirmAction::ApproveCheck { approval_id } => Action::ApproveCheck(approval_id),
+                ConfirmAction::RejectCheck { approval_id } => Action::RejectCheck(approval_id),
             }
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
@@ -374,6 +384,46 @@ fn handle_queue_request(app: &mut App) -> Action {
         action: ConfirmAction::QueuePipeline {
             definition_id: def_id,
         },
+    });
+    Action::None
+}
+
+fn handle_approve_request(app: &mut App) -> Action {
+    let idx = app.log_entries_index;
+    if app.timeline_row_kind(idx) != Some("checkpoint") {
+        return Action::None;
+    }
+    let approval_id = match app.timeline_approval_id(idx) {
+        Some(id) => id,
+        None => return Action::None,
+    };
+    let name = match &app.timeline_rows.get(idx) {
+        Some(crate::app::TimelineRow::Checkpoint { name, .. }) => name.clone(),
+        _ => "check".to_string(),
+    };
+    app.confirm_prompt = Some(ConfirmPrompt {
+        message: format!("Approve \"{}\"?  [y/N]", name),
+        action: ConfirmAction::ApproveCheck { approval_id },
+    });
+    Action::None
+}
+
+fn handle_reject_request(app: &mut App) -> Action {
+    let idx = app.log_entries_index;
+    if app.timeline_row_kind(idx) != Some("checkpoint") {
+        return Action::None;
+    }
+    let approval_id = match app.timeline_approval_id(idx) {
+        Some(id) => id,
+        None => return Action::None,
+    };
+    let name = match &app.timeline_rows.get(idx) {
+        Some(crate::app::TimelineRow::Checkpoint { name, .. }) => name.clone(),
+        _ => "check".to_string(),
+    };
+    app.confirm_prompt = Some(ConfirmPrompt {
+        message: format!("Reject \"{}\"?  [y/N]", name),
+        action: ConfirmAction::RejectCheck { approval_id },
     });
     Action::None
 }

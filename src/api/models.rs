@@ -261,6 +261,41 @@ pub struct PipelineRun {
     pub name: String,
 }
 
+// --- Approvals ---
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApprovalListResponse {
+    pub value: Vec<Approval>,
+    #[allow(dead_code)]
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct Approval {
+    pub id: String,
+    pub status: String,
+    #[allow(dead_code)]
+    pub instructions: Option<String>,
+    #[allow(dead_code)]
+    #[serde(rename = "createdOn")]
+    pub created_on: Option<DateTime<Utc>>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub steps: Vec<ApprovalStep>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApprovalStep {
+    #[allow(dead_code)]
+    #[serde(rename = "assignedApprover")]
+    pub assigned_approver: Option<IdentityRef>,
+    #[allow(dead_code)]
+    pub status: Option<String>,
+    #[allow(dead_code)]
+    pub order: Option<i32>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogReference {
     pub id: u32,
