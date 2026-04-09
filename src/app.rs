@@ -356,22 +356,29 @@ impl App {
         let best_name = best_name.clone();
         let parent_job_id = parent_job_id.clone();
 
-        // Find the parent stage id through the job
-        let parent_stage_id = parent_job_id.as_ref().and_then(|job_id| {
-            self.build_timeline
-                .as_ref()?
-                .records
-                .iter()
-                .find(|r| r.id == *job_id)
-                .and_then(|r| r.parent_id.clone())
-        });
-
-        // Ensure parent job and stage are expanded
-        if let Some(job_id) = &parent_job_id {
-            self.collapsed_jobs.remove(job_id.as_str());
-        }
-        if let Some(stage_id) = &parent_stage_id {
-            self.collapsed_stages.remove(stage_id.as_str());
+        // Walk up the ancestor chain to find and expand all parent nodes.
+        // Chain: Task → Job → Phase → Stage (4 levels in ADO).
+        // We need to uncollapse the Phase (shown as "Job" row) and the Stage.
+        if let Some(timeline) = self.build_timeline.as_ref() {
+            let records = &timeline.records;
+            let mut current_id = parent_job_id.clone();
+            while let Some(cid) = &current_id {
+                if let Some(rec) = records.iter().find(|r| r.id == *cid) {
+                    match rec.record_type.as_str() {
+                        "Stage" => {
+                            self.collapsed_stages.remove(cid.as_str());
+                            break;
+                        }
+                        "Phase" | "Job" => {
+                            self.collapsed_jobs.remove(cid.as_str());
+                        }
+                        _ => {}
+                    }
+                    current_id = rec.parent_id.clone();
+                } else {
+                    break;
+                }
+            }
         }
 
         // Rebuild rows with the expanded state, then find the task's row index
@@ -397,6 +404,10 @@ impl App {
     }
 
     /// Build the timeline tree rows from the raw timeline records.
+    ///
+    /// ADO timeline hierarchy: Stage → Phase → Job → Task
+    /// We display: Stage → Phase (as "Job" row) → Task
+    /// Tasks can be children of either a Phase or a Job (which is a child of a Phase).
     pub fn rebuild_timeline_rows(&mut self) {
         let timeline = match &self.build_timeline {
             Some(t) => t,
@@ -406,33 +417,24 @@ impl App {
             }
         };
 
-        // Index records by type and parentId
+        // Index all records by their parent ID
+        let mut children_of: HashMap<String, Vec<&crate::api::models::TimelineRecord>> =
+            HashMap::new();
         let mut stages = Vec::new();
-        let mut jobs_by_stage: HashMap<String, Vec<&crate::api::models::TimelineRecord>> =
-            HashMap::new();
-        let mut tasks_by_job: HashMap<String, Vec<&crate::api::models::TimelineRecord>> =
-            HashMap::new();
 
         for rec in &timeline.records {
             match rec.record_type.as_str() {
                 "Stage" if rec.parent_id.is_none() => {
                     stages.push(rec);
                 }
-                "Job" | "Phase" => {
+                _ => {
                     if let Some(pid) = &rec.parent_id {
-                        jobs_by_stage.entry(pid.clone()).or_default().push(rec);
+                        children_of.entry(pid.clone()).or_default().push(rec);
                     }
                 }
-                "Task" => {
-                    if let Some(pid) = &rec.parent_id {
-                        tasks_by_job.entry(pid.clone()).or_default().push(rec);
-                    }
-                }
-                _ => {}
             }
         }
 
-        // Sort stages by order
         stages.sort_by_key(|s| s.order.unwrap_or(999));
 
         let mut rows = Vec::new();
@@ -451,33 +453,55 @@ impl App {
                 continue;
             }
 
-            // Jobs under this stage
-            let mut jobs = jobs_by_stage
+            // Phases under this stage (displayed as "Job" rows)
+            let mut phases: Vec<_> = children_of
                 .get(&stage.id)
-                .cloned()
+                .map(|v| {
+                    v.iter()
+                        .filter(|r| r.record_type == "Phase" || r.record_type == "Job")
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
-            jobs.sort_by_key(|j| j.order.unwrap_or(999));
+            phases.sort_by_key(|p| p.order.unwrap_or(999));
 
-            for job in &jobs {
-                let job_collapsed = self.collapsed_jobs.contains(&job.id);
+            for phase in &phases {
+                let phase_collapsed = self.collapsed_jobs.contains(&phase.id);
                 rows.push(TimelineRow::Job {
-                    id: job.id.clone(),
-                    name: job.name.clone(),
-                    state: job.state.clone(),
-                    result: job.result.clone(),
-                    collapsed: job_collapsed,
+                    id: phase.id.clone(),
+                    name: phase.name.clone(),
+                    state: phase.state.clone(),
+                    result: phase.result.clone(),
+                    collapsed: phase_collapsed,
                     parent_stage_id: stage.id.clone(),
                 });
 
-                if job_collapsed {
+                if phase_collapsed {
                     continue;
                 }
 
-                // Tasks under this job
-                let mut tasks = tasks_by_job
-                    .get(&job.id)
-                    .cloned()
-                    .unwrap_or_default();
+                // Collect tasks: direct children of this phase + children of
+                // any Job records that are children of this phase.
+                let mut tasks: Vec<&crate::api::models::TimelineRecord> = Vec::new();
+
+                if let Some(phase_children) = children_of.get(&phase.id) {
+                    for child in phase_children {
+                        match child.record_type.as_str() {
+                            "Task" => tasks.push(child),
+                            "Job" | "Phase" => {
+                                // This Job is under the Phase — collect its Tasks
+                                if let Some(job_children) = children_of.get(&child.id) {
+                                    for grandchild in job_children {
+                                        if grandchild.record_type == "Task" {
+                                            tasks.push(grandchild);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
                 tasks.sort_by_key(|t| t.order.unwrap_or(999));
 
                 for task in &tasks {
@@ -486,7 +510,7 @@ impl App {
                         state: task.state.clone(),
                         result: task.result.clone(),
                         log_id: task.log.as_ref().map(|l| l.id),
-                        parent_job_id: job.id.clone(),
+                        parent_job_id: phase.id.clone(),
                     });
                 }
             }
