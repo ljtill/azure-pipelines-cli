@@ -86,7 +86,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
 
         // Cancel build(s)
-        KeyCode::Char('c') if app.view == View::LogViewer || app.view == View::ActiveRuns => {
+        KeyCode::Char('c')
+            if app.view == View::LogViewer
+                || app.view == View::ActiveRuns
+                || app.view == View::BuildHistory =>
+        {
             handle_cancel_request(app)
         }
 
@@ -305,6 +309,7 @@ fn handle_cancel_request(app: &mut App) -> Action {
     let build = match app.view {
         View::LogViewer => app.log_viewer.selected_build(),
         View::ActiveRuns => app.filtered_active_builds.get(app.active_runs_nav.index()),
+        View::BuildHistory => app.definition_builds.get(app.builds_nav.index()),
         _ => None,
     };
 
