@@ -341,13 +341,16 @@ impl App {
 
     /// Rebuild the filtered active builds list from search query.
     pub fn rebuild_filtered_active_builds(&mut self) {
+        let base = self
+            .active_builds
+            .iter()
+            .filter(|b| self.matches_build_filter(b));
+
         if self.search_query.is_empty() {
-            self.filtered_active_builds = self.active_builds.clone();
+            self.filtered_active_builds = base.cloned().collect();
         } else {
             let q = self.search_query.to_lowercase();
-            self.filtered_active_builds = self
-                .active_builds
-                .iter()
+            self.filtered_active_builds = base
                 .filter(|b| {
                     b.definition.name.to_lowercase().contains(&q)
                         || b.build_number.to_lowercase().contains(&q)

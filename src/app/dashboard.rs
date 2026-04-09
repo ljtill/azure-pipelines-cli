@@ -39,12 +39,23 @@ fn folder_display(key: &str) -> String {
 
 impl App {
     /// Check if a definition passes the configured filters.
-    fn matches_filter(&self, def: &PipelineDefinition) -> bool {
+    pub fn matches_filter(&self, def: &PipelineDefinition) -> bool {
         if !self.filter_definition_ids.is_empty() && !self.filter_definition_ids.contains(&def.id) {
             return false;
         }
         if !self.filter_folders.is_empty()
             && !self.filter_folders.iter().any(|f| def.path.starts_with(f))
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Check if a build's definition passes the configured ID filter.
+    /// Folder filters can't be applied here since builds don't carry the definition path.
+    pub fn matches_build_filter(&self, build: &Build) -> bool {
+        if !self.filter_definition_ids.is_empty()
+            && !self.filter_definition_ids.contains(&build.definition.id)
         {
             return false;
         }
