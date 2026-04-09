@@ -196,9 +196,11 @@ fn handle_action(
             });
         }
         Action::FollowLatest => {
-            // Switch to follow mode and fetch the latest active task's log
-            if let Some((task_name, log_id)) = app.find_active_task() {
-                app.followed_task_name = task_name;
+            // Switch to follow mode: jump cursor to active task and fetch its log
+            if let Some((idx, log_id)) = app.auto_select_log_entry() {
+                if let Some(TimelineRow::Task { name, .. }) = app.timeline_rows.get(idx) {
+                    app.followed_task_name = name.clone();
+                }
                 app.followed_log_id = Some(log_id);
                 if let Some(build) = &app.selected_build {
                     let client = client.clone();
