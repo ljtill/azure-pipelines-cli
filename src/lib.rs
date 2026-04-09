@@ -8,7 +8,7 @@
 //! | Module    | Purpose |
 //! |-----------|---------|
 //! | [`api`]   | Azure DevOps REST client layer — auth, endpoint builders, HTTP client, and response models. |
-//! | [`app`]   | Application state model (`App`), per-view state structs, and the `Action` → spawn → `AppMessage` async orchestration loop. |
+//! | [`app`]   | Application state model (`App`) decomposed into per-view sub-states (`DashboardState`, `PipelinesState`, `ActiveRunsState`, `BuildHistoryState`, `LogViewerState`) plus shared `CoreData`, `FilterConfig`, and `SearchState`. The `Action` → spawn → `AppMessage` async loop lives here too. |
 //! | [`config`]| TOML configuration loading and validation (`--config` flag or XDG default). |
 //! | [`events`]| Keyboard/mouse event handling — translates terminal input into [`app::actions::Action`] variants. |
 //! | [`ui`]    | Render-only TUI modules. Each view has a dedicated module; shared helpers and theming live in submodules. |

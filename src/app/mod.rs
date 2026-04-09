@@ -8,6 +8,7 @@ pub mod run;
 
 pub use dashboard::{DashboardRow, DashboardState};
 pub use log_viewer::{LogViewerState, TimelineRow};
+pub use nav::ListNav;
 
 /// State for the Build History drill-in view.
 #[derive(Debug, Default)]

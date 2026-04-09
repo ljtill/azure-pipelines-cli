@@ -38,7 +38,7 @@ cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo
 
 - `src/main.rs` is the coordinator. It loads config, creates `AdoClient`, sets up the terminal/panic hook, and runs a `tokio::select!` loop that multiplexes terminal input with async refresh results.
 - `src/events.rs` owns keybinding behavior. It mutates `App` for purely local UI changes and returns an `Action` only when async work is required.
-- `src/app.rs` is the central state model. It owns the current view, selection indices, search state, collapsed folder/timeline state, build caches, and log viewer follow/inspect state.
+- `src/app/` is the central state model, decomposed into per-view sub-states. `App` groups state into: `data` (`CoreData` — shared API data), `filters` (`FilterConfig`), `search` (`SearchState`), and view-specific sub-structs (`dashboard`, `pipelines`, `active_runs`, `build_history`, `log_viewer`). Each sub-state owns its `ListNav` and rebuild logic; rebuild methods take `&CoreData`/`&FilterConfig` parameters instead of reaching into `App` directly.
 - `src/api/` is a thin Azure DevOps REST layer: `auth.rs` gets bearer tokens, `endpoints.rs` builds URLs, `client.rs` wraps `reqwest`, and `models.rs` mirrors the ADO payloads used by the UI.
 - `src/ui/` is render-only. `ui/mod.rs` switches on `App.view`, screen modules draw from `App`, and `src/ui/helpers.rs` centralizes status icon, elapsed-time, and truncation helpers shared across views.
 - The navigation flow is Dashboard/Pipelines/Active Runs -> Build History or Log Viewer -> task log. Background refreshes land back in the app through `AppMessage`.
@@ -51,8 +51,9 @@ cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo
 - Preserve `log_generation` behavior when touching log/timeline code. It is the stale-response guard that prevents old async log/timeline results from overwriting the newly selected build.
 - Azure DevOps status/result strings are treated case-insensitively in current code. Reuse `eq_ignore_ascii_case` and the shared UI helpers rather than matching a single exact casing.
 - Dashboard grouping uses the raw ADO definition path as state. Root is stored as `\`, and the user-facing `" / "` folder display is derived from that raw value instead of being stored directly.
-- `App::rebuild_timeline_rows` intentionally flattens the ADO hierarchy from `Stage -> Phase -> Job -> Task` into `Stage -> Job row -> Task`. "Job" rows in the UI may represent either ADO `Phase` or `Job` records.
+- `LogViewerState::rebuild_timeline_rows` intentionally flattens the ADO hierarchy from `Stage -> Phase -> Job -> Task` into `Stage -> Job row -> Task`. "Job" rows in the UI may represent either ADO `Phase` or `Job` records.
 - Timeline collapse state is keyed by ADO record IDs (`collapsed_stages`, `collapsed_jobs`), not by visible row indices. Rebuild the rows after structural state changes instead of mutating the rendered list directly.
 - Log viewer behavior has two modes: follow mode tracks the active task and auto-refreshes that log, while inspect mode pins the currently selected task after Enter.
 - `App::new` now builds the header label from config (`org_project_label`), so config loading and header rendering need to stay in sync.
 - `filters` exists in `Config` but is not wired into API calls or rendering yet; treat it as reserved/incomplete, not as an active feature.
+- `App` is decomposed into per-view sub-states: `data` (`CoreData`), `filters` (`FilterConfig`), `search` (`SearchState`), `dashboard` (`DashboardState`), `pipelines` (`PipelinesState`), `active_runs` (`ActiveRunsState`), `build_history` (`BuildHistoryState`), and `log_viewer` (`LogViewerState`). Rebuild methods live on the sub-state and take `&CoreData`/`&FilterConfig` parameters — do not add new fields directly to `App` when they belong to a specific view.
