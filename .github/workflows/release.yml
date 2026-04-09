@@ -139,6 +139,7 @@ jobs:
             # Shell-based fallback: group commits by type
             FEATURES=""
             FIXES=""
+            PERF=""
             REFACTORS=""
             DOCS=""
             CI_CHORES=""
@@ -152,18 +153,20 @@ jobs:
               fi
               DESC=$(echo "$MSG" | sed -E 's/^[a-z]+(\([^)]*\))?!?:\s*//')
               case "$MSG" in
-                feat*)    FEATURES="${FEATURES}- ${DESC}${BREAKING}\n" ;;
-                fix*)     FIXES="${FIXES}- ${DESC}${BREAKING}\n" ;;
+                feat*)     FEATURES="${FEATURES}- ${DESC}${BREAKING}\n" ;;
+                fix*)      FIXES="${FIXES}- ${DESC}${BREAKING}\n" ;;
+                perf*)     PERF="${PERF}- ${DESC}${BREAKING}\n" ;;
                 refactor*) REFACTORS="${REFACTORS}- ${DESC}${BREAKING}\n" ;;
-                docs*)    DOCS="${DOCS}- ${DESC}${BREAKING}\n" ;;
-                ci*|chore*) CI_CHORES="${CI_CHORES}- ${DESC}${BREAKING}\n" ;;
-                *)        OTHER="${OTHER}- ${MSG}${BREAKING}\n" ;;
+                docs*)     DOCS="${DOCS}- ${DESC}${BREAKING}\n" ;;
+                ci*|chore*|build*|test*|style*) CI_CHORES="${CI_CHORES}- ${DESC}${BREAKING}\n" ;;
+                *)         OTHER="${OTHER}- ${DESC}${BREAKING}\n" ;;
               esac
             done <<< "$(git log "$COMMIT_RANGE" --pretty=format:"%s" 2>/dev/null)"
 
             CHANGELOG=""
             [ -n "$FEATURES" ]  && CHANGELOG="${CHANGELOG}## 🚀 Features\n\n${FEATURES}\n"
             [ -n "$FIXES" ]     && CHANGELOG="${CHANGELOG}## 🐛 Bug Fixes\n\n${FIXES}\n"
+            [ -n "$PERF" ]      && CHANGELOG="${CHANGELOG}## ⚡ Performance\n\n${PERF}\n"
             [ -n "$REFACTORS" ] && CHANGELOG="${CHANGELOG}## ♻️ Refactoring\n\n${REFACTORS}\n"
             [ -n "$DOCS" ]      && CHANGELOG="${CHANGELOG}## 📖 Documentation\n\n${DOCS}\n"
             [ -n "$CI_CHORES" ] && CHANGELOG="${CHANGELOG}## 🔧 CI & Maintenance\n\n${CI_CHORES}\n"
