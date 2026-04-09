@@ -73,7 +73,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         View::ActiveRuns => 2,
         View::BuildHistory | View::LogViewer => {
             // Highlight whichever tab we drilled in from
-            match app.previous_view {
+            match app.build_history.return_to {
                 Some(View::Pipelines) => 1,
                 Some(View::ActiveRuns) => 2,
                 _ => 0,

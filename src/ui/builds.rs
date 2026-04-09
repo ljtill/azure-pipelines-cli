@@ -19,6 +19,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     // Pipeline name header
     let def_name = app
+        .build_history
         .selected_definition
         .as_ref()
         .map(|d| d.name.as_str())
@@ -35,7 +36,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let branch_width = (area.width as usize).saturating_sub(51).clamp(10, 40);
 
     let items: Vec<ListItem> = app
-        .definition_builds
+        .build_history
+        .builds
         .iter()
         .enumerate()
         .map(|(i, build)| {
@@ -57,7 +59,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(format!("{:<20} ", build.requestor()), theme::MUTED),
                 Span::styled(time_info, theme::MUTED),
             ]))
-            .style(if i == app.builds_nav.index() {
+            .style(if i == app.build_history.nav.index() {
                 theme::SELECTED
             } else {
                 Style::default()
@@ -68,11 +70,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::NONE)
-            .title(format!(" Builds ({}) ", app.definition_builds.len()))
+            .title(format!(" Builds ({}) ", app.build_history.builds.len()))
             .title_style(theme::TITLE),
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.builds_nav.index()));
+    state.select(Some(app.build_history.nav.index()));
     f.render_stateful_widget(list, chunks[1], &mut state);
 }

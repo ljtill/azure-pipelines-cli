@@ -9,6 +9,16 @@ pub mod run;
 pub use dashboard::DashboardRow;
 pub use log_viewer::{LogViewerState, TimelineRow};
 
+/// State for the Build History drill-in view.
+#[derive(Debug, Default)]
+pub struct BuildHistoryState {
+    pub selected_definition: Option<PipelineDefinition>,
+    pub builds: Vec<Build>,
+    pub nav: nav::ListNav,
+    /// The view to return to when pressing Esc/back from Build History.
+    pub return_to: Option<View>,
+}
+
 use std::collections::{BTreeMap, HashSet};
 
 use chrono::{DateTime, Utc};
@@ -74,7 +84,6 @@ pub struct ConfirmPrompt {
 
 pub struct App {
     pub view: View,
-    pub previous_view: Option<View>,
     pub search: SearchState,
     pub running: bool,
     pub show_help: bool,
@@ -95,8 +104,7 @@ pub struct App {
     pub collapsed_folders: HashSet<String>,
 
     // Build history (for selected pipeline)
-    pub selected_definition: Option<PipelineDefinition>,
-    pub definition_builds: Vec<Build>,
+    pub build_history: BuildHistoryState,
 
     // Log viewer state (grouped)
     pub log_viewer: LogViewerState,
@@ -111,7 +119,6 @@ pub struct App {
     pub dashboard_nav: nav::ListNav,
     pub pipelines_nav: nav::ListNav,
     pub active_runs_nav: nav::ListNav,
-    pub builds_nav: nav::ListNav,
 
     // Search
     pub filtered_pipelines: Vec<PipelineDefinition>,
@@ -127,7 +134,6 @@ impl App {
     pub fn new(organization: &str, project: &str, config: &crate::config::Config) -> Self {
         Self {
             view: View::Dashboard,
-            previous_view: None,
             search: SearchState::default(),
             running: true,
             show_help: false,
@@ -144,8 +150,7 @@ impl App {
             dashboard_rows: Vec::new(),
             collapsed_folders: HashSet::new(),
 
-            selected_definition: None,
-            definition_builds: Vec::new(),
+            build_history: BuildHistoryState::default(),
 
             log_viewer: LogViewerState::default(),
 
@@ -156,7 +161,6 @@ impl App {
             dashboard_nav: nav::ListNav::default(),
             pipelines_nav: nav::ListNav::default(),
             active_runs_nav: nav::ListNav::default(),
-            builds_nav: nav::ListNav::default(),
 
             filtered_pipelines: Vec::new(),
             filtered_active_builds: Vec::new(),
@@ -192,27 +196,27 @@ impl App {
                     }
                     _ => {
                         self.view = return_to;
-                        self.selected_definition = None;
-                        self.definition_builds.clear();
-                        self.builds_nav.reset();
+                        self.build_history.selected_definition = None;
+                        self.build_history.builds.clear();
+                        self.build_history.nav.reset();
                     }
                 }
             }
             View::BuildHistory => {
-                self.view = self.previous_view.unwrap_or(View::Dashboard);
-                self.selected_definition = None;
-                self.definition_builds.clear();
-                self.builds_nav.reset();
+                self.view = self.build_history.return_to.unwrap_or(View::Dashboard);
+                self.build_history.selected_definition = None;
+                self.build_history.builds.clear();
+                self.build_history.nav.reset();
             }
             _ => {}
         }
     }
 
     pub fn navigate_to_build_history(&mut self, def: PipelineDefinition) {
-        self.previous_view = Some(self.view);
-        self.selected_definition = Some(def);
-        self.definition_builds.clear();
-        self.builds_nav.reset();
+        self.build_history.return_to = Some(self.view);
+        self.build_history.selected_definition = Some(def);
+        self.build_history.builds.clear();
+        self.build_history.nav.reset();
         self.view = View::BuildHistory;
     }
 
@@ -229,7 +233,7 @@ impl App {
             View::Dashboard => &mut self.dashboard_nav,
             View::Pipelines => &mut self.pipelines_nav,
             View::ActiveRuns => &mut self.active_runs_nav,
-            View::BuildHistory => &mut self.builds_nav,
+            View::BuildHistory => &mut self.build_history.nav,
             View::LogViewer => self.log_viewer.nav_mut(),
         }
     }
@@ -288,8 +292,11 @@ mod tests {
         let def = make_definition(1, "My Pipeline", "\\");
         app.navigate_to_build_history(def.clone());
         assert_eq!(app.view, View::BuildHistory);
-        assert_eq!(app.previous_view, Some(View::Dashboard));
-        assert_eq!(app.selected_definition.as_ref().unwrap().id, 1);
+        assert_eq!(app.build_history.return_to, Some(View::Dashboard));
+        assert_eq!(
+            app.build_history.selected_definition.as_ref().unwrap().id,
+            1
+        );
     }
 
     #[test]
@@ -328,7 +335,7 @@ mod tests {
         app.navigate_to_build_history(def);
         app.go_back();
         assert_eq!(app.view, View::Pipelines);
-        assert!(app.selected_definition.is_none());
+        assert!(app.build_history.selected_definition.is_none());
     }
 
     #[test]

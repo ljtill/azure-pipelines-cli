@@ -214,8 +214,10 @@ pub fn handle_message(
             app.loading = false;
         }
         AppMessage::BuildHistory { builds } => {
-            app.definition_builds = builds;
-            app.builds_nav.set_len(app.definition_builds.len());
+            app.build_history.builds = builds;
+            app.build_history
+                .nav
+                .set_len(app.build_history.builds.len());
         }
         AppMessage::Timeline {
             build_id,
@@ -435,7 +437,7 @@ pub fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
 
 /// Re-fetch the build history for the currently selected pipeline definition.
 fn spawn_build_history_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
-    if let Some(def) = &app.selected_definition {
+    if let Some(def) = &app.build_history.selected_definition {
         let client = client.clone();
         let tx = tx.clone();
         let def_id = def.id;
@@ -612,24 +614,26 @@ mod tests {
             make_build(2, BuildStatus::Completed, Some(BuildResult::Failed)),
             make_build(3, BuildStatus::InProgress, None),
         ];
-        app.definition_builds = builds;
-        app.builds_nav.set_len(app.definition_builds.len());
+        app.build_history.builds = builds;
+        app.build_history
+            .nav
+            .set_len(app.build_history.builds.len());
 
-        assert_eq!(app.definition_builds.len(), 3);
+        assert_eq!(app.build_history.builds.len(), 3);
         // Nav synced — 3 items, index starts at 0
-        app.builds_nav.down();
-        assert_eq!(app.builds_nav.index(), 1);
+        app.build_history.nav.down();
+        assert_eq!(app.build_history.nav.index(), 1);
     }
 
     #[test]
     fn build_history_empty() {
         let mut app = make_app();
-        app.definition_builds = vec![];
-        app.builds_nav.set_len(0);
-        assert_eq!(app.builds_nav.index(), 0);
+        app.build_history.builds = vec![];
+        app.build_history.nav.set_len(0);
+        assert_eq!(app.build_history.nav.index(), 0);
         // down on empty list is a no-op
-        app.builds_nav.down();
-        assert_eq!(app.builds_nav.index(), 0);
+        app.build_history.nav.down();
+        assert_eq!(app.build_history.nav.index(), 0);
     }
 
     // -----------------------------------------------------------------------

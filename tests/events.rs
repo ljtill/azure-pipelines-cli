@@ -74,7 +74,7 @@ fn q_quits_from_pipelines() {
 fn q_goes_back_from_build_history() {
     let mut app = test_app();
     app.view = View::BuildHistory;
-    app.previous_view = Some(View::Dashboard);
+    app.build_history.return_to = Some(View::Dashboard);
     let action = handle_key(&mut app, key(KeyCode::Char('q')));
     assert_eq!(app.view, View::Dashboard);
     assert!(matches!(action, Action::None));
@@ -502,7 +502,7 @@ fn slash_enters_search_on_active_runs() {
 fn esc_goes_back_from_build_history() {
     let mut app = test_app();
     app.view = View::BuildHistory;
-    app.previous_view = Some(View::Pipelines);
+    app.build_history.return_to = Some(View::Pipelines);
 
     let action = handle_key(&mut app, key(KeyCode::Esc));
     assert_eq!(app.view, View::Pipelines);

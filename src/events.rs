@@ -286,8 +286,9 @@ fn handle_open_in_browser(app: &App) -> Action {
             .get(app.active_runs_nav.index())
             .map(|b| app.endpoints_web_build(b.id)),
         View::BuildHistory => app
-            .definition_builds
-            .get(app.builds_nav.index())
+            .build_history
+            .builds
+            .get(app.build_history.nav.index())
             .map(|b| app.endpoints_web_build(b.id)),
         View::LogViewer => app
             .log_viewer
@@ -317,7 +318,7 @@ fn handle_cancel_request(app: &mut App) -> Action {
     let build = match app.view {
         View::LogViewer => app.log_viewer.selected_build(),
         View::ActiveRuns => app.filtered_active_builds.get(app.active_runs_nav.index()),
-        View::BuildHistory => app.definition_builds.get(app.builds_nav.index()),
+        View::BuildHistory => app.build_history.builds.get(app.build_history.nav.index()),
         _ => None,
     };
 
@@ -416,7 +417,7 @@ fn handle_queue_request(app: &mut App) -> Action {
             }
         }
         View::BuildHistory => {
-            if let Some(def) = &app.selected_definition {
+            if let Some(def) = &app.build_history.selected_definition {
                 (def.id, def.name.clone())
             } else {
                 return Action::None;
@@ -557,7 +558,12 @@ fn handle_enter(app: &mut App) -> Action {
             }
         }
         View::BuildHistory => {
-            if let Some(build) = app.definition_builds.get(app.builds_nav.index()).cloned() {
+            if let Some(build) = app
+                .build_history
+                .builds
+                .get(app.build_history.nav.index())
+                .cloned()
+            {
                 let build_id = build.id;
                 app.navigate_to_log_viewer(build);
                 Action::FetchTimeline(build_id)
