@@ -109,26 +109,6 @@ impl App {
         self.dashboard_nav.set_len(self.dashboard_rows.len());
     }
 
-    /// Rebuild the filtered pipelines list from search query.
-    pub fn rebuild_filtered_pipelines(&mut self) {
-        let base = self.definitions.iter().filter(|d| self.matches_filter(d));
-
-        if self.search.query.is_empty() {
-            self.filtered_pipelines = base.cloned().collect();
-        } else {
-            let q = self.search.query.to_lowercase();
-            self.filtered_pipelines = base
-                .filter(|d| {
-                    d.name.to_lowercase().contains(&q) || d.path.to_lowercase().contains(&q)
-                })
-                .cloned()
-                .collect();
-        }
-        self.filtered_pipelines
-            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        self.pipelines_nav.set_len(self.filtered_pipelines.len());
-    }
-
     /// Toggle collapse state for a folder at the given dashboard row index.
     pub fn toggle_folder_at(&mut self, index: usize) -> bool {
         if let Some(DashboardRow::FolderHeader { path, .. }) = self.dashboard_rows.get(index) {
@@ -303,7 +283,7 @@ mod tests {
         );
     }
 
-    // --- rebuild_filtered_pipelines ---
+    // --- PipelinesState::rebuild ---
 
     #[test]
     fn rebuild_filtered_pipelines_with_search() {
@@ -313,9 +293,14 @@ mod tests {
             make_definition(2, "Deploy", "\\Infra"),
         ];
         app.search.query = "ci".to_string();
-        app.rebuild_filtered_pipelines();
-        assert_eq!(app.filtered_pipelines.len(), 1);
-        assert_eq!(app.filtered_pipelines[0].name, "CI Pipeline");
+        app.pipelines.rebuild(
+            &app.definitions,
+            &app.filter_folders,
+            &app.filter_definition_ids,
+            &app.search.query,
+        );
+        assert_eq!(app.pipelines.filtered.len(), 1);
+        assert_eq!(app.pipelines.filtered[0].name, "CI Pipeline");
     }
 
     #[test]
@@ -325,8 +310,13 @@ mod tests {
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
         ];
-        app.rebuild_filtered_pipelines();
-        assert_eq!(app.filtered_pipelines.len(), 2);
+        app.pipelines.rebuild(
+            &app.definitions,
+            &app.filter_folders,
+            &app.filter_definition_ids,
+            &app.search.query,
+        );
+        assert_eq!(app.pipelines.filtered.len(), 2);
     }
 
     // --- toggle/collapse/expand ---

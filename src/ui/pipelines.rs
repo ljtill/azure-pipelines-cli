@@ -26,7 +26,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let items: Vec<ListItem> = app
-        .filtered_pipelines
+        .pipelines
+        .filtered
         .iter()
         .enumerate()
         .map(|(i, def)| {
@@ -36,7 +37,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(format!(" {:<42} ", def.name), theme::TEXT),
                 Span::styled(folder, theme::MUTED),
             ]))
-            .style(if i == app.pipelines_nav.index() {
+            .style(if i == app.pipelines.nav.index() {
                 theme::SELECTED
             } else {
                 Style::default()
@@ -44,7 +45,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = format!(" All Pipelines ({}) ", app.filtered_pipelines.len());
+    let title = format!(" All Pipelines ({}) ", app.pipelines.filtered.len());
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::NONE)
@@ -53,6 +54,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.pipelines_nav.index()));
+    state.select(Some(app.pipelines.nav.index()));
     f.render_stateful_widget(list, list_area, &mut state);
 }

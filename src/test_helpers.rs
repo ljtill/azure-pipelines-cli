@@ -205,7 +205,12 @@ pub fn make_app() -> App {
     app.latest_builds_by_def.insert(3, b3);
 
     app.rebuild_dashboard_rows();
-    app.rebuild_filtered_pipelines();
+    app.pipelines.rebuild(
+        &app.definitions,
+        &app.filter_folders,
+        &app.filter_definition_ids,
+        &app.search.query,
+    );
 
     app
 }
@@ -272,6 +277,6 @@ mod tests {
         assert_eq!(app.definitions.len(), 3);
         assert_eq!(app.recent_builds.len(), 3);
         assert!(!app.dashboard_rows.is_empty());
-        assert!(!app.filtered_pipelines.is_empty());
+        assert!(!app.pipelines.filtered.is_empty());
     }
 }

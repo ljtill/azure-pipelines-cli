@@ -19,6 +19,48 @@ pub struct BuildHistoryState {
     pub return_to: Option<View>,
 }
 
+/// State for the Pipelines flat-list view.
+#[derive(Debug, Default)]
+pub struct PipelinesState {
+    pub filtered: Vec<PipelineDefinition>,
+    pub nav: nav::ListNav,
+}
+
+impl PipelinesState {
+    pub fn rebuild(
+        &mut self,
+        definitions: &[PipelineDefinition],
+        filter_folders: &[String],
+        filter_definition_ids: &[u32],
+        search_query: &str,
+    ) {
+        let base = definitions.iter().filter(|d| {
+            if !filter_definition_ids.is_empty() && !filter_definition_ids.contains(&d.id) {
+                return false;
+            }
+            if !filter_folders.is_empty() && !filter_folders.iter().any(|f| d.path.starts_with(f)) {
+                return false;
+            }
+            true
+        });
+
+        if search_query.is_empty() {
+            self.filtered = base.cloned().collect();
+        } else {
+            let q = search_query.to_lowercase();
+            self.filtered = base
+                .filter(|d| {
+                    d.name.to_lowercase().contains(&q) || d.path.to_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect();
+        }
+        self.filtered
+            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.nav.set_len(self.filtered.len());
+    }
+}
+
 use std::collections::{BTreeMap, HashSet};
 
 use chrono::{DateTime, Utc};
@@ -117,11 +159,12 @@ pub struct App {
 
     // List navigation
     pub dashboard_nav: nav::ListNav,
-    pub pipelines_nav: nav::ListNav,
     pub active_runs_nav: nav::ListNav,
 
+    // Pipelines view
+    pub pipelines: PipelinesState,
+
     // Search
-    pub filtered_pipelines: Vec<PipelineDefinition>,
     pub filtered_active_builds: Vec<Build>,
 
     // Status
@@ -159,10 +202,10 @@ impl App {
             selected_builds: HashSet::new(),
 
             dashboard_nav: nav::ListNav::default(),
-            pipelines_nav: nav::ListNav::default(),
             active_runs_nav: nav::ListNav::default(),
 
-            filtered_pipelines: Vec::new(),
+            pipelines: PipelinesState::default(),
+
             filtered_active_builds: Vec::new(),
 
             last_refresh: None,
@@ -179,7 +222,12 @@ impl App {
         if self.search.mode == InputMode::Search {
             self.search.mode = InputMode::Normal;
             self.search.query.clear();
-            self.rebuild_filtered_pipelines();
+            self.pipelines.rebuild(
+                &self.definitions,
+                &self.filter_folders,
+                &self.filter_definition_ids,
+                &self.search.query,
+            );
             return;
         }
         match self.view {
@@ -231,7 +279,7 @@ impl App {
     pub fn current_nav_mut(&mut self) -> &mut nav::ListNav {
         match self.view {
             View::Dashboard => &mut self.dashboard_nav,
-            View::Pipelines => &mut self.pipelines_nav,
+            View::Pipelines => &mut self.pipelines.nav,
             View::ActiveRuns => &mut self.active_runs_nav,
             View::BuildHistory => &mut self.build_history.nav,
             View::LogViewer => self.log_viewer.nav_mut(),
@@ -368,7 +416,7 @@ mod tests {
         app.view = View::Pipelines;
         app.current_nav_mut().set_len(3);
         app.current_nav_mut().down();
-        assert_eq!(app.pipelines_nav.index(), 1);
+        assert_eq!(app.pipelines.nav.index(), 1);
 
         app.view = View::ActiveRuns;
         app.current_nav_mut().set_len(2);

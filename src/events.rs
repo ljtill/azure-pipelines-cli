@@ -129,7 +129,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('2') => {
             app.search.query.clear();
             app.view = View::Pipelines;
-            app.rebuild_filtered_pipelines();
+            app.pipelines.rebuild(
+                &app.definitions,
+                &app.filter_folders,
+                &app.filter_definition_ids,
+                &app.search.query,
+            );
             Action::None
         }
         KeyCode::Char('3') => {
@@ -278,8 +283,9 @@ fn handle_open_in_browser(app: &App) -> Action {
             }
         }
         View::Pipelines => app
-            .filtered_pipelines
-            .get(app.pipelines_nav.index())
+            .pipelines
+            .filtered
+            .get(app.pipelines.nav.index())
             .map(|def| app.endpoints_web_definition(def.id)),
         View::ActiveRuns => app
             .filtered_active_builds
@@ -410,7 +416,7 @@ fn handle_queue_request(app: &mut App) -> Action {
             }
         }
         View::Pipelines => {
-            if let Some(def) = app.filtered_pipelines.get(app.pipelines_nav.index()) {
+            if let Some(def) = app.pipelines.filtered.get(app.pipelines.nav.index()) {
                 (def.id, def.name.clone())
             } else {
                 return Action::None;
@@ -501,8 +507,13 @@ fn handle_search_key(app: &mut App, key: KeyEvent) -> Action {
 fn rebuild_search_results(app: &mut App) {
     match app.view {
         View::Pipelines => {
-            app.rebuild_filtered_pipelines();
-            app.pipelines_nav.set_index(0);
+            app.pipelines.rebuild(
+                &app.definitions,
+                &app.filter_folders,
+                &app.filter_definition_ids,
+                &app.search.query,
+            );
+            app.pipelines.nav.set_index(0);
         }
         View::ActiveRuns => {
             app.rebuild_filtered_active_builds();
@@ -533,8 +544,9 @@ fn handle_enter(app: &mut App) -> Action {
         }
         View::Pipelines => {
             if let Some(def) = app
-                .filtered_pipelines
-                .get(app.pipelines_nav.index())
+                .pipelines
+                .filtered
+                .get(app.pipelines.nav.index())
                 .cloned()
             {
                 let def_id = def.id;

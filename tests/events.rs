@@ -39,7 +39,7 @@ fn key_2_switches_to_pipelines() {
     app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     let action = handle_key(&mut app, key(KeyCode::Char('2')));
     assert_eq!(app.view, View::Pipelines);
-    assert!(!app.filtered_pipelines.is_empty());
+    assert!(!app.pipelines.filtered.is_empty());
     assert!(matches!(action, Action::None));
 }
 
@@ -222,8 +222,13 @@ fn enter_on_pipelines_fetches_history() {
     let mut app = test_app();
     app.view = View::Pipelines;
     app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
-    app.rebuild_filtered_pipelines();
-    app.pipelines_nav.set_len(app.filtered_pipelines.len());
+    app.pipelines.rebuild(
+        &app.definitions,
+        &app.filter_folders,
+        &app.filter_definition_ids,
+        &app.search.query,
+    );
+    app.pipelines.nav.set_len(app.pipelines.filtered.len());
 
     let action = handle_key(&mut app, key(KeyCode::Enter));
     assert!(
@@ -252,7 +257,7 @@ fn enter_on_active_runs_fetches_timeline() {
 fn enter_on_empty_list_is_none() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    // filtered_pipelines is empty
+    // filtered_pipelines is empty (via pipelines.filtered)
     let action = handle_key(&mut app, key(KeyCode::Enter));
     assert!(matches!(action, Action::None));
 }
@@ -434,17 +439,22 @@ fn arrow_keys_navigate_list() {
         make_definition(2, "Pipeline 2", "\\"),
         make_definition(3, "Pipeline 3", "\\"),
     ];
-    app.rebuild_filtered_pipelines();
-    app.pipelines_nav.set_len(app.filtered_pipelines.len());
+    app.pipelines.rebuild(
+        &app.definitions,
+        &app.filter_folders,
+        &app.filter_definition_ids,
+        &app.search.query,
+    );
+    app.pipelines.nav.set_len(app.pipelines.filtered.len());
 
     handle_key(&mut app, key(KeyCode::Down));
-    assert_eq!(app.pipelines_nav.index(), 1);
+    assert_eq!(app.pipelines.nav.index(), 1);
 
     handle_key(&mut app, key(KeyCode::Down));
-    assert_eq!(app.pipelines_nav.index(), 2);
+    assert_eq!(app.pipelines.nav.index(), 2);
 
     handle_key(&mut app, key(KeyCode::Up));
-    assert_eq!(app.pipelines_nav.index(), 1);
+    assert_eq!(app.pipelines.nav.index(), 1);
 }
 
 #[test]
@@ -456,14 +466,19 @@ fn home_and_end_keys() {
         make_definition(2, "Pipeline 2", "\\"),
         make_definition(3, "Pipeline 3", "\\"),
     ];
-    app.rebuild_filtered_pipelines();
-    app.pipelines_nav.set_len(app.filtered_pipelines.len());
+    app.pipelines.rebuild(
+        &app.definitions,
+        &app.filter_folders,
+        &app.filter_definition_ids,
+        &app.search.query,
+    );
+    app.pipelines.nav.set_len(app.pipelines.filtered.len());
 
     handle_key(&mut app, key(KeyCode::End));
-    assert_eq!(app.pipelines_nav.index(), 2);
+    assert_eq!(app.pipelines.nav.index(), 2);
 
     handle_key(&mut app, key(KeyCode::Home));
-    assert_eq!(app.pipelines_nav.index(), 0);
+    assert_eq!(app.pipelines.nav.index(), 0);
 }
 
 // ---------------------------------------------------------------------------

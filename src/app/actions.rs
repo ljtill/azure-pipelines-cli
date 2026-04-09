@@ -208,7 +208,12 @@ pub fn handle_message(
             app.pending_approvals = pending_approvals;
 
             app.rebuild_dashboard_rows();
-            app.rebuild_filtered_pipelines();
+            app.pipelines.rebuild(
+                &app.definitions,
+                &app.filter_folders,
+                &app.filter_definition_ids,
+                &app.search.query,
+            );
             app.rebuild_filtered_active_builds();
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
@@ -556,13 +561,18 @@ mod tests {
         app.active_builds = vec![];
         app.pending_approvals = vec![];
         app.rebuild_dashboard_rows();
-        app.rebuild_filtered_pipelines();
+        app.pipelines.rebuild(
+            &app.definitions,
+            &app.filter_folders,
+            &app.filter_definition_ids,
+            &app.search.query,
+        );
         app.rebuild_filtered_active_builds();
         app.last_refresh = Some(chrono::Utc::now());
         app.loading = false;
 
         assert_eq!(app.definitions.len(), 2);
-        assert_eq!(app.filtered_pipelines.len(), 2);
+        assert_eq!(app.pipelines.filtered.len(), 2);
         assert!(!app.dashboard_rows.is_empty());
         assert!(app.last_refresh.is_some());
         assert!(!app.loading);
@@ -592,13 +602,18 @@ mod tests {
         app.active_builds = vec![];
         app.pending_approvals = vec![];
         app.rebuild_dashboard_rows();
-        app.rebuild_filtered_pipelines();
+        app.pipelines.rebuild(
+            &app.definitions,
+            &app.filter_folders,
+            &app.filter_definition_ids,
+            &app.search.query,
+        );
         app.rebuild_filtered_active_builds();
         app.last_refresh = Some(chrono::Utc::now());
         app.loading = false;
 
         assert_eq!(app.definitions.len(), 1);
-        assert_eq!(app.filtered_pipelines.len(), 1);
+        assert_eq!(app.pipelines.filtered.len(), 1);
         assert_eq!(app.filtered_active_builds.len(), 0);
     }
 
