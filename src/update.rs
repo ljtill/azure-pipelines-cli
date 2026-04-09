@@ -331,6 +331,7 @@ pub async fn self_update() -> Result<UpdateResult> {
 }
 
 /// Remove the existing symlink (if any) and create a new one pointing to `target`.
+/// Uses atomic replacement via a temporary symlink to avoid TOCTOU races.
 fn update_symlink(target: &std::path::Path) -> Result<()> {
     let link = symlink_path()?;
 
@@ -339,19 +340,25 @@ fn update_symlink(target: &std::path::Path) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
 
-    // Remove existing symlink or file
-    if link.exists() || link.symlink_metadata().is_ok() {
-        std::fs::remove_file(&link)
-            .with_context(|| format!("Failed to remove existing symlink at {}", link.display()))?;
-    }
+    let tmp_link = link.with_extension("tmp");
 
+    // Clean up any stale temp symlink
+    let _ = std::fs::remove_file(&tmp_link);
+
+    // Create symlink at temp path, then atomically rename over the real path
     #[cfg(unix)]
-    std::os::unix::fs::symlink(target, &link)
-        .with_context(|| format!("Failed to create symlink at {}", link.display()))?;
+    std::os::unix::fs::symlink(target, &tmp_link)
+        .with_context(|| format!("Failed to create temp symlink at {}", tmp_link.display()))?;
 
     #[cfg(windows)]
-    std::os::windows::fs::symlink_file(target, &link)
-        .with_context(|| format!("Failed to create symlink at {}", link.display()))?;
+    std::os::windows::fs::symlink_file(target, &tmp_link)
+        .with_context(|| format!("Failed to create temp symlink at {}", tmp_link.display()))?;
+
+    std::fs::rename(&tmp_link, &link).with_context(|| {
+        // Clean up temp symlink on rename failure
+        let _ = std::fs::remove_file(&tmp_link);
+        format!("Failed to rename symlink to {}", link.display())
+    })?;
 
     Ok(())
 }
