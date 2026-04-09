@@ -13,7 +13,7 @@ pub enum DashboardRow {
     },
     Pipeline {
         definition: PipelineDefinition,
-        latest_build: Option<Build>,
+        latest_build: Option<Box<Build>>,
     },
 }
 
@@ -71,7 +71,7 @@ impl App {
                 for (def, build) in pipelines {
                     rows.push(DashboardRow::Pipeline {
                         definition: def.clone(),
-                        latest_build: build.clone(),
+                        latest_build: build.clone().map(Box::new),
                     });
                 }
             }

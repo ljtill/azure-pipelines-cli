@@ -34,20 +34,20 @@ impl AdoAuth {
         // Fast path: check cached token under read lock
         {
             let cache = self.cache.read().await;
-            if let Some(cached) = cache.as_ref() {
-                if cached.expires_on > std::time::Instant::now() {
-                    return Ok(cached.secret.clone());
-                }
+            if let Some(cached) = cache.as_ref()
+                && cached.expires_on > std::time::Instant::now()
+            {
+                return Ok(cached.secret.clone());
             }
         }
 
         // Slow path: refresh token under write lock
         let mut cache = self.cache.write().await;
         // Double-check: another task may have refreshed while we waited for the lock
-        if let Some(cached) = cache.as_ref() {
-            if cached.expires_on > std::time::Instant::now() {
-                return Ok(cached.secret.clone());
-            }
+        if let Some(cached) = cache.as_ref()
+            && cached.expires_on > std::time::Instant::now()
+        {
+            return Ok(cached.secret.clone());
         }
 
         let response = self
