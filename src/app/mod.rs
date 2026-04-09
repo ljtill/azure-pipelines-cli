@@ -264,3 +264,156 @@ impl App {
             .set_len(self.filtered_active_builds.len());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::*;
+    use crate::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig};
+
+    fn test_config() -> Config {
+        Config {
+            azure_devops: AzureDevOpsConfig {
+                organization: "testorg".to_string(),
+                project: "testproj".to_string(),
+            },
+            display: DisplayConfig::default(),
+            filters: FiltersConfig::default(),
+        }
+    }
+
+    fn test_build(id: u32) -> Build {
+        Build {
+            id,
+            build_number: format!("{}", id),
+            status: BuildStatus::Completed,
+            result: Some(BuildResult::Succeeded),
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/heads/main".to_string()),
+            requested_for: None,
+        }
+    }
+
+    fn test_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
+        PipelineDefinition {
+            id,
+            name: name.to_string(),
+            path: path.to_string(),
+            queue_status: None,
+        }
+    }
+
+    #[test]
+    fn new_app_starts_on_dashboard() {
+        let app = App::new("org", "proj", &test_config());
+        assert_eq!(app.view, View::Dashboard);
+        assert!(app.running);
+        assert!(!app.show_help);
+        assert_eq!(app.org_project_label, "org / proj");
+    }
+
+    #[test]
+    fn navigate_to_build_history_sets_state() {
+        let mut app = App::new("org", "proj", &test_config());
+        let def = test_definition(1, "My Pipeline", "\\");
+        app.navigate_to_build_history(def.clone());
+        assert_eq!(app.view, View::BuildHistory);
+        assert_eq!(app.previous_view, Some(View::Dashboard));
+        assert_eq!(app.selected_definition.as_ref().unwrap().id, 1);
+    }
+
+    #[test]
+    fn navigate_to_log_viewer_sets_state() {
+        let mut app = App::new("org", "proj", &test_config());
+        let build = test_build(42);
+        let gen_before = app.log_viewer.generation();
+        app.navigate_to_log_viewer(build);
+        assert_eq!(app.view, View::LogViewer);
+        assert_eq!(app.log_viewer.selected_build().unwrap().id, 42);
+        assert!(app.log_viewer.generation() > gen_before);
+        assert!(app.log_viewer.is_following());
+    }
+
+    #[test]
+    fn go_back_from_log_viewer() {
+        let mut app = App::new("org", "proj", &test_config());
+        let def = test_definition(1, "P", "\\");
+        app.navigate_to_build_history(def);
+        let build = test_build(42);
+        app.navigate_to_log_viewer(build);
+        let generation = app.log_viewer.generation();
+
+        app.go_back();
+        assert_eq!(app.view, View::BuildHistory);
+        assert!(app.log_viewer.selected_build().is_none());
+        // Generation should be preserved (incremented)
+        assert!(app.log_viewer.generation() > generation);
+    }
+
+    #[test]
+    fn go_back_from_build_history() {
+        let mut app = App::new("org", "proj", &test_config());
+        app.view = View::Pipelines;
+        let def = test_definition(1, "P", "\\");
+        app.navigate_to_build_history(def);
+        app.go_back();
+        assert_eq!(app.view, View::Pipelines);
+        assert!(app.selected_definition.is_none());
+    }
+
+    #[test]
+    fn go_back_dismisses_help() {
+        let mut app = App::new("org", "proj", &test_config());
+        app.show_help = true;
+        app.go_back();
+        assert!(!app.show_help);
+        assert_eq!(app.view, View::Dashboard); // didn't change view
+    }
+
+    #[test]
+    fn go_back_exits_search_mode() {
+        let mut app = App::new("org", "proj", &test_config());
+        app.input_mode = InputMode::Search;
+        app.search_query = "test".to_string();
+        app.go_back();
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.search_query.is_empty());
+    }
+
+    #[test]
+    fn current_nav_mut_returns_correct_nav_for_each_view() {
+        let mut app = App::new("org", "proj", &test_config());
+
+        app.view = View::Dashboard;
+        app.current_nav_mut().set_len(5);
+        assert_eq!(app.dashboard_nav.index(), 0);
+
+        app.view = View::Pipelines;
+        app.current_nav_mut().set_len(3);
+        app.current_nav_mut().down();
+        assert_eq!(app.pipelines_nav.index(), 1);
+
+        app.view = View::ActiveRuns;
+        app.current_nav_mut().set_len(2);
+        assert_eq!(app.active_runs_nav.index(), 0);
+    }
+
+    #[test]
+    fn web_url_helpers() {
+        let app = App::new("myorg", "myproj", &test_config());
+        assert_eq!(
+            app.endpoints_web_build(42),
+            "https://dev.azure.com/myorg/myproj/_build/results?buildId=42"
+        );
+        assert_eq!(
+            app.endpoints_web_definition(10),
+            "https://dev.azure.com/myorg/myproj/_build?definitionId=10"
+        );
+    }
+}

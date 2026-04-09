@@ -201,3 +201,201 @@ impl App {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::*;
+    use crate::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig};
+
+    fn test_config() -> Config {
+        Config {
+            azure_devops: AzureDevOpsConfig {
+                organization: "testorg".to_string(),
+                project: "testproj".to_string(),
+            },
+            display: DisplayConfig::default(),
+            filters: FiltersConfig::default(),
+        }
+    }
+
+    fn test_build(id: u32) -> Build {
+        Build {
+            id,
+            build_number: format!("{}", id),
+            status: BuildStatus::Completed,
+            result: Some(BuildResult::Succeeded),
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/heads/main".to_string()),
+            requested_for: None,
+        }
+    }
+
+    fn test_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
+        PipelineDefinition {
+            id,
+            name: name.to_string(),
+            path: path.to_string(),
+            queue_status: None,
+        }
+    }
+
+    // --- folder_key / folder_display ---
+
+    #[test]
+    fn folder_key_root() {
+        assert_eq!(folder_key(""), "\\");
+        assert_eq!(folder_key("\\"), "\\");
+    }
+
+    #[test]
+    fn folder_key_nested() {
+        assert_eq!(folder_key("\\Infra"), "\\Infra");
+        assert_eq!(folder_key("\\Infra\\Deploy"), "\\Infra\\Deploy");
+    }
+
+    #[test]
+    fn folder_display_root() {
+        assert_eq!(folder_display("\\"), "Root");
+    }
+
+    #[test]
+    fn folder_display_nested() {
+        assert_eq!(folder_display("\\Infra"), "Infra");
+        assert_eq!(folder_display("\\Infra\\Deploy"), "Infra / Deploy");
+    }
+
+    // --- matches_filter ---
+
+    #[test]
+    fn matches_filter_no_filters_passes_all() {
+        let app = App::new("o", "p", &test_config());
+        let def = test_definition(1, "P", "\\");
+        assert!(app.matches_filter(&def));
+    }
+
+    #[test]
+    fn matches_filter_by_definition_id() {
+        let mut cfg = test_config();
+        cfg.filters.definition_ids = vec![1, 2];
+        let app = App::new("o", "p", &cfg);
+        assert!(app.matches_filter(&test_definition(1, "P", "\\")));
+        assert!(!app.matches_filter(&test_definition(99, "P", "\\")));
+    }
+
+    #[test]
+    fn matches_filter_by_folder() {
+        let mut cfg = test_config();
+        cfg.filters.folders = vec!["\\Infra".to_string()];
+        let app = App::new("o", "p", &cfg);
+        assert!(app.matches_filter(&test_definition(1, "P", "\\Infra")));
+        assert!(app.matches_filter(&test_definition(2, "P", "\\Infra\\Deploy")));
+        assert!(!app.matches_filter(&test_definition(3, "P", "\\")));
+    }
+
+    #[test]
+    fn matches_build_filter_by_definition_id() {
+        let mut cfg = test_config();
+        cfg.filters.definition_ids = vec![1];
+        let app = App::new("o", "p", &cfg);
+        let mut build = test_build(1);
+        build.definition.id = 1;
+        assert!(app.matches_build_filter(&build));
+        build.definition.id = 99;
+        assert!(!app.matches_build_filter(&build));
+    }
+
+    // --- rebuild_dashboard_rows ---
+
+    #[test]
+    fn rebuild_dashboard_groups_by_folder() {
+        let mut app = App::new("o", "p", &test_config());
+        app.definitions = vec![
+            test_definition(1, "CI", "\\"),
+            test_definition(2, "Deploy", "\\Infra"),
+            test_definition(3, "Lint", "\\"),
+        ];
+        app.rebuild_dashboard_rows();
+
+        // Should have: Root folder header + 2 pipelines, then Infra folder header + 1 pipeline
+        // BTreeMap sorts keys, so "\" comes before "\Infra"
+        assert_eq!(app.dashboard_rows.len(), 5); // 2 headers + 3 pipelines
+        assert!(
+            matches!(&app.dashboard_rows[0], DashboardRow::FolderHeader { path, .. } if path == "Root")
+        );
+        assert!(
+            matches!(&app.dashboard_rows[3], DashboardRow::FolderHeader { path, .. } if path == "Infra")
+        );
+    }
+
+    // --- rebuild_filtered_pipelines ---
+
+    #[test]
+    fn rebuild_filtered_pipelines_with_search() {
+        let mut app = App::new("o", "p", &test_config());
+        app.definitions = vec![
+            test_definition(1, "CI Pipeline", "\\"),
+            test_definition(2, "Deploy", "\\Infra"),
+        ];
+        app.search_query = "ci".to_string();
+        app.rebuild_filtered_pipelines();
+        assert_eq!(app.filtered_pipelines.len(), 1);
+        assert_eq!(app.filtered_pipelines[0].name, "CI Pipeline");
+    }
+
+    #[test]
+    fn rebuild_filtered_pipelines_empty_search_shows_all() {
+        let mut app = App::new("o", "p", &test_config());
+        app.definitions = vec![
+            test_definition(1, "CI", "\\"),
+            test_definition(2, "Deploy", "\\Infra"),
+        ];
+        app.rebuild_filtered_pipelines();
+        assert_eq!(app.filtered_pipelines.len(), 2);
+    }
+
+    // --- toggle/collapse/expand ---
+
+    #[test]
+    fn toggle_folder_collapses_and_expands() {
+        let mut app = App::new("o", "p", &test_config());
+        app.definitions = vec![
+            test_definition(1, "CI", "\\"),
+            test_definition(2, "Deploy", "\\"),
+        ];
+        app.rebuild_dashboard_rows();
+        // Row 0 is Root folder header (expanded), rows 1-2 are pipelines
+        assert_eq!(app.dashboard_rows.len(), 3);
+
+        app.toggle_folder_at(0); // collapse
+        assert_eq!(app.dashboard_rows.len(), 1); // only header
+
+        app.toggle_folder_at(0); // expand
+        assert_eq!(app.dashboard_rows.len(), 3);
+    }
+
+    // --- rebuild_filtered_active_builds ---
+
+    #[test]
+    fn rebuild_filtered_active_builds_applies_search() {
+        let mut app = App::new("o", "p", &test_config());
+        let mut b1 = test_build(1);
+        b1.definition.name = "CI".to_string();
+        b1.status = BuildStatus::InProgress;
+        let mut b2 = test_build(2);
+        b2.definition.name = "Deploy".to_string();
+        b2.status = BuildStatus::InProgress;
+        app.active_builds = vec![b1, b2];
+
+        app.search_query = "deploy".to_string();
+        app.rebuild_filtered_active_builds();
+        assert_eq!(app.filtered_active_builds.len(), 1);
+        assert_eq!(app.filtered_active_builds[0].definition.name, "Deploy");
+    }
+}
