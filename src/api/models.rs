@@ -146,6 +146,15 @@ impl<'de> Deserialize<'de> for TaskState {
     }
 }
 
+// --- Generic paginated list response ---
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ListResponse<T> {
+    pub value: Vec<T>,
+    #[allow(dead_code)]
+    pub count: Option<u32>,
+}
+
 // --- Pipeline Definitions ---
 
 #[derive(Debug, Clone, Deserialize)]
@@ -508,6 +517,43 @@ mod tests {
         assert_eq!(def.name, "Release Pipeline");
         assert_eq!(def.path, "\\Production");
         assert_eq!(def.queue_status.as_deref(), Some("enabled"));
+    }
+
+    #[test]
+    fn deserialize_list_response_with_count() {
+        let json = r#"{
+            "value": [
+                {"id": 1, "name": "CI", "path": "\\", "queueStatus": "enabled"},
+                {"id": 2, "name": "CD", "path": "\\Deploy"}
+            ],
+            "count": 2
+        }"#;
+        let resp: ListResponse<PipelineDefinition> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.count, Some(2));
+        assert_eq!(resp.value.len(), 2);
+        assert_eq!(resp.value[0].name, "CI");
+        assert_eq!(resp.value[1].path, "\\Deploy");
+    }
+
+    #[test]
+    fn deserialize_list_response_without_count() {
+        let json = r#"{
+            "value": [
+                {"id": 3, "name": "Nightly", "path": "\\"}
+            ]
+        }"#;
+        let resp: ListResponse<PipelineDefinition> = serde_json::from_str(json).unwrap();
+        assert!(resp.count.is_none());
+        assert_eq!(resp.value.len(), 1);
+        assert_eq!(resp.value[0].id, 3);
+    }
+
+    #[test]
+    fn deserialize_list_response_empty() {
+        let json = r#"{"value": [], "count": 0}"#;
+        let resp: ListResponse<PipelineDefinition> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.count, Some(0));
+        assert!(resp.value.is_empty());
     }
 
     #[test]

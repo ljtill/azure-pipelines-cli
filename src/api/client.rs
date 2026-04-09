@@ -45,6 +45,44 @@ impl AdoClient {
         Ok(body)
     }
 
+    async fn get_all_pages<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<Vec<T>> {
+        let mut all_items = Vec::new();
+        let mut continuation_token: Option<String> = None;
+
+        loop {
+            let full_url = match &continuation_token {
+                Some(token) => format!("{}&continuationToken={}", url, token),
+                None => url.to_string(),
+            };
+
+            let token = self.auth.token().await?;
+            tracing::debug!(method = "GET", url = %full_url, "api paginated request");
+            let resp = self
+                .http
+                .get(&full_url)
+                .bearer_auth(&token)
+                .send()
+                .await?
+                .error_for_status()?;
+
+            let next_token = resp
+                .headers()
+                .get("x-ms-continuationtoken")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            let page: ListResponse<T> = resp.json().await?;
+            all_items.extend(page.value);
+
+            match next_token {
+                Some(t) if !t.is_empty() => continuation_token = Some(t),
+                _ => break,
+            }
+        }
+
+        Ok(all_items)
+    }
+
     async fn get_text(&self, url: &str) -> Result<String> {
         let token = self.auth.token().await?;
         tracing::debug!(method = "GET", url, "api text request");
@@ -93,8 +131,7 @@ impl AdoClient {
 
     pub async fn list_definitions(&self) -> Result<Vec<PipelineDefinition>> {
         let url = self.endpoints.definitions();
-        let resp: DefinitionListResponse = self.get(&url).await?;
-        Ok(resp.value)
+        self.get_all_pages(&url).await
     }
 
     pub async fn list_active_builds(&self) -> Result<Vec<Build>> {
