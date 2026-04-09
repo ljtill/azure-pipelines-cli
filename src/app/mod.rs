@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use chrono::{DateTime, Utc};
 
+use crate::api::endpoints::Endpoints;
 use crate::api::models::{Approval, Build, PipelineDefinition};
 
 use notifications::Notifications;
@@ -70,7 +71,7 @@ pub struct App {
     pub running: bool,
     pub show_help: bool,
     pub org_project_label: String,
-    web_base_url: String,
+    endpoints: Endpoints,
 
     // Filters
     pub filter_folders: Vec<String>,
@@ -124,7 +125,7 @@ impl App {
             running: true,
             show_help: false,
             org_project_label: format!("{} / {}", organization, project),
-            web_base_url: format!("https://dev.azure.com/{}/{}", organization, project),
+            endpoints: Endpoints::new(organization, project),
             filter_folders: config.filters.folders.clone(),
             filter_definition_ids: config.filters.definition_ids.clone(),
 
@@ -227,17 +228,12 @@ impl App {
         }
     }
 
-    // Web URL helpers for opening in browser
-
     pub fn endpoints_web_build(&self, build_id: u32) -> String {
-        format!("{}/_build/results?buildId={}", self.web_base_url, build_id)
+        self.endpoints.web_build(build_id)
     }
 
     pub fn endpoints_web_definition(&self, definition_id: u32) -> String {
-        format!(
-            "{}/_build?definitionId={}",
-            self.web_base_url, definition_id
-        )
+        self.endpoints.web_definition(definition_id)
     }
 
     /// Rebuild the filtered active builds list from search query.
@@ -269,50 +265,11 @@ impl App {
 mod tests {
     use super::*;
     use crate::api::models::*;
-    use crate::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, UpdateConfig};
-
-    fn test_config() -> Config {
-        Config {
-            azure_devops: AzureDevOpsConfig {
-                organization: "testorg".to_string(),
-                project: "testproj".to_string(),
-            },
-            display: DisplayConfig::default(),
-            filters: FiltersConfig::default(),
-            update: UpdateConfig::default(),
-        }
-    }
-
-    fn test_build(id: u32) -> Build {
-        Build {
-            id,
-            build_number: format!("{}", id),
-            status: BuildStatus::Completed,
-            result: Some(BuildResult::Succeeded),
-            queue_time: None,
-            start_time: None,
-            finish_time: None,
-            definition: BuildDefinitionRef {
-                id: 1,
-                name: "test".to_string(),
-            },
-            source_branch: Some("refs/heads/main".to_string()),
-            requested_for: None,
-        }
-    }
-
-    fn test_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
-        PipelineDefinition {
-            id,
-            name: name.to_string(),
-            path: path.to_string(),
-            queue_status: None,
-        }
-    }
+    use crate::test_helpers::*;
 
     #[test]
     fn new_app_starts_on_dashboard() {
-        let app = App::new("org", "proj", &test_config());
+        let app = App::new("org", "proj", &make_config());
         assert_eq!(app.view, View::Dashboard);
         assert!(app.running);
         assert!(!app.show_help);
@@ -321,8 +278,8 @@ mod tests {
 
     #[test]
     fn navigate_to_build_history_sets_state() {
-        let mut app = App::new("org", "proj", &test_config());
-        let def = test_definition(1, "My Pipeline", "\\");
+        let mut app = App::new("org", "proj", &make_config());
+        let def = make_definition(1, "My Pipeline", "\\");
         app.navigate_to_build_history(def.clone());
         assert_eq!(app.view, View::BuildHistory);
         assert_eq!(app.previous_view, Some(View::Dashboard));
@@ -331,8 +288,8 @@ mod tests {
 
     #[test]
     fn navigate_to_log_viewer_sets_state() {
-        let mut app = App::new("org", "proj", &test_config());
-        let build = test_build(42);
+        let mut app = App::new("org", "proj", &make_config());
+        let build = make_build(42, BuildStatus::Completed, Some(BuildResult::Succeeded));
         let gen_before = app.log_viewer.generation();
         app.navigate_to_log_viewer(build);
         assert_eq!(app.view, View::LogViewer);
@@ -343,10 +300,10 @@ mod tests {
 
     #[test]
     fn go_back_from_log_viewer() {
-        let mut app = App::new("org", "proj", &test_config());
-        let def = test_definition(1, "P", "\\");
+        let mut app = App::new("org", "proj", &make_config());
+        let def = make_definition(1, "P", "\\");
         app.navigate_to_build_history(def);
-        let build = test_build(42);
+        let build = make_build(42, BuildStatus::Completed, Some(BuildResult::Succeeded));
         app.navigate_to_log_viewer(build);
         let generation = app.log_viewer.generation();
 
@@ -359,9 +316,9 @@ mod tests {
 
     #[test]
     fn go_back_from_build_history() {
-        let mut app = App::new("org", "proj", &test_config());
+        let mut app = App::new("org", "proj", &make_config());
         app.view = View::Pipelines;
-        let def = test_definition(1, "P", "\\");
+        let def = make_definition(1, "P", "\\");
         app.navigate_to_build_history(def);
         app.go_back();
         assert_eq!(app.view, View::Pipelines);
@@ -370,7 +327,7 @@ mod tests {
 
     #[test]
     fn go_back_dismisses_help() {
-        let mut app = App::new("org", "proj", &test_config());
+        let mut app = App::new("org", "proj", &make_config());
         app.show_help = true;
         app.go_back();
         assert!(!app.show_help);
@@ -379,7 +336,7 @@ mod tests {
 
     #[test]
     fn go_back_exits_search_mode() {
-        let mut app = App::new("org", "proj", &test_config());
+        let mut app = App::new("org", "proj", &make_config());
         app.input_mode = InputMode::Search;
         app.search_query = "test".to_string();
         app.go_back();
@@ -389,7 +346,7 @@ mod tests {
 
     #[test]
     fn current_nav_mut_returns_correct_nav_for_each_view() {
-        let mut app = App::new("org", "proj", &test_config());
+        let mut app = App::new("org", "proj", &make_config());
 
         app.view = View::Dashboard;
         app.current_nav_mut().set_len(5);
@@ -407,7 +364,7 @@ mod tests {
 
     #[test]
     fn web_url_helpers() {
-        let app = App::new("myorg", "myproj", &test_config());
+        let app = App::new("myorg", "myproj", &make_config());
         assert_eq!(
             app.endpoints_web_build(42),
             "https://dev.azure.com/myorg/myproj/_build/results?buildId=42"

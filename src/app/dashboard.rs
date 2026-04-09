@@ -206,46 +206,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::api::models::*;
-    use crate::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, UpdateConfig};
-
-    fn test_config() -> Config {
-        Config {
-            azure_devops: AzureDevOpsConfig {
-                organization: "testorg".to_string(),
-                project: "testproj".to_string(),
-            },
-            display: DisplayConfig::default(),
-            filters: FiltersConfig::default(),
-            update: UpdateConfig::default(),
-        }
-    }
-
-    fn test_build(id: u32) -> Build {
-        Build {
-            id,
-            build_number: format!("{}", id),
-            status: BuildStatus::Completed,
-            result: Some(BuildResult::Succeeded),
-            queue_time: None,
-            start_time: None,
-            finish_time: None,
-            definition: BuildDefinitionRef {
-                id: 1,
-                name: "test".to_string(),
-            },
-            source_branch: Some("refs/heads/main".to_string()),
-            requested_for: None,
-        }
-    }
-
-    fn test_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
-        PipelineDefinition {
-            id,
-            name: name.to_string(),
-            path: path.to_string(),
-            queue_status: None,
-        }
-    }
+    use crate::test_helpers::*;
 
     // --- folder_key / folder_display ---
 
@@ -276,36 +237,36 @@ mod tests {
 
     #[test]
     fn matches_filter_no_filters_passes_all() {
-        let app = App::new("o", "p", &test_config());
-        let def = test_definition(1, "P", "\\");
+        let app = App::new("o", "p", &make_config());
+        let def = make_definition(1, "P", "\\");
         assert!(app.matches_filter(&def));
     }
 
     #[test]
     fn matches_filter_by_definition_id() {
-        let mut cfg = test_config();
+        let mut cfg = make_config();
         cfg.filters.definition_ids = vec![1, 2];
         let app = App::new("o", "p", &cfg);
-        assert!(app.matches_filter(&test_definition(1, "P", "\\")));
-        assert!(!app.matches_filter(&test_definition(99, "P", "\\")));
+        assert!(app.matches_filter(&make_definition(1, "P", "\\")));
+        assert!(!app.matches_filter(&make_definition(99, "P", "\\")));
     }
 
     #[test]
     fn matches_filter_by_folder() {
-        let mut cfg = test_config();
+        let mut cfg = make_config();
         cfg.filters.folders = vec!["\\Infra".to_string()];
         let app = App::new("o", "p", &cfg);
-        assert!(app.matches_filter(&test_definition(1, "P", "\\Infra")));
-        assert!(app.matches_filter(&test_definition(2, "P", "\\Infra\\Deploy")));
-        assert!(!app.matches_filter(&test_definition(3, "P", "\\")));
+        assert!(app.matches_filter(&make_definition(1, "P", "\\Infra")));
+        assert!(app.matches_filter(&make_definition(2, "P", "\\Infra\\Deploy")));
+        assert!(!app.matches_filter(&make_definition(3, "P", "\\")));
     }
 
     #[test]
     fn matches_build_filter_by_definition_id() {
-        let mut cfg = test_config();
+        let mut cfg = make_config();
         cfg.filters.definition_ids = vec![1];
         let app = App::new("o", "p", &cfg);
-        let mut build = test_build(1);
+        let mut build = make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded));
         build.definition.id = 1;
         assert!(app.matches_build_filter(&build));
         build.definition.id = 99;
@@ -316,11 +277,11 @@ mod tests {
 
     #[test]
     fn rebuild_dashboard_groups_by_folder() {
-        let mut app = App::new("o", "p", &test_config());
+        let mut app = App::new("o", "p", &make_config());
         app.definitions = vec![
-            test_definition(1, "CI", "\\"),
-            test_definition(2, "Deploy", "\\Infra"),
-            test_definition(3, "Lint", "\\"),
+            make_definition(1, "CI", "\\"),
+            make_definition(2, "Deploy", "\\Infra"),
+            make_definition(3, "Lint", "\\"),
         ];
         app.rebuild_dashboard_rows();
 
@@ -339,10 +300,10 @@ mod tests {
 
     #[test]
     fn rebuild_filtered_pipelines_with_search() {
-        let mut app = App::new("o", "p", &test_config());
+        let mut app = App::new("o", "p", &make_config());
         app.definitions = vec![
-            test_definition(1, "CI Pipeline", "\\"),
-            test_definition(2, "Deploy", "\\Infra"),
+            make_definition(1, "CI Pipeline", "\\"),
+            make_definition(2, "Deploy", "\\Infra"),
         ];
         app.search_query = "ci".to_string();
         app.rebuild_filtered_pipelines();
@@ -352,10 +313,10 @@ mod tests {
 
     #[test]
     fn rebuild_filtered_pipelines_empty_search_shows_all() {
-        let mut app = App::new("o", "p", &test_config());
+        let mut app = App::new("o", "p", &make_config());
         app.definitions = vec![
-            test_definition(1, "CI", "\\"),
-            test_definition(2, "Deploy", "\\Infra"),
+            make_definition(1, "CI", "\\"),
+            make_definition(2, "Deploy", "\\Infra"),
         ];
         app.rebuild_filtered_pipelines();
         assert_eq!(app.filtered_pipelines.len(), 2);
@@ -365,10 +326,10 @@ mod tests {
 
     #[test]
     fn toggle_folder_collapses_and_expands() {
-        let mut app = App::new("o", "p", &test_config());
+        let mut app = App::new("o", "p", &make_config());
         app.definitions = vec![
-            test_definition(1, "CI", "\\"),
-            test_definition(2, "Deploy", "\\"),
+            make_definition(1, "CI", "\\"),
+            make_definition(2, "Deploy", "\\"),
         ];
         app.rebuild_dashboard_rows();
         // Row 0 is Root folder header (expanded), rows 1-2 are pipelines
@@ -385,11 +346,11 @@ mod tests {
 
     #[test]
     fn rebuild_filtered_active_builds_applies_search() {
-        let mut app = App::new("o", "p", &test_config());
-        let mut b1 = test_build(1);
+        let mut app = App::new("o", "p", &make_config());
+        let mut b1 = make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b1.definition.name = "CI".to_string();
         b1.status = BuildStatus::InProgress;
-        let mut b2 = test_build(2);
+        let mut b2 = make_build(2, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b2.definition.name = "Deploy".to_string();
         b2.status = BuildStatus::InProgress;
         app.active_builds = vec![b1, b2];

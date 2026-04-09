@@ -1,9 +1,7 @@
 use azure_pipelines_cli::api::models::*;
 use azure_pipelines_cli::app::{App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, View};
-use azure_pipelines_cli::config::{
-    AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, UpdateConfig,
-};
 use azure_pipelines_cli::events::{Action, handle_key};
+use azure_pipelines_cli::test_helpers::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 // ---------------------------------------------------------------------------
@@ -18,47 +16,8 @@ fn ctrl_c() -> KeyEvent {
     KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
 }
 
-fn test_config() -> Config {
-    Config {
-        azure_devops: AzureDevOpsConfig {
-            organization: "o".into(),
-            project: "p".into(),
-        },
-        display: DisplayConfig::default(),
-        filters: FiltersConfig::default(),
-        update: UpdateConfig::default(),
-    }
-}
-
 fn test_app() -> App {
-    App::new("o", "p", &test_config())
-}
-
-fn test_build(id: u32) -> Build {
-    Build {
-        id,
-        build_number: format!("{id}"),
-        status: BuildStatus::InProgress,
-        result: None,
-        queue_time: None,
-        start_time: None,
-        finish_time: None,
-        definition: BuildDefinitionRef {
-            id: 1,
-            name: "test".into(),
-        },
-        source_branch: Some("refs/heads/main".into()),
-        requested_for: None,
-    }
-}
-
-fn test_definition(id: u32) -> PipelineDefinition {
-    PipelineDefinition {
-        id,
-        name: format!("Pipeline {id}"),
-        path: "\\".into(),
-        queue_status: None,
-    }
+    App::new("o", "p", &make_config())
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +36,7 @@ fn key_1_switches_to_dashboard() {
 #[test]
 fn key_2_switches_to_pipelines() {
     let mut app = test_app();
-    app.definitions = vec![test_definition(1)];
+    app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     let action = handle_key(&mut app, key(KeyCode::Char('2')));
     assert_eq!(app.view, View::Pipelines);
     assert!(!app.filtered_pipelines.is_empty());
@@ -124,7 +83,7 @@ fn q_goes_back_from_build_history() {
 #[test]
 fn q_goes_back_from_log_viewer() {
     let mut app = test_app();
-    let build = test_build(1);
+    let build = make_build(1, BuildStatus::InProgress, None);
     app.navigate_to_log_viewer(build);
     assert_eq!(app.view, View::LogViewer);
 
@@ -262,7 +221,7 @@ fn enter_commits_search() {
 fn enter_on_pipelines_fetches_history() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.definitions = vec![test_definition(1)];
+    app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     app.rebuild_filtered_pipelines();
     app.pipelines_nav.set_len(app.filtered_pipelines.len());
 
@@ -278,7 +237,7 @@ fn enter_on_pipelines_fetches_history() {
 fn enter_on_active_runs_fetches_timeline() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.active_builds = vec![test_build(42)];
+    app.active_builds = vec![make_build(42, BuildStatus::InProgress, None)];
     app.rebuild_filtered_active_builds();
 
     let action = handle_key(&mut app, key(KeyCode::Enter));
@@ -366,7 +325,7 @@ fn confirm_blocks_other_keys() {
 fn space_toggles_in_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.active_builds = vec![test_build(10)];
+    app.active_builds = vec![make_build(10, BuildStatus::InProgress, None)];
     app.rebuild_filtered_active_builds();
 
     // Toggle on
@@ -397,7 +356,7 @@ fn space_noop_on_other_views() {
 fn c_sets_confirm_on_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.active_builds = vec![test_build(7)];
+    app.active_builds = vec![make_build(7, BuildStatus::InProgress, None)];
     app.rebuild_filtered_active_builds();
 
     let action = handle_key(&mut app, key(KeyCode::Char('c')));
@@ -419,7 +378,7 @@ fn c_sets_confirm_on_active_runs() {
 #[test]
 fn o_opens_browser_on_dashboard() {
     let mut app = test_app();
-    app.definitions = vec![test_definition(1)];
+    app.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     app.rebuild_dashboard_rows();
     app.dashboard_nav.set_len(app.dashboard_rows.len());
     // Row 0 is a folder header; move to row 1 which is the pipeline
@@ -445,7 +404,7 @@ fn o_opens_browser_on_dashboard() {
 #[test]
 fn f_in_log_viewer_returns_follow_latest() {
     let mut app = test_app();
-    let build = test_build(1);
+    let build = make_build(1, BuildStatus::InProgress, None);
     app.navigate_to_log_viewer(build);
 
     let action = handle_key(&mut app, key(KeyCode::Char('f')));
@@ -470,7 +429,11 @@ fn f_outside_log_viewer_is_noop() {
 fn arrow_keys_navigate_list() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.definitions = vec![test_definition(1), test_definition(2), test_definition(3)];
+    app.definitions = vec![
+        make_definition(1, "Pipeline 1", "\\"),
+        make_definition(2, "Pipeline 2", "\\"),
+        make_definition(3, "Pipeline 3", "\\"),
+    ];
     app.rebuild_filtered_pipelines();
     app.pipelines_nav.set_len(app.filtered_pipelines.len());
 
@@ -488,7 +451,11 @@ fn arrow_keys_navigate_list() {
 fn home_and_end_keys() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.definitions = vec![test_definition(1), test_definition(2), test_definition(3)];
+    app.definitions = vec![
+        make_definition(1, "Pipeline 1", "\\"),
+        make_definition(2, "Pipeline 2", "\\"),
+        make_definition(3, "Pipeline 3", "\\"),
+    ];
     app.rebuild_filtered_pipelines();
     app.pipelines_nav.set_len(app.filtered_pipelines.len());
 

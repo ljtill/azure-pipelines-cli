@@ -2,7 +2,7 @@ use crate::api::models::*;
 use crate::app::App;
 use crate::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, UpdateConfig};
 
-pub(crate) fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
+pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
     Build {
         id,
         build_number: format!("{}", id),
@@ -20,7 +20,7 @@ pub(crate) fn make_build(id: u32, status: BuildStatus, result: Option<BuildResul
     }
 }
 
-pub(crate) fn make_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
+pub fn make_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
     PipelineDefinition {
         id,
         name: name.to_string(),
@@ -29,7 +29,7 @@ pub(crate) fn make_definition(id: u32, name: &str, path: &str) -> PipelineDefini
     }
 }
 
-pub(crate) fn make_timeline_record(
+pub fn make_timeline_record(
     id: &str,
     record_type: &str,
     parent_id: Option<&str>,
@@ -51,7 +51,7 @@ pub(crate) fn make_timeline_record(
     }
 }
 
-pub(crate) fn make_simple_timeline() -> BuildTimeline {
+pub fn make_simple_timeline() -> BuildTimeline {
     let completed = Some(TaskState::Completed);
     let succeeded = Some(BuildResult::Succeeded);
 
@@ -154,7 +154,7 @@ pub(crate) fn make_simple_timeline() -> BuildTimeline {
     BuildTimeline { records }
 }
 
-pub(crate) fn make_config() -> Config {
+pub fn make_config() -> Config {
     Config {
         azure_devops: AzureDevOpsConfig {
             organization: "testorg".to_string(),
@@ -166,7 +166,7 @@ pub(crate) fn make_config() -> Config {
     }
 }
 
-pub(crate) fn make_app() -> App {
+pub fn make_app() -> App {
     let config = make_config();
     let mut app = App::new(
         &config.azure_devops.organization,
