@@ -93,9 +93,7 @@ pub struct BuildTimeline {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TimelineRecord {
-    #[allow(dead_code)]
     pub id: String,
-    #[allow(dead_code)]
     #[serde(rename = "parentId")]
     pub parent_id: Option<String>,
     pub name: String,
@@ -103,7 +101,6 @@ pub struct TimelineRecord {
     pub record_type: String,
     pub state: Option<String>,
     pub result: Option<String>,
-    #[allow(dead_code)]
     pub order: Option<i32>,
     #[serde(rename = "log")]
     pub log: Option<LogReference>,

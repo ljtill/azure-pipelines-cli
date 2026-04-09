@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::App;
+use crate::app::{App, TimelineRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     use ratatui::layout::{Constraint, Layout};
@@ -16,9 +16,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or_else(|| "Build".to_string());
 
     let chunks = Layout::vertical([
-        Constraint::Length(2),  // build info header
-        Constraint::Length(12), // timeline entries
-        Constraint::Min(0),    // log content
+        Constraint::Length(2), // build info header
+        Constraint::Min(0),   // body (tree + log)
     ])
     .split(area);
 
@@ -35,79 +34,156 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     ]));
     f.render_widget(header, chunks[0]);
 
-    // Timeline entries (steps with logs)
-    if let Some(timeline) = &app.build_timeline {
-        let log_records: Vec<_> = timeline
-            .records
-            .iter()
-            .filter(|r| r.log.is_some())
-            .collect();
+    // Horizontal split: tree (left) + log (right)
+    let body = Layout::horizontal([
+        Constraint::Percentage(35), // tree panel
+        Constraint::Percentage(65), // log panel
+    ])
+    .split(chunks[1]);
 
-        let items: Vec<ListItem> = log_records
-            .iter()
-            .enumerate()
-            .map(|(i, record)| {
-                let (icon, icon_color) = match record.result.as_deref() {
-                    Some("succeeded") => ("✓", Color::Green),
-                    Some("failed") => ("✗", Color::Red),
-                    Some("skipped") => ("⊘", Color::DarkGray),
-                    _ => match record.state.as_deref() {
-                        Some("inProgress") => ("⏳", Color::Yellow),
-                        Some("pending") => ("○", Color::DarkGray),
-                        _ => ("○", Color::DarkGray),
-                    },
-                };
+    draw_tree(f, app, body[0]);
+    draw_log(f, app, body[1]);
+}
 
-                let type_tag = match record.record_type.as_str() {
-                    "Stage" => "[S]",
-                    "Job" => "[J]",
-                    "Task" => "[T]",
-                    _ => "   ",
-                };
+fn status_icon(state: Option<&str>, result: Option<&str>) -> (&'static str, Color) {
+    match result {
+        Some("succeeded") => ("✓", Color::Green),
+        Some("failed") => ("✗", Color::Red),
+        Some("partiallySucceeded") => ("◐", Color::Yellow),
+        Some("canceled") | Some("cancelled") => ("⊘", Color::DarkGray),
+        Some("skipped") => ("⊘", Color::DarkGray),
+        _ => match state {
+            Some("inProgress") => ("⏳", Color::Yellow),
+            Some("pending") => ("○", Color::DarkGray),
+            Some("completed") => ("✓", Color::Green),
+            _ => ("○", Color::DarkGray),
+        },
+    }
+}
 
-                ListItem::new(Line::from(vec![
-                    Span::styled(format!(" {} ", icon), Style::default().fg(icon_color)),
-                    Span::styled(
-                        format!("{} ", type_tag),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    Span::styled(&record.name, Style::default().fg(Color::White)),
-                ]))
-                .style(if i == app.log_entries_index {
-                    Style::default().bg(Color::DarkGray)
-                } else {
-                    Style::default()
-                })
-            })
-            .collect();
-
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Steps — Enter to view log ")
-                .title_style(Style::default().fg(Color::Cyan)),
-        );
-
-        let mut state = ListState::default();
-        state.select(Some(app.log_entries_index));
-        f.render_stateful_widget(list, chunks[1], &mut state);
-    } else {
+fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
+    if app.timeline_rows.is_empty() {
         let loading = Paragraph::new(" Loading timeline...")
             .style(Style::default().fg(Color::DarkGray))
-            .block(Block::default().borders(Borders::ALL).title(" Steps "));
-        f.render_widget(loading, chunks[1]);
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Pipeline Stages ")
+                    .title_style(Style::default().fg(Color::Cyan)),
+            );
+        f.render_widget(loading, area);
+        return;
     }
 
-    // Log content
+    let items: Vec<ListItem> = app
+        .timeline_rows
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let selected = i == app.log_entries_index;
+            match row {
+                TimelineRow::Stage {
+                    name,
+                    state,
+                    result,
+                    collapsed,
+                    ..
+                } => {
+                    let arrow = if *collapsed { "▸" } else { "▾" };
+                    let (icon, icon_color) =
+                        status_icon(state.as_deref(), result.as_deref());
+                    ListItem::new(Line::from(vec![
+                        Span::styled(
+                            format!("{} ", arrow),
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
+                        Span::styled(
+                            name.as_str(),
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]))
+                    .style(if selected {
+                        Style::default().bg(Color::DarkGray)
+                    } else {
+                        Style::default()
+                    })
+                }
+                TimelineRow::Job {
+                    name,
+                    state,
+                    result,
+                    collapsed,
+                    ..
+                } => {
+                    let arrow = if *collapsed { "▸" } else { "▾" };
+                    let (icon, icon_color) =
+                        status_icon(state.as_deref(), result.as_deref());
+                    ListItem::new(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(
+                            format!("{} ", arrow),
+                            Style::default().fg(Color::Cyan),
+                        ),
+                        Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
+                        Span::styled(name.as_str(), Style::default().fg(Color::White)),
+                    ]))
+                    .style(if selected {
+                        Style::default().bg(Color::DarkGray)
+                    } else {
+                        Style::default()
+                    })
+                }
+                TimelineRow::Task {
+                    name,
+                    state,
+                    result,
+                    log_id,
+                    ..
+                } => {
+                    let (icon, icon_color) =
+                        status_icon(state.as_deref(), result.as_deref());
+                    let log_indicator = if log_id.is_some() { "" } else { " ·" };
+                    ListItem::new(Line::from(vec![
+                        Span::raw("      "),
+                        Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
+                        Span::styled(name.as_str(), Style::default().fg(Color::White)),
+                        Span::styled(log_indicator, Style::default().fg(Color::DarkGray)),
+                    ]))
+                    .style(if selected {
+                        Style::default().bg(Color::DarkGray)
+                    } else {
+                        Style::default()
+                    })
+                }
+            }
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Pipeline Stages ")
+            .title_style(Style::default().fg(Color::Cyan)),
+    );
+
+    let mut state = ListState::default();
+    state.select(Some(app.log_entries_index));
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_log(f: &mut Frame, app: &App, area: Rect) {
     if app.log_content.is_empty() {
-        let hint = Paragraph::new(" Select a step and press Enter to view its log")
+        let hint = Paragraph::new(" Select a task and press Enter to view its log")
             .style(Style::default().fg(Color::DarkGray))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .title(" Log Output "),
             );
-        f.render_widget(hint, chunks[2]);
+        f.render_widget(hint, area);
     } else {
         let lines: Vec<Line> = app
             .log_content
@@ -116,7 +192,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             .collect();
 
         let total_lines = lines.len() as u16;
-        let visible_height = chunks[2].height.saturating_sub(2); // borders
+        let visible_height = area.height.saturating_sub(2);
         let max_scroll = total_lines.saturating_sub(visible_height);
 
         let scroll_offset = if app.log_auto_scroll {
@@ -134,6 +210,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             )
             .wrap(Wrap { trim: false })
             .scroll((scroll_offset, 0));
-        f.render_widget(log, chunks[2]);
+        f.render_widget(log, area);
     }
 }

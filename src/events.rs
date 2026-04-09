@@ -104,6 +104,46 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
 
+        // Left/Right for timeline tree collapse/expand in LogViewer
+        KeyCode::Left if app.view == View::LogViewer => {
+            let idx = app.log_entries_index;
+            match app.timeline_row_kind(idx) {
+                Some("stage") => {
+                    app.collapse_timeline_node(idx);
+                }
+                Some("job") => {
+                    // If expanded, collapse; otherwise jump to parent stage
+                    if !app.collapse_timeline_node(idx) {
+                        if let Some(parent_idx) = app.find_timeline_parent_index(idx) {
+                            app.log_entries_index = parent_idx;
+                        }
+                    }
+                }
+                Some("task") => {
+                    // Jump to parent job
+                    if let Some(parent_idx) = app.find_timeline_parent_index(idx) {
+                        app.log_entries_index = parent_idx;
+                    }
+                }
+                _ => {}
+            }
+            Action::None
+        }
+        KeyCode::Right if app.view == View::LogViewer => {
+            let idx = app.log_entries_index;
+            match app.timeline_row_kind(idx) {
+                Some("stage") | Some("job") => {
+                    app.expand_timeline_node(idx);
+                }
+                Some("task") => {
+                    // View log (same as Enter)
+                    return handle_enter(app);
+                }
+                _ => {}
+            }
+            Action::None
+        }
+
         KeyCode::Esc => {
             app.go_back();
             Action::None
@@ -198,23 +238,27 @@ fn handle_enter(app: &mut App) -> Action {
             }
         }
         View::LogViewer => {
-            // Select a timeline record to view its log
-            if let Some(timeline) = &app.build_timeline {
-                let log_records: Vec<_> = timeline
-                    .records
-                    .iter()
-                    .filter(|r| r.log.is_some())
-                    .collect();
-                if let Some(record) = log_records.get(app.log_entries_index) {
-                    if let (Some(build), Some(log_ref)) = (&app.selected_build, &record.log) {
-                        return Action::FetchBuildLog {
-                            build_id: build.id,
-                            log_id: log_ref.id,
-                        };
-                    }
+            let idx = app.log_entries_index;
+            match app.timeline_row_kind(idx) {
+                Some("stage") | Some("job") => {
+                    // Toggle collapse
+                    app.toggle_timeline_node(idx);
+                    Action::None
                 }
+                Some("task") => {
+                    // Fetch the task's log
+                    if let Some(log_id) = app.timeline_task_log_id(idx) {
+                        if let Some(build) = &app.selected_build {
+                            return Action::FetchBuildLog {
+                                build_id: build.id,
+                                log_id,
+                            };
+                        }
+                    }
+                    Action::None
+                }
+                _ => Action::None,
             }
-            Action::None
         }
     }
 }

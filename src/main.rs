@@ -124,6 +124,7 @@ async fn run(
                                     app.build_timeline = Some(timeline);
                                     app.log_content.clear();
                                     app.log_entries_index = 0;
+                                    app.rebuild_timeline_rows();
 
                                     // Auto-select and fetch the most relevant log
                                     if let Some((_idx, log_id)) = app.auto_select_log_entry() {
@@ -223,6 +224,7 @@ async fn refresh_log_data(app: &mut App, client: &AdoClient) {
         if build.status == "inProgress" || build.status == "InProgress" {
             if let Ok(timeline) = client.get_build_timeline(build.id).await {
                 app.build_timeline = Some(timeline);
+                app.rebuild_timeline_rows();
             }
         }
     }
@@ -230,18 +232,9 @@ async fn refresh_log_data(app: &mut App, client: &AdoClient) {
     // Re-fetch the currently viewed log content
     if !app.log_content.is_empty() {
         if let Some(build) = &app.selected_build {
-            if let Some(timeline) = &app.build_timeline {
-                let log_records: Vec<_> = timeline
-                    .records
-                    .iter()
-                    .filter(|r| r.log.is_some())
-                    .collect();
-                if let Some(record) = log_records.get(app.log_entries_index) {
-                    if let Some(log_ref) = &record.log {
-                        if let Ok(content) = client.get_build_log(build.id, log_ref.id).await {
-                            app.log_content = content.lines().map(String::from).collect();
-                        }
-                    }
+            if let Some(log_id) = app.timeline_task_log_id(app.log_entries_index) {
+                if let Ok(content) = client.get_build_log(build.id, log_id).await {
+                    app.log_content = content.lines().map(String::from).collect();
                 }
             }
         }
