@@ -16,6 +16,7 @@ pub fn draw(f: &mut Frame) {
         ]),
         Line::from(""),
         Line::from("  ↑ / ↓          Move selection up / down"),
+        Line::from("  ← / →          Collapse / expand folder (Dashboard)"),
         Line::from("  Enter          Drill into selected item"),
         Line::from("  Esc            Go back to previous view"),
         Line::from("  PgUp / PgDn    Scroll log content"),

@@ -124,6 +124,22 @@ async fn run(
                                     app.build_timeline = Some(timeline);
                                     app.log_content.clear();
                                     app.log_entries_index = 0;
+
+                                    // Auto-select and fetch the most relevant log
+                                    if let Some((_idx, log_id)) = app.auto_select_log_entry() {
+                                        match client.get_build_log(build_id, log_id).await {
+                                            Ok(content) => {
+                                                app.log_content =
+                                                    content.lines().map(String::from).collect();
+                                                app.log_auto_scroll = true;
+                                                app.log_scroll_offset = 0;
+                                            }
+                                            Err(e) => {
+                                                app.error_message =
+                                                    Some(format!("Fetch log: {e}"))
+                                            }
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     app.error_message = Some(format!("Fetch timeline: {e}"))

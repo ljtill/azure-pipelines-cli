@@ -77,6 +77,33 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
 
+        // Left/Right for folder collapse/expand on Dashboard
+        KeyCode::Left if app.view == View::Dashboard => {
+            let idx = app.dashboard_index;
+            if app.is_folder_header(idx) {
+                // On a folder header: collapse it
+                app.collapse_folder_at(idx);
+            } else {
+                // On a pipeline row: collapse parent folder and jump to its header
+                if let Some(folder_idx) = app.find_parent_folder_index(idx) {
+                    app.collapse_folder_at(folder_idx);
+                    app.dashboard_index = folder_idx;
+                }
+            }
+            Action::None
+        }
+        KeyCode::Right if app.view == View::Dashboard => {
+            let idx = app.dashboard_index;
+            if app.is_folder_header(idx) {
+                // On a collapsed folder header: expand it
+                app.expand_folder_at(idx);
+            } else {
+                // On a pipeline row: drill in (same as Enter)
+                return handle_enter(app);
+            }
+            Action::None
+        }
+
         KeyCode::Esc => {
             app.go_back();
             Action::None
@@ -129,17 +156,8 @@ fn handle_enter(app: &mut App) -> Action {
         View::Dashboard => {
             if let Some(row) = app.dashboard_rows.get(app.dashboard_index) {
                 match row {
-                    crate::app::DashboardRow::FolderHeader { path, .. } => {
-                        // Find the original folder key to toggle
-                        let folder_key = find_folder_key(app, path);
-                        if let Some(key) = folder_key {
-                            if app.collapsed_folders.contains(&key) {
-                                app.collapsed_folders.remove(&key);
-                            } else {
-                                app.collapsed_folders.insert(key);
-                            }
-                            app.rebuild_dashboard_rows();
-                        }
+                    crate::app::DashboardRow::FolderHeader { .. } => {
+                        app.toggle_folder_at(app.dashboard_index);
                         Action::None
                     }
                     crate::app::DashboardRow::Pipeline { definition, .. } => {
@@ -199,25 +217,4 @@ fn handle_enter(app: &mut App) -> Action {
             Action::None
         }
     }
-}
-
-fn find_folder_key(app: &App, display_path: &str) -> Option<String> {
-    // Reverse the display transformation to find the original folder key
-    for def in &app.definitions {
-        let folder = if def.path.is_empty() || def.path == "\\" {
-            "\\".to_string()
-        } else {
-            def.path.clone()
-        };
-        let display = folder.trim_start_matches('\\').replace('\\', " / ");
-        let display = if display.is_empty() {
-            "Root".to_string()
-        } else {
-            display
-        };
-        if display == display_path {
-            return Some(folder);
-        }
-    }
-    None
 }

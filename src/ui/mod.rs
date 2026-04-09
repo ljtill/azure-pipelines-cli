@@ -44,7 +44,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
     let hints = match app.view {
         crate::app::View::Dashboard => {
-            "↑↓ navigate  Enter expand/drill-in  1/2/3 tabs  r refresh  ? help  q quit"
+            "↑↓ navigate  ←→ collapse/expand  Enter drill-in  1/2/3 tabs  r refresh  ? help  q quit"
         }
         crate::app::View::Pipelines => {
             "↑↓ navigate  Enter drill-in  / search  1/2/3 tabs  r refresh  ? help  q quit"

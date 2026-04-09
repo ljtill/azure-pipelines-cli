@@ -274,4 +274,147 @@ impl App {
         let idx = self.current_index();
         self.set_current_index(idx + 1);
     }
+
+    /// Pick the most relevant timeline step to auto-show logs for.
+    /// Returns (step_index_in_filtered_list, log_id) if found.
+    pub fn auto_select_log_entry(&mut self) -> Option<(usize, u32)> {
+        let timeline = self.build_timeline.as_ref()?;
+        let log_records: Vec<_> = timeline
+            .records
+            .iter()
+            .filter(|r| r.log.is_some())
+            .collect();
+
+        if log_records.is_empty() {
+            return None;
+        }
+
+        let is_running = self
+            .selected_build
+            .as_ref()
+            .is_some_and(|b| b.status == "inProgress" || b.status == "InProgress");
+
+        // 1. In-progress build: find the last currently-running task
+        if is_running {
+            if let Some((i, rec)) = log_records
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, r)| r.state.as_deref() == Some("inProgress"))
+            {
+                self.log_entries_index = i;
+                return Some((i, rec.log.as_ref().unwrap().id));
+            }
+        }
+
+        // 2. Failed build: find the last failed task
+        if let Some((i, rec)) = log_records
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, r)| r.result.as_deref() == Some("failed"))
+        {
+            self.log_entries_index = i;
+            return Some((i, rec.log.as_ref().unwrap().id));
+        }
+
+        // 3. Fallback: last task with a log
+        let i = log_records.len() - 1;
+        let rec = log_records[i];
+        self.log_entries_index = i;
+        Some((i, rec.log.as_ref().unwrap().id))
+    }
+
+    /// Toggle collapse state for a folder at the given dashboard row index.
+    /// Returns true if the row was a folder header that was toggled.
+    pub fn toggle_folder_at(&mut self, index: usize) -> bool {
+        if let Some(row) = self.dashboard_rows.get(index) {
+            if let DashboardRow::FolderHeader { path, .. } = row {
+                let folder_key = self.find_folder_key_for_display(path);
+                if let Some(key) = folder_key {
+                    if self.collapsed_folders.contains(&key) {
+                        self.collapsed_folders.remove(&key);
+                    } else {
+                        self.collapsed_folders.insert(key);
+                    }
+                    self.rebuild_dashboard_rows();
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Collapse the folder at the given dashboard index. Returns true if it was expanded and is now collapsed.
+    pub fn collapse_folder_at(&mut self, index: usize) -> bool {
+        if let Some(row) = self.dashboard_rows.get(index) {
+            if let DashboardRow::FolderHeader { path, collapsed, .. } = row {
+                if !collapsed {
+                    let folder_key = self.find_folder_key_for_display(path);
+                    if let Some(key) = folder_key {
+                        self.collapsed_folders.insert(key);
+                        self.rebuild_dashboard_rows();
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Expand the folder at the given dashboard index. Returns true if it was collapsed and is now expanded.
+    pub fn expand_folder_at(&mut self, index: usize) -> bool {
+        if let Some(row) = self.dashboard_rows.get(index) {
+            if let DashboardRow::FolderHeader { path, collapsed, .. } = row {
+                if *collapsed {
+                    let folder_key = self.find_folder_key_for_display(path);
+                    if let Some(key) = folder_key {
+                        self.collapsed_folders.remove(&key);
+                        self.rebuild_dashboard_rows();
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Find the dashboard row index of the parent folder for a pipeline row.
+    pub fn find_parent_folder_index(&self, pipeline_index: usize) -> Option<usize> {
+        // Walk backwards from the pipeline row to find the nearest folder header
+        for i in (0..pipeline_index).rev() {
+            if let Some(DashboardRow::FolderHeader { .. }) = self.dashboard_rows.get(i) {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Check if a dashboard row is a folder header.
+    pub fn is_folder_header(&self, index: usize) -> bool {
+        matches!(
+            self.dashboard_rows.get(index),
+            Some(DashboardRow::FolderHeader { .. })
+        )
+    }
+
+    fn find_folder_key_for_display(&self, display_path: &str) -> Option<String> {
+        for def in &self.definitions {
+            let folder = if def.path.is_empty() || def.path == "\\" {
+                "\\".to_string()
+            } else {
+                def.path.clone()
+            };
+            let display = folder.trim_start_matches('\\').replace('\\', " / ");
+            let display = if display.is_empty() {
+                "Root".to_string()
+            } else {
+                display
+            };
+            if display == display_path {
+                return Some(folder);
+            }
+        }
+        None
+    }
 }
