@@ -1,0 +1,3 @@
+2024-01-01T10:00:05.000Z Starting: Checkout
+2024-01-01T10:00:06.000Z Syncing repository: test-repo
+2024-01-01T10:00:10.000Z Finishing: Checkout

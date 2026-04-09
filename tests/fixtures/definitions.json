@@ -1,0 +1,7 @@
+{
+  "count": 2,
+  "value": [
+    {"id": 1, "name": "CI Pipeline", "path": "\\", "queueStatus": "enabled"},
+    {"id": 2, "name": "Deploy Pipeline", "path": "\\Infra", "queueStatus": "enabled"}
+  ]
+}

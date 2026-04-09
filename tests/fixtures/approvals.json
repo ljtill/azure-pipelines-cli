@@ -1,0 +1,14 @@
+{
+  "count": 1,
+  "value": [
+    {
+      "id": "approval-1",
+      "status": "pending",
+      "instructions": "Please approve the deployment",
+      "createdOn": "2024-01-01T12:00:00Z",
+      "steps": [
+        {"assignedApprover": {"displayName": "Admin User"}, "status": "pending", "order": 1}
+      ]
+    }
+  ]
+}

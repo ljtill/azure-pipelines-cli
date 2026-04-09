@@ -1,0 +1,27 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "id": 100,
+      "buildNumber": "20240101.1",
+      "status": "completed",
+      "result": "succeeded",
+      "queueTime": "2024-01-01T10:00:00Z",
+      "startTime": "2024-01-01T10:00:05Z",
+      "finishTime": "2024-01-01T10:05:00Z",
+      "definition": {"id": 1, "name": "CI Pipeline"},
+      "sourceBranch": "refs/heads/main",
+      "requestedFor": {"displayName": "Jane Doe"}
+    },
+    {
+      "id": 101,
+      "buildNumber": "20240101.2",
+      "status": "inProgress",
+      "queueTime": "2024-01-01T11:00:00Z",
+      "startTime": "2024-01-01T11:00:05Z",
+      "definition": {"id": 2, "name": "Deploy Pipeline"},
+      "sourceBranch": "refs/heads/feature/deploy",
+      "requestedFor": {"displayName": "John Smith"}
+    }
+  ]
+}

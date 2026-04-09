@@ -2,6 +2,8 @@ mod api;
 mod app;
 mod config;
 mod events;
+#[cfg(test)]
+mod test_helpers;
 mod ui;
 
 use std::path::PathBuf;

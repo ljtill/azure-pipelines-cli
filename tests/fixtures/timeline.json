@@ -1,0 +1,8 @@
+{
+  "records": [
+    {"id": "stage-1", "parentId": null, "name": "Build", "identifier": "__default", "type": "Stage", "state": "completed", "result": "succeeded", "order": 1},
+    {"id": "phase-1", "parentId": "stage-1", "name": "Job", "type": "Phase", "state": "completed", "result": "succeeded", "order": 1},
+    {"id": "task-1", "parentId": "phase-1", "name": "Checkout", "type": "Task", "state": "completed", "result": "succeeded", "order": 1, "log": {"id": 10}},
+    {"id": "task-2", "parentId": "phase-1", "name": "Build Solution", "type": "Task", "state": "completed", "result": "succeeded", "order": 2, "log": {"id": 11}}
+  ]
+}
