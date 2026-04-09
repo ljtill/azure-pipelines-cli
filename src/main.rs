@@ -62,10 +62,6 @@ impl Drop for TerminalGuard {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing with file-based output (avoids polluting the TUI).
-    // Controlled via RUST_LOG env var (e.g. RUST_LOG=debug).
-    init_tracing();
-
     let cli = Cli::parse();
 
     // Handle subcommands that don't need the TUI
@@ -76,6 +72,23 @@ async fn main() -> Result<()> {
     // Pre-TUI checks: ensure Azure CLI or Developer CLI is available.
     check_azure_cli()?;
 
+    // Resolve config path and load early (if it exists) so the log level
+    // is available before tracing initializes.
+    let (config_path, config_exists) = Config::resolve_path(cli.config.as_ref())?;
+    let early_config = if config_exists {
+        Some(Config::load(Some(&config_path))?)
+    } else {
+        None
+    };
+
+    // Initialize tracing with file-based output (avoids polluting the TUI).
+    // Uses the configured level as default; RUST_LOG env var overrides.
+    let log_level = early_config
+        .as_ref()
+        .map(|c| c.logging.level.as_str())
+        .unwrap_or("info");
+    init_tracing(log_level);
+
     // Panic hook to restore terminal (safety net — Drop also restores).
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -84,21 +97,20 @@ async fn main() -> Result<()> {
         original_hook(panic_info);
     }));
 
-    // Resolve config path and check if it exists.
-    let (config_path, config_exists) = Config::resolve_path(cli.config.as_ref())?;
-
     let mut guard = TerminalGuard::new()?;
 
-    let config = if config_exists {
-        Config::load(Some(&config_path))?
-    } else {
-        // No config file — run interactive setup inside the TUI.
-        let result = azure_pipelines_cli::ui::setup::run_setup(&mut guard.terminal, &config_path);
+    let config = match early_config {
+        Some(c) => c,
+        None => {
+            // No config file — run interactive setup inside the TUI.
+            let result =
+                azure_pipelines_cli::ui::setup::run_setup(&mut guard.terminal, &config_path);
 
-        match result {
-            Ok(Some(config)) => config,
-            Ok(None) => return Ok(()),
-            Err(e) => return Err(e),
+            match result {
+                Ok(Some(config)) => config,
+                Ok(None) => return Ok(()),
+                Err(e) => return Err(e),
+            }
         }
     };
 
@@ -133,18 +145,21 @@ async fn run_update() -> Result<()> {
     }
 }
 
-/// Initialize tracing to log to a file (if RUST_LOG is set).
+/// Initialize tracing to log to a file.
+/// Uses the given level as default; `RUST_LOG` env var overrides if set.
 /// Logs go to `~/.local/state/pipelines/debug.log`.
-fn init_tracing() {
+fn init_tracing(level: &str) {
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::fmt;
     use tracing_subscriber::prelude::*;
 
-    let filter = EnvFilter::try_from_default_env();
-    let Ok(filter) = filter else {
-        // RUST_LOG not set — skip logging entirely
-        return;
-    };
+    let filter = EnvFilter::builder()
+        .with_default_directive(
+            level
+                .parse()
+                .unwrap_or_else(|_| tracing::level_filters::LevelFilter::INFO.into()),
+        )
+        .from_env_lossy();
 
     let log_dir = match dirs::home_dir() {
         Some(h) => h.join(".local/state/pipelines"),

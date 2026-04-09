@@ -1,6 +1,8 @@
 use crate::api::models::*;
 use crate::app::App;
-use crate::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, UpdateConfig};
+use crate::config::{
+    AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, LoggingConfig, UpdateConfig,
+};
 
 pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
     Build {
@@ -164,6 +166,7 @@ pub fn make_config() -> Config {
         display: DisplayConfig::default(),
         filters: FiltersConfig::default(),
         update: UpdateConfig::default(),
+        logging: LoggingConfig::default(),
     }
 }
 

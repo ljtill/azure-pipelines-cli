@@ -12,6 +12,8 @@ pub struct Config {
     pub filters: FiltersConfig,
     #[serde(default)]
     pub update: UpdateConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +66,24 @@ impl Default for UpdateConfig {
 
 fn default_check_for_updates() -> bool {
     true
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoggingConfig {
+    #[serde(default = "default_log_level")]
+    pub level: String,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: default_log_level(),
+        }
+    }
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 fn default_refresh_interval() -> u64 {
@@ -204,6 +224,8 @@ project = "myproject"
         assert!(config.filters.definition_ids.is_empty());
         // Update config defaults
         assert!(config.update.check_for_updates);
+        // Logging defaults
+        assert_eq!(config.logging.level, "info");
     }
 
     #[test]
@@ -297,5 +319,19 @@ project = "proj"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert!(config.update.check_for_updates);
+    }
+
+    #[test]
+    fn parse_config_with_logging_level() {
+        let toml = r#"
+[azure_devops]
+organization = "org"
+project = "proj"
+
+[logging]
+level = "debug"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.logging.level, "debug");
     }
 }
