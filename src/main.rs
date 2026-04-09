@@ -427,8 +427,7 @@ fn handle_message(
             app.selected_builds.clear();
             spawn_data_refresh(client, tx);
             if failed > 0 {
-                app.error_message =
-                    Some(format!("Cancelled {cancelled}, {failed} failed"));
+                app.error_message = Some(format!("Cancelled {cancelled}, {failed} failed"));
             }
         }
         AppMessage::StageRetried => {

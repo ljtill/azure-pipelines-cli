@@ -10,9 +10,8 @@ use crate::app::{App, InputMode};
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     use ratatui::layout::{Constraint, Layout};
 
-    let show_search = (app.input_mode == InputMode::Search
-        && app.view == crate::app::View::ActiveRuns)
-        || (!app.search_query.is_empty() && app.view == crate::app::View::ActiveRuns);
+    let show_search = app.view == crate::app::View::ActiveRuns
+        && (app.input_mode == InputMode::Search || !app.search_query.is_empty());
 
     let chunks = if show_search {
         Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(area)

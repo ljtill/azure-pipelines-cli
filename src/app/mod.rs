@@ -30,10 +30,19 @@ pub enum InputMode {
 /// Action pending user confirmation (y/n).
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
-    CancelBuild { build_id: u32 },
-    CancelBuilds { build_ids: Vec<u32> },
-    RetryStage { build_id: u32, stage_ref_name: String },
-    QueuePipeline { definition_id: u32 },
+    CancelBuild {
+        build_id: u32,
+    },
+    CancelBuilds {
+        build_ids: Vec<u32>,
+    },
+    RetryStage {
+        build_id: u32,
+        stage_ref_name: String,
+    },
+    QueuePipeline {
+        definition_id: u32,
+    },
 }
 
 /// A pending confirmation prompt shown in the footer.

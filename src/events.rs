@@ -19,13 +19,19 @@ pub enum Action {
     Quit,
     ForceRefresh,
     FetchBuildHistory(u32),
-    FetchBuildLog { build_id: u32, log_id: u32 },
+    FetchBuildLog {
+        build_id: u32,
+        log_id: u32,
+    },
     FetchTimeline(u32),
     FollowLatest,
     OpenInBrowser(String),
     CancelBuild(u32),
     CancelBuilds(Vec<u32>),
-    RetryStage { build_id: u32, stage_ref_name: String },
+    RetryStage {
+        build_id: u32,
+        stage_ref_name: String,
+    },
     QueuePipeline(u32),
 }
 
@@ -132,11 +138,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             let idx = app.dashboard_index;
             if app.is_folder_header(idx) {
                 app.collapse_folder_at(idx);
-            } else {
-                if let Some(folder_idx) = app.find_parent_folder_index(idx) {
-                    app.collapse_folder_at(folder_idx);
-                    app.dashboard_index = folder_idx;
-                }
+            } else if let Some(folder_idx) = app.find_parent_folder_index(idx) {
+                app.collapse_folder_at(folder_idx);
+                app.dashboard_index = folder_idx;
             }
             Action::None
         }
@@ -158,10 +162,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                     app.collapse_timeline_node(idx);
                 }
                 Some("job") => {
-                    if !app.collapse_timeline_node(idx) {
-                        if let Some(parent_idx) = app.find_timeline_parent_index(idx) {
-                            app.log_entries_index = parent_idx;
-                        }
+                    if !app.collapse_timeline_node(idx)
+                        && let Some(parent_idx) = app.find_timeline_parent_index(idx)
+                    {
+                        app.log_entries_index = parent_idx;
                     }
                 }
                 Some("task") => {
@@ -290,13 +294,13 @@ fn handle_cancel_request(app: &mut App) -> Action {
         _ => None,
     };
 
-    if let Some(build) = build {
-        if build.status.is_in_progress() {
-            app.confirm_prompt = Some(ConfirmPrompt {
-                message: format!("Cancel build #{}?  [y/N]", build.build_number),
-                action: ConfirmAction::CancelBuild { build_id: build.id },
-            });
-        }
+    if let Some(build) = build
+        && build.status.is_in_progress()
+    {
+        app.confirm_prompt = Some(ConfirmPrompt {
+            message: format!("Cancel build #{}?  [y/N]", build.build_number),
+            action: ConfirmAction::CancelBuild { build_id: build.id },
+        });
     }
     Action::None
 }
@@ -440,7 +444,11 @@ fn handle_enter(app: &mut App) -> Action {
             }
         }
         View::ActiveRuns => {
-            if let Some(build) = app.filtered_active_builds.get(app.active_runs_index).cloned() {
+            if let Some(build) = app
+                .filtered_active_builds
+                .get(app.active_runs_index)
+                .cloned()
+            {
                 let build_id = build.id;
                 app.navigate_to_log_viewer(build);
                 Action::FetchTimeline(build_id)
@@ -466,13 +474,13 @@ fn handle_enter(app: &mut App) -> Action {
                 }
                 Some("task") => {
                     app.follow_mode = false;
-                    if let Some(log_id) = app.timeline_task_log_id(idx) {
-                        if let Some(build) = &app.selected_build {
-                            return Action::FetchBuildLog {
-                                build_id: build.id,
-                                log_id,
-                            };
-                        }
+                    if let Some(log_id) = app.timeline_task_log_id(idx)
+                        && let Some(build) = &app.selected_build
+                    {
+                        return Action::FetchBuildLog {
+                            build_id: build.id,
+                            log_id,
+                        };
                     }
                     Action::None
                 }
