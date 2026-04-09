@@ -118,8 +118,19 @@ impl Config {
             })?;
         }
 
-        let contents =
-            format!("[azure_devops]\norganization = \"{organization}\"\nproject = \"{project}\"\n");
+        let mut table = toml::map::Map::new();
+        let mut ado = toml::map::Map::new();
+        ado.insert(
+            "organization".to_string(),
+            toml::Value::String(organization.to_string()),
+        );
+        ado.insert(
+            "project".to_string(),
+            toml::Value::String(project.to_string()),
+        );
+        table.insert("azure_devops".to_string(), toml::Value::Table(ado));
+        let contents = toml::to_string_pretty(&toml::Value::Table(table))
+            .context("Failed to serialize config")?;
 
         std::fs::write(path, &contents)
             .with_context(|| format!("Failed to write config to {}", path.display()))?;
