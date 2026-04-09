@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "A terminal dashboard for monitoring Azure DevOps pipelines"
 
+[[bin]]
+name = "pipelines"
+path = "src/main.rs"
+
 [dependencies]
 # TUI
 ratatui = "0.30"

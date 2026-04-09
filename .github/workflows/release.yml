@@ -25,7 +25,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  BINARY_NAME: azure-pipelines-cli
+  BINARY_NAME: pipelines
 
 jobs:
   version:
@@ -199,23 +199,23 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            artifact: azure-pipelines-cli-linux-amd64
+            artifact: pipelines-linux-amd64
             cross: false
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
-            artifact: azure-pipelines-cli-linux-arm64
+            artifact: pipelines-linux-arm64
             cross: true
           - target: x86_64-apple-darwin
             runner: macos-latest
-            artifact: azure-pipelines-cli-darwin-amd64
+            artifact: pipelines-darwin-amd64
             cross: false
           - target: aarch64-apple-darwin
             runner: macos-latest
-            artifact: azure-pipelines-cli-darwin-arm64
+            artifact: pipelines-darwin-arm64
             cross: false
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            artifact: azure-pipelines-cli-windows-amd64.exe
+            artifact: pipelines-windows-amd64.exe
             cross: false
 
     steps:
@@ -300,4 +300,4 @@ jobs:
             --title "${{ needs.version.outputs.tag }}" \
             --notes-file artifacts/release-notes.md \
             $DRAFT_FLAG \
-            artifacts/azure-pipelines-cli-*
+            artifacts/pipelines-*

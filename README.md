@@ -68,10 +68,10 @@ definition_ids = [42, 99]          # only show these pipeline definition IDs
 
 ```bash
 # Uses default config path
-azure-pipelines-cli
+pipelines
 
 # Override config path
-azure-pipelines-cli --config /path/to/config.toml
+pipelines --config /path/to/config.toml
 ```
 
 ## Keybindings

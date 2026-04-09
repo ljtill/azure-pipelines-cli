@@ -11,7 +11,7 @@
 set -eu
 
 REPO="ljtill/azure-pipelines-cli"
-BINARY_NAME="azure-pipelines-cli"
+BINARY_NAME="pipelines"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # --- helpers ----------------------------------------------------------------

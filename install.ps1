@@ -10,7 +10,7 @@
 $ErrorActionPreference = 'Stop'
 
 $Repo = 'ljtill/azure-pipelines-cli'
-$BinaryName = 'azure-pipelines-cli'
+$BinaryName = 'pipelines'
 $Artifact = "$BinaryName-windows-amd64.exe"
 
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.local\bin' }

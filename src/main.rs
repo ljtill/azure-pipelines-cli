@@ -15,10 +15,7 @@ use azure_pipelines_cli::app;
 use azure_pipelines_cli::config::Config;
 
 #[derive(Parser)]
-#[command(
-    name = "azure-pipelines-cli",
-    about = "TUI dashboard for Azure DevOps Pipelines"
-)]
+#[command(name = "pipelines", about = "TUI dashboard for Azure DevOps Pipelines")]
 struct Cli {
     /// Path to config file
     #[arg(short, long)]
