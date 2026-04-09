@@ -34,6 +34,16 @@ pub async fn run(
     let (tx, mut rx) = mpsc::channel::<AppMessage>(64);
     let mut event_stream = EventStream::new();
 
+    // Spawn background update check (once, at startup)
+    if config.update.check_for_updates {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            if let Some(version) = crate::update::check_for_update().await {
+                let _ = tx.send(AppMessage::UpdateAvailable { version }).await;
+            }
+        });
+    }
+
     loop {
         if !app.running {
             break;

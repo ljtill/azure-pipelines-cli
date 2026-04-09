@@ -10,6 +10,8 @@ pub struct Config {
     pub display: DisplayConfig,
     #[serde(default)]
     pub filters: FiltersConfig,
+    #[serde(default)]
+    pub update: UpdateConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,6 +46,24 @@ pub struct FiltersConfig {
     /// Only show these specific definition IDs. Empty means show all.
     #[serde(default)]
     pub definition_ids: Vec<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateConfig {
+    #[serde(default = "default_check_for_updates")]
+    pub check_for_updates: bool,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            check_for_updates: default_check_for_updates(),
+        }
+    }
+}
+
+fn default_check_for_updates() -> bool {
+    true
 }
 
 fn default_refresh_interval() -> u64 {
@@ -162,6 +182,8 @@ project = "myproject"
         assert_eq!(config.display.log_refresh_interval_secs, 5);
         assert!(config.filters.folders.is_empty());
         assert!(config.filters.definition_ids.is_empty());
+        // Update config defaults
+        assert!(config.update.check_for_updates);
     }
 
     #[test]
@@ -233,5 +255,30 @@ definition_ids = []
         let config: Config = toml::from_str(toml).unwrap();
         assert!(config.filters.folders.is_empty());
         assert!(config.filters.definition_ids.is_empty());
+    }
+
+    #[test]
+    fn parse_config_with_update_section() {
+        let toml = r#"
+[azure_devops]
+organization = "org"
+project = "proj"
+
+[update]
+check_for_updates = false
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(!config.update.check_for_updates);
+    }
+
+    #[test]
+    fn parse_config_update_defaults_to_true() {
+        let toml = r#"
+[azure_devops]
+organization = "org"
+project = "proj"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.update.check_for_updates);
     }
 }

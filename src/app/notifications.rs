@@ -16,6 +16,7 @@ pub struct Notification {
     pub level: NotificationLevel,
     pub message: String,
     pub created_at: Instant,
+    pub persistent: bool,
 }
 
 /// Auto-expiring notification queue.
@@ -37,6 +38,16 @@ impl Notifications {
             level,
             message: message.into(),
             created_at: Instant::now(),
+            persistent: false,
+        });
+    }
+
+    pub fn push_persistent(&mut self, level: NotificationLevel, message: impl Into<String>) {
+        self.queue.push_back(Notification {
+            level,
+            message: message.into(),
+            created_at: Instant::now(),
+            persistent: true,
         });
     }
 
@@ -57,8 +68,12 @@ impl Notifications {
     #[allow(dead_code)]
     pub fn current(&mut self) -> Option<&Notification> {
         let cutoff = Instant::now() - std::time::Duration::from_secs(self.ttl_secs);
-        // Remove expired from the front
-        while self.queue.front().is_some_and(|n| n.created_at < cutoff) {
+        // Remove expired (non-persistent) from the front
+        while self
+            .queue
+            .front()
+            .is_some_and(|n| !n.persistent && n.created_at < cutoff)
+        {
             self.queue.pop_front();
         }
         self.queue.back()
@@ -69,7 +84,7 @@ impl Notifications {
         let cutoff = Instant::now() - std::time::Duration::from_secs(self.ttl_secs);
         self.queue
             .back()
-            .filter(|n| n.created_at >= cutoff)
+            .filter(|n| n.persistent || n.created_at >= cutoff)
             .cloned()
     }
 

@@ -47,6 +47,7 @@ pub fn draw(f: &mut Frame) {
         Line::from("  c              Cancel build (Active Runs / Log Viewer)"),
         Line::from("  o              Open in browser"),
         Line::from("  r              Force data refresh"),
+        Line::from("  x              Dismiss notification"),
         Line::from("  ?              Toggle this help"),
         Line::from("  q              Quit (root views) / Go back (child views)"),
         Line::from(""),

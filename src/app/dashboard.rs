@@ -206,7 +206,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::api::models::*;
-    use crate::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig};
+    use crate::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, UpdateConfig};
 
     fn test_config() -> Config {
         Config {
@@ -216,6 +216,7 @@ mod tests {
             },
             display: DisplayConfig::default(),
             filters: FiltersConfig::default(),
+            update: UpdateConfig::default(),
         }
     }
 

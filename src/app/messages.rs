@@ -33,5 +33,8 @@ pub enum AppMessage {
         #[allow(dead_code)]
         definition_id: u32,
     },
+    UpdateAvailable {
+        version: String,
+    },
     Error(String),
 }

@@ -17,6 +17,8 @@ Built with [ratatui](https://ratatui.rs/) and designed to run inside [Ghostty](h
 - **Approve / Reject checks** — Approve or reject environment approval gates inline from the Log Viewer
 - **Open in browser** — Jump to any pipeline or build in the Azure DevOps web UI
 - **Auto-refresh** — Background polling with configurable interval (default 30s)
+- **Auto-update check** — Background check for new releases on GitHub; persistent notification when an update is available
+- **Self-update** — `pipelines update` downloads the latest release and updates the symlink
 - **Azure CLI auth** — Uses `DeveloperToolsCredential` (Azure CLI / Azure Developer CLI chain)
 
 ## Installation
@@ -62,6 +64,10 @@ log_refresh_interval_secs = 5
 [filters]
 folders = ["\\Infra", "\\Deploy"]  # only show these folder paths (prefix match)
 definition_ids = [42, 99]          # only show these pipeline definition IDs
+
+# Optional: control update checks
+[update]
+check_for_updates = true  # set to false to disable background update checks
 ```
 
 ## Usage
@@ -72,6 +78,9 @@ pipelines
 
 # Override config path
 pipelines --config /path/to/config.toml
+
+# Update to the latest release
+pipelines update
 ```
 
 ## Keybindings
@@ -93,6 +102,7 @@ pipelines --config /path/to/config.toml
 | c            | Cancel build (Active Runs / Build History / Log Viewer) |
 | o            | Open in browser                                       |
 | r            | Force data refresh                                    |
+| x            | Dismiss notification                                  |
 | f            | Follow latest active task (Log Viewer)                |
 | PgUp / PgDn  | Scroll log content                                   |
 | Mouse scroll | Scroll log content (Log Viewer)                       |

@@ -62,6 +62,14 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('r') => Action::ForceRefresh,
+        KeyCode::Char('x')
+            if app.view == View::Dashboard
+                || app.view == View::Pipelines
+                || app.view == View::ActiveRuns =>
+        {
+            app.notifications.clear();
+            Action::None
+        }
         KeyCode::Char('f') if app.view == View::LogViewer => {
             app.log_viewer.enter_follow_mode();
             Action::FollowLatest

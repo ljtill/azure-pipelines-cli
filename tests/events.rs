@@ -1,6 +1,8 @@
 use azure_pipelines_cli::api::models::*;
 use azure_pipelines_cli::app::{App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, View};
-use azure_pipelines_cli::config::{AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig};
+use azure_pipelines_cli::config::{
+    AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, UpdateConfig,
+};
 use azure_pipelines_cli::events::{Action, handle_key};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -24,6 +26,7 @@ fn test_config() -> Config {
         },
         display: DisplayConfig::default(),
         filters: FiltersConfig::default(),
+        update: UpdateConfig::default(),
     }
 }
 

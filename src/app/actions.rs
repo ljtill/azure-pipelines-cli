@@ -351,6 +351,12 @@ pub fn handle_message(
             app.navigate_to_log_viewer(build);
             spawn_timeline_fetch(client, tx, build_id, app.log_viewer.generation(), false);
         }
+        AppMessage::UpdateAvailable { version } => {
+            app.notifications.push_persistent(
+                crate::app::notifications::NotificationLevel::Info,
+                format!("Update available: v{version} — run 'pipelines update' to upgrade"),
+            );
+        }
     }
 }
 

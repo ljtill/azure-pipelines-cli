@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -13,13 +13,23 @@ use ratatui::backend::CrosstermBackend;
 use azure_pipelines_cli::api::client::AdoClient;
 use azure_pipelines_cli::app;
 use azure_pipelines_cli::config::{Config, check_azure_cli};
+use azure_pipelines_cli::update;
 
 #[derive(Parser)]
 #[command(name = "pipelines", about = "TUI dashboard for Azure DevOps Pipelines")]
 struct Cli {
     /// Path to config file
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     config: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Update to the latest release from GitHub
+    Update,
 }
 
 #[tokio::main]
@@ -27,6 +37,13 @@ async fn main() -> Result<()> {
     // Initialize tracing with file-based output (avoids polluting the TUI).
     // Controlled via RUST_LOG env var (e.g. RUST_LOG=debug).
     init_tracing();
+
+    let cli = Cli::parse();
+
+    // Handle subcommands that don't need the TUI
+    if let Some(Command::Update) = cli.command {
+        return run_update().await;
+    }
 
     // Pre-TUI checks: ensure Azure CLI or Developer CLI is available.
     check_azure_cli()?;
@@ -126,6 +143,28 @@ async fn main() -> Result<()> {
     terminal.show_cursor()?;
 
     result
+}
+
+async fn run_update() -> Result<()> {
+    println!("Current version: v{}", update::current_version());
+    println!("Checking for updates...");
+
+    match update::self_update().await {
+        Ok(result) => {
+            println!("Updated to v{}", result.version);
+            println!("Binary installed at: {}", result.path.display());
+            Ok(())
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.starts_with("Already on latest version") {
+                println!("{msg}");
+                Ok(())
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 /// Initialize tracing to log to a file (if RUST_LOG is set).
