@@ -120,13 +120,11 @@ async fn run(
             event_result = tokio::task::spawn_blocking(|| {
                 events::poll_event(Duration::from_millis(100))
             }) => {
-                if let Ok(Ok(Some(event))) = event_result {
-                    if let crossterm::event::Event::Key(key) = event {
-                        if key.kind == KeyEventKind::Press {
-                            let action = handle_key(&mut app, key);
-                            handle_action(&mut app, &client, &tx, action, &mut last_data_fetch);
-                        }
-                    }
+                if let Ok(Ok(Some(crossterm::event::Event::Key(key)))) = event_result
+                    && key.kind == KeyEventKind::Press
+                {
+                    let action = handle_key(&mut app, key);
+                    handle_action(&mut app, &client, &tx, action, &mut last_data_fetch);
                 }
             }
 
@@ -369,24 +367,24 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
     let generation = app.log_generation;
 
     // Re-fetch timeline for in-progress builds
-    if let Some(build) = &app.selected_build {
-        if build.status.is_in_progress() {
-            let client = client.clone();
-            let tx = tx.clone();
-            let build_id = build.id;
-            tokio::spawn(async move {
-                if let Ok(timeline) = client.get_build_timeline(build_id).await {
-                    let _ = tx
-                        .send(AppMessage::Timeline {
-                            build_id,
-                            timeline,
-                            generation,
-                            is_refresh: true,
-                        })
-                        .await;
-                }
-            });
-        }
+    if let Some(build) = &app.selected_build
+        && build.status.is_in_progress()
+    {
+        let client = client.clone();
+        let tx = tx.clone();
+        let build_id = build.id;
+        tokio::spawn(async move {
+            if let Ok(timeline) = client.get_build_timeline(build_id).await {
+                let _ = tx
+                    .send(AppMessage::Timeline {
+                        build_id,
+                        timeline,
+                        generation,
+                        is_refresh: true,
+                    })
+                    .await;
+            }
+        });
     }
 
     // Re-fetch log content for the currently viewed task.
@@ -398,23 +396,22 @@ fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage
         app.timeline_task_log_id(app.log_entries_index)
     };
 
-    if !app.log_content.is_empty() {
-        if let Some(build) = &app.selected_build {
-            if let Some(log_id) = log_id_to_refresh {
-                let client = client.clone();
-                let tx = tx.clone();
-                let build_id = build.id;
-                tokio::spawn(async move {
-                    if let Ok(content) = client.get_build_log(build_id, log_id).await {
-                        let _ = tx
-                            .send(AppMessage::LogContent {
-                                content,
-                                generation,
-                            })
-                            .await;
-                    }
-                });
+    if !app.log_content.is_empty()
+        && let Some(build) = &app.selected_build
+        && let Some(log_id) = log_id_to_refresh
+    {
+        let client = client.clone();
+        let tx = tx.clone();
+        let build_id = build.id;
+        tokio::spawn(async move {
+            if let Ok(content) = client.get_build_log(build_id, log_id).await {
+                let _ = tx
+                    .send(AppMessage::LogContent {
+                        content,
+                        generation,
+                    })
+                    .await;
             }
-        }
+        });
     }
 }

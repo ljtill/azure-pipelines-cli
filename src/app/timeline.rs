@@ -4,6 +4,14 @@ use crate::api::models::{BuildResult, TaskState};
 
 use super::App;
 
+type TaskEntry = (
+    String,
+    Option<TaskState>,
+    Option<BuildResult>,
+    Option<String>,
+    u32,
+);
+
 /// A row in the timeline tree view — Stage, Job, or Task.
 #[derive(Debug, Clone)]
 pub enum TimelineRow {
@@ -36,13 +44,7 @@ impl App {
     /// Returns (row_index, log_id) if found. Ensures parent stage/job are expanded.
     pub fn auto_select_log_entry(&mut self) -> Option<(usize, u32)> {
         let timeline = self.build_timeline.as_ref()?;
-        let tasks: Vec<(
-            String,
-            Option<TaskState>,
-            Option<BuildResult>,
-            Option<String>,
-            u32,
-        )> = timeline
+        let tasks: Vec<TaskEntry> = timeline
             .records
             .iter()
             .filter(|r| r.record_type == "Task" && r.log.is_some())

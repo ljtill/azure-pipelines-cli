@@ -99,18 +99,16 @@ impl App {
 
     /// Toggle collapse state for a folder at the given dashboard row index.
     pub fn toggle_folder_at(&mut self, index: usize) -> bool {
-        if let Some(row) = self.dashboard_rows.get(index) {
-            if let DashboardRow::FolderHeader { path, .. } = row {
-                let folder_key = self.find_folder_key_for_display(path);
-                if let Some(key) = folder_key {
-                    if self.collapsed_folders.contains(&key) {
-                        self.collapsed_folders.remove(&key);
-                    } else {
-                        self.collapsed_folders.insert(key);
-                    }
-                    self.rebuild_dashboard_rows();
-                    return true;
+        if let Some(DashboardRow::FolderHeader { path, .. }) = self.dashboard_rows.get(index) {
+            let folder_key = self.find_folder_key_for_display(path);
+            if let Some(key) = folder_key {
+                if self.collapsed_folders.contains(&key) {
+                    self.collapsed_folders.remove(&key);
+                } else {
+                    self.collapsed_folders.insert(key);
                 }
+                self.rebuild_dashboard_rows();
+                return true;
             }
         }
         false
@@ -118,19 +116,16 @@ impl App {
 
     /// Collapse the folder at the given dashboard index.
     pub fn collapse_folder_at(&mut self, index: usize) -> bool {
-        if let Some(row) = self.dashboard_rows.get(index) {
-            if let DashboardRow::FolderHeader {
-                path, collapsed, ..
-            } = row
-            {
-                if !collapsed {
-                    let folder_key = self.find_folder_key_for_display(path);
-                    if let Some(key) = folder_key {
-                        self.collapsed_folders.insert(key);
-                        self.rebuild_dashboard_rows();
-                        return true;
-                    }
-                }
+        if let Some(DashboardRow::FolderHeader {
+            path, collapsed, ..
+        }) = self.dashboard_rows.get(index)
+            && !collapsed
+        {
+            let folder_key = self.find_folder_key_for_display(path);
+            if let Some(key) = folder_key {
+                self.collapsed_folders.insert(key);
+                self.rebuild_dashboard_rows();
+                return true;
             }
         }
         false
@@ -138,19 +133,16 @@ impl App {
 
     /// Expand the folder at the given dashboard index.
     pub fn expand_folder_at(&mut self, index: usize) -> bool {
-        if let Some(row) = self.dashboard_rows.get(index) {
-            if let DashboardRow::FolderHeader {
-                path, collapsed, ..
-            } = row
-            {
-                if *collapsed {
-                    let folder_key = self.find_folder_key_for_display(path);
-                    if let Some(key) = folder_key {
-                        self.collapsed_folders.remove(&key);
-                        self.rebuild_dashboard_rows();
-                        return true;
-                    }
-                }
+        if let Some(DashboardRow::FolderHeader {
+            path, collapsed, ..
+        }) = self.dashboard_rows.get(index)
+            && *collapsed
+        {
+            let folder_key = self.find_folder_key_for_display(path);
+            if let Some(key) = folder_key {
+                self.collapsed_folders.remove(&key);
+                self.rebuild_dashboard_rows();
+                return true;
             }
         }
         false

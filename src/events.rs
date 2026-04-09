@@ -118,10 +118,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 }
                 Some("job") => {
                     // If expanded, collapse; otherwise jump to parent stage
-                    if !app.collapse_timeline_node(idx) {
-                        if let Some(parent_idx) = app.find_timeline_parent_index(idx) {
-                            app.log_entries_index = parent_idx;
-                        }
+                    if !app.collapse_timeline_node(idx)
+                        && let Some(parent_idx) = app.find_timeline_parent_index(idx)
+                    {
+                        app.log_entries_index = parent_idx;
                     }
                 }
                 Some("task") => {
@@ -253,13 +253,13 @@ fn handle_enter(app: &mut App) -> Action {
                 Some("task") => {
                     // Switch to inspect mode and fetch this task's log
                     app.follow_mode = false;
-                    if let Some(log_id) = app.timeline_task_log_id(idx) {
-                        if let Some(build) = &app.selected_build {
-                            return Action::FetchBuildLog {
-                                build_id: build.id,
-                                log_id,
-                            };
-                        }
+                    if let Some(log_id) = app.timeline_task_log_id(idx)
+                        && let Some(build) = &app.selected_build
+                    {
+                        return Action::FetchBuildLog {
+                            build_id: build.id,
+                            log_id,
+                        };
                     }
                     Action::None
                 }
