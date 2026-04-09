@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use chrono::{DateTime, Utc};
@@ -199,6 +200,9 @@ pub struct Build {
     pub source_branch: Option<String>,
     #[serde(rename = "requestedFor")]
     pub requested_for: Option<IdentityRef>,
+    pub reason: Option<String>,
+    #[serde(rename = "triggerInfo")]
+    pub trigger_info: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -307,6 +311,40 @@ impl Build {
             .map(|r| r.display_name.as_str())
             .unwrap_or("Unknown")
     }
+
+    pub fn is_pr_build(&self) -> bool {
+        self.reason
+            .as_deref()
+            .is_some_and(|r| r.eq_ignore_ascii_case("pullRequest"))
+    }
+
+    pub fn pr_title(&self) -> Option<&str> {
+        self.trigger_info
+            .as_ref()
+            .and_then(|ti| ti.get("pr.title").map(|s| s.as_str()))
+    }
+
+    pub fn pr_number(&self) -> Option<&str> {
+        self.trigger_info
+            .as_ref()
+            .and_then(|ti| ti.get("pr.number").map(|s| s.as_str()))
+    }
+
+    /// User-facing branch/PR description for list views.
+    ///
+    /// For PR builds with trigger info: `PR #42 · Fix login timeout`
+    /// For other builds: the short branch name (e.g. `main`, `feat/widget`).
+    pub fn branch_display(&self) -> String {
+        if self.is_pr_build() {
+            if let Some(number) = self.pr_number() {
+                if let Some(title) = self.pr_title() {
+                    return format!("PR #{} · {}", number, title);
+                }
+                return format!("PR #{}", number);
+            }
+        }
+        self.short_branch()
+    }
 }
 
 #[cfg(test)]
@@ -409,6 +447,8 @@ mod tests {
             },
             source_branch: Some("refs/heads/main".to_string()),
             requested_for: None,
+            reason: None,
+            trigger_info: None,
         };
         assert_eq!(build.short_branch(), "main");
     }
@@ -429,6 +469,8 @@ mod tests {
             },
             source_branch: Some("refs/pull/42/merge".to_string()),
             requested_for: None,
+            reason: None,
+            trigger_info: None,
         };
         assert_eq!(build.short_branch(), "42/merge");
     }
@@ -449,8 +491,171 @@ mod tests {
             },
             source_branch: None,
             requested_for: None,
+            reason: None,
+            trigger_info: None,
         };
         assert_eq!(build.requestor(), "Unknown");
+    }
+
+    // --- PR helper methods ---
+
+    #[test]
+    fn is_pr_build_true() {
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/pull/42/merge".to_string()),
+            requested_for: None,
+            reason: Some("pullRequest".to_string()),
+            trigger_info: None,
+        };
+        assert!(build.is_pr_build());
+    }
+
+    #[test]
+    fn is_pr_build_case_insensitive() {
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: None,
+            requested_for: None,
+            reason: Some("PullRequest".to_string()),
+            trigger_info: None,
+        };
+        assert!(build.is_pr_build());
+    }
+
+    #[test]
+    fn is_pr_build_false_for_ci() {
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: None,
+            requested_for: None,
+            reason: Some("individualCI".to_string()),
+            trigger_info: None,
+        };
+        assert!(!build.is_pr_build());
+    }
+
+    #[test]
+    fn branch_display_pr_with_title() {
+        let mut ti = HashMap::new();
+        ti.insert("pr.number".to_string(), "42".to_string());
+        ti.insert("pr.title".to_string(), "Fix login timeout".to_string());
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/pull/42/merge".to_string()),
+            requested_for: None,
+            reason: Some("pullRequest".to_string()),
+            trigger_info: Some(ti),
+        };
+        assert_eq!(build.branch_display(), "PR #42 · Fix login timeout");
+    }
+
+    #[test]
+    fn branch_display_pr_without_title() {
+        let mut ti = HashMap::new();
+        ti.insert("pr.number".to_string(), "99".to_string());
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/pull/99/merge".to_string()),
+            requested_for: None,
+            reason: Some("pullRequest".to_string()),
+            trigger_info: Some(ti),
+        };
+        assert_eq!(build.branch_display(), "PR #99");
+    }
+
+    #[test]
+    fn branch_display_pr_no_trigger_info_falls_back() {
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/pull/42/merge".to_string()),
+            requested_for: None,
+            reason: Some("pullRequest".to_string()),
+            trigger_info: None,
+        };
+        assert_eq!(build.branch_display(), "42/merge");
+    }
+
+    #[test]
+    fn branch_display_ci_build() {
+        let build = Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status: BuildStatus::Completed,
+            result: None,
+            queue_time: None,
+            start_time: None,
+            finish_time: None,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: Some("refs/heads/main".to_string()),
+            requested_for: None,
+            reason: Some("individualCI".to_string()),
+            trigger_info: None,
+        };
+        assert_eq!(build.branch_display(), "main");
     }
 
     // --- Full object deserialization ---
@@ -462,6 +667,7 @@ mod tests {
             "buildNumber": "20240101.1",
             "status": "completed",
             "result": "succeeded",
+            "reason": "individualCI",
             "queueTime": "2024-01-01T10:00:00Z",
             "startTime": "2024-01-01T10:00:05Z",
             "finishTime": "2024-01-01T10:05:00Z",
@@ -474,6 +680,8 @@ mod tests {
         assert_eq!(build.build_number, "20240101.1");
         assert_eq!(build.status, BuildStatus::Completed);
         assert_eq!(build.result, Some(BuildResult::Succeeded));
+        assert_eq!(build.reason.as_deref(), Some("individualCI"));
+        assert!(build.trigger_info.is_none());
         assert!(build.queue_time.is_some());
         assert!(build.start_time.is_some());
         assert!(build.finish_time.is_some());
@@ -481,6 +689,32 @@ mod tests {
         assert_eq!(build.definition.name, "CI");
         assert_eq!(build.source_branch.as_deref(), Some("refs/heads/main"));
         assert_eq!(build.requestor(), "Jane Doe");
+        assert!(!build.is_pr_build());
+        assert_eq!(build.branch_display(), "main");
+    }
+
+    #[test]
+    fn deserialize_pr_build_with_trigger_info() {
+        let json = r#"{
+            "id": 55,
+            "buildNumber": "20240301.5",
+            "status": "completed",
+            "result": "failed",
+            "reason": "pullRequest",
+            "definition": {"id": 2, "name": "PR Validation"},
+            "sourceBranch": "refs/pull/42/merge",
+            "triggerInfo": {
+                "pr.number": "42",
+                "pr.title": "Fix login timeout",
+                "pr.sourceBranch": "refs/heads/fix/login"
+            }
+        }"#;
+        let build: Build = serde_json::from_str(json).unwrap();
+        assert_eq!(build.id, 55);
+        assert!(build.is_pr_build());
+        assert_eq!(build.pr_number(), Some("42"));
+        assert_eq!(build.pr_title(), Some("Fix login timeout"));
+        assert_eq!(build.branch_display(), "PR #42 · Fix login timeout");
     }
 
     #[test]

@@ -52,7 +52,7 @@ impl ActiveRunsState {
                 .filter(|b| {
                     b.definition.name.to_lowercase().contains(&q)
                         || b.build_number.to_lowercase().contains(&q)
-                        || b.short_branch().to_lowercase().contains(&q)
+                        || b.branch_display().to_lowercase().contains(&q)
                 })
                 .cloned()
                 .collect();

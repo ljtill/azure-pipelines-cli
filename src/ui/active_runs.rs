@@ -58,7 +58,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     theme::TEXT,
                 ),
                 Span::styled(format!("#{:<14} ", build.build_number), theme::MUTED),
-                Span::styled(format!("{:<26} ", build.short_branch()), theme::BRANCH),
+                Span::styled(format!("{:<26} ", build.branch_display()), theme::BRANCH),
                 Span::styled(format!("{:<20} ", build.requestor()), theme::MUTED),
                 Span::styled(elapsed, theme::WARNING),
             ]))

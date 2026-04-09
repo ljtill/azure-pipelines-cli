@@ -33,7 +33,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(header, chunks[0]);
 
     // Fixed overhead: icon(3) + build_number(16) + requestor(21) + elapsed(10) = 50
-    let branch_width = (area.width as usize).saturating_sub(51).clamp(10, 40);
+    let branch_width = (area.width as usize).saturating_sub(51).clamp(10, 50);
 
     let items: Vec<ListItem> = app
         .build_history
@@ -43,7 +43,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .map(|(i, build)| {
             let (icon, icon_color) = status_icon(build.status, build.result);
             let time_info = build_elapsed(build);
-            let branch = build.short_branch();
+            let branch = build.branch_display();
 
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", icon), Style::default().fg(icon_color)),

@@ -40,7 +40,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 };
 
                 let build_info = if let Some(b) = latest_build {
-                    let branch = b.short_branch();
+                    let branch = b.branch_display();
                     let branch_display = truncate(&branch, 25);
                     let elapsed = build_elapsed(b);
                     format!(

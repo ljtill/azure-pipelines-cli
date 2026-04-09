@@ -238,6 +238,8 @@ mod tests {
             },
             source_branch: None,
             requested_for: None,
+            reason: None,
+            trigger_info: None,
         }
     }
 

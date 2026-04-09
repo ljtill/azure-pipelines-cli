@@ -17,6 +17,8 @@ pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> 
         },
         source_branch: Some("refs/heads/main".to_string()),
         requested_for: None,
+        reason: None,
+        trigger_info: None,
     }
 }
 

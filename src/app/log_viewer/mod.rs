@@ -57,6 +57,8 @@ mod tests {
             },
             source_branch: Some("refs/heads/main".to_string()),
             requested_for: None,
+            reason: None,
+            trigger_info: None,
         }
     }
 
