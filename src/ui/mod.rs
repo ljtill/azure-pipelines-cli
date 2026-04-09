@@ -3,6 +3,7 @@ pub mod builds;
 pub mod dashboard;
 pub mod header;
 pub mod help;
+pub mod helpers;
 pub mod logs;
 pub mod pipelines;
 
@@ -15,7 +16,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let chunks = Layout::vertical([
         Constraint::Length(3), // header
-        Constraint::Min(0),   // body
+        Constraint::Min(0),    // body
         Constraint::Length(1), // footer
     ])
     .split(f.area());
