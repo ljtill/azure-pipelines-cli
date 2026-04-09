@@ -67,7 +67,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, row)| {
-            let selected = i == app.log_viewer.log_entries_index;
+            let selected = i == app.log_viewer.log_entries_nav.index();
             match row {
                 TimelineRow::Stage {
                     name,
@@ -166,7 +166,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.log_viewer.log_entries_index));
+    state.select(Some(app.log_viewer.log_entries_nav.index()));
     f.render_stateful_widget(list, area, &mut state);
 }
 
@@ -181,7 +181,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         if let Some(TimelineRow::Task { name, .. }) = app
             .log_viewer
             .timeline_rows
-            .get(app.log_viewer.log_entries_index)
+            .get(app.log_viewer.log_entries_nav.index())
         {
             format!(" Log Output — {} ", name)
         } else {

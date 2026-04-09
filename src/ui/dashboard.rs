@@ -24,7 +24,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]))
-                .style(if i == app.dashboard_index {
+                .style(if i == app.dashboard_nav.index() {
                     Style::default().bg(Color::DarkGray)
                 } else {
                     Style::default()
@@ -63,7 +63,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     Span::styled(build_info, Style::default().fg(Color::DarkGray)),
                 ]))
-                .style(if i == app.dashboard_index {
+                .style(if i == app.dashboard_nav.index() {
                     Style::default().bg(Color::DarkGray)
                 } else {
                     Style::default()
@@ -80,6 +80,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.dashboard_index));
+    state.select(Some(app.dashboard_nav.index()));
     f.render_stateful_widget(list, area, &mut state);
 }

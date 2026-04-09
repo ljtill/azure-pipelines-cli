@@ -76,7 +76,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Multi-select toggle in Active Runs
         KeyCode::Char(' ') if app.view == View::ActiveRuns => {
-            if let Some(build) = app.filtered_active_builds.get(app.active_runs_index) {
+            if let Some(build) = app.filtered_active_builds.get(app.active_runs_nav.index()) {
                 let id = build.id;
                 if !app.selected_builds.remove(&id) {
                     app.selected_builds.insert(id);
@@ -129,27 +129,27 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Navigation
         KeyCode::Up => {
-            app.move_up();
+            app.current_nav_mut().up();
             Action::None
         }
         KeyCode::Down => {
-            app.move_down();
+            app.current_nav_mut().down();
             Action::None
         }
 
         // Left/Right for folder collapse/expand on Dashboard
         KeyCode::Left if app.view == View::Dashboard => {
-            let idx = app.dashboard_index;
+            let idx = app.dashboard_nav.index();
             if app.is_folder_header(idx) {
                 app.collapse_folder_at(idx);
             } else if let Some(folder_idx) = app.find_parent_folder_index(idx) {
                 app.collapse_folder_at(folder_idx);
-                app.dashboard_index = folder_idx;
+                app.dashboard_nav.set_index(folder_idx);
             }
             Action::None
         }
         KeyCode::Right if app.view == View::Dashboard => {
-            let idx = app.dashboard_index;
+            let idx = app.dashboard_nav.index();
             if app.is_folder_header(idx) {
                 app.expand_folder_at(idx);
             } else {
@@ -160,7 +160,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Left/Right for timeline tree collapse/expand in LogViewer
         KeyCode::Left if app.view == View::LogViewer => {
-            let idx = app.log_viewer.log_entries_index;
+            let idx = app.log_viewer.log_entries_nav.index();
             match app.timeline_row_kind(idx) {
                 Some("stage") => {
                     app.collapse_timeline_node(idx);
@@ -169,12 +169,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                     if !app.collapse_timeline_node(idx)
                         && let Some(parent_idx) = app.find_timeline_parent_index(idx)
                     {
-                        app.log_viewer.log_entries_index = parent_idx;
+                        app.log_viewer.log_entries_nav.set_index(parent_idx);
                     }
                 }
                 Some("task") => {
                     if let Some(parent_idx) = app.find_timeline_parent_index(idx) {
-                        app.log_viewer.log_entries_index = parent_idx;
+                        app.log_viewer.log_entries_nav.set_index(parent_idx);
                     }
                 }
                 _ => {}
@@ -182,7 +182,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Right if app.view == View::LogViewer => {
-            let idx = app.log_viewer.log_entries_index;
+            let idx = app.log_viewer.log_entries_nav.index();
             match app.timeline_row_kind(idx) {
                 Some("stage") | Some("job") => {
                     app.expand_timeline_node(idx);
@@ -192,6 +192,15 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 }
                 _ => {}
             }
+            Action::None
+        }
+
+        KeyCode::Home => {
+            app.current_nav_mut().home();
+            Action::None
+        }
+        KeyCode::End => {
+            app.current_nav_mut().end();
             Action::None
         }
 
@@ -250,7 +259,7 @@ fn handle_open_in_browser(app: &App) -> Action {
     let url = match app.view {
         View::Dashboard => {
             if let Some(crate::app::DashboardRow::Pipeline { definition, .. }) =
-                app.dashboard_rows.get(app.dashboard_index)
+                app.dashboard_rows.get(app.dashboard_nav.index())
             {
                 Some(app.endpoints_web_definition(definition.id))
             } else {
@@ -259,15 +268,15 @@ fn handle_open_in_browser(app: &App) -> Action {
         }
         View::Pipelines => app
             .filtered_pipelines
-            .get(app.pipelines_index)
+            .get(app.pipelines_nav.index())
             .map(|def| app.endpoints_web_definition(def.id)),
         View::ActiveRuns => app
             .filtered_active_builds
-            .get(app.active_runs_index)
+            .get(app.active_runs_nav.index())
             .map(|b| app.endpoints_web_build(b.id)),
         View::BuildHistory => app
             .definition_builds
-            .get(app.builds_index)
+            .get(app.builds_nav.index())
             .map(|b| app.endpoints_web_build(b.id)),
         View::LogViewer => app
             .log_viewer
@@ -297,7 +306,7 @@ fn handle_cancel_request(app: &mut App) -> Action {
     // Single cancel: cursor item
     let build = match app.view {
         View::LogViewer => app.log_viewer.selected_build.as_ref(),
-        View::ActiveRuns => app.filtered_active_builds.get(app.active_runs_index),
+        View::ActiveRuns => app.filtered_active_builds.get(app.active_runs_nav.index()),
         _ => None,
     };
 
@@ -313,7 +322,7 @@ fn handle_cancel_request(app: &mut App) -> Action {
 }
 
 fn handle_retry_request(app: &mut App) -> Action {
-    let idx = app.log_viewer.log_entries_index;
+    let idx = app.log_viewer.log_entries_nav.index();
     if app.timeline_row_kind(idx) != Some("stage") {
         return Action::None;
     }
@@ -353,7 +362,7 @@ fn handle_queue_request(app: &mut App) -> Action {
     let (def_id, def_name) = match app.view {
         View::Dashboard => {
             if let Some(crate::app::DashboardRow::Pipeline { definition, .. }) =
-                app.dashboard_rows.get(app.dashboard_index)
+                app.dashboard_rows.get(app.dashboard_nav.index())
             {
                 (definition.id, definition.name.clone())
             } else {
@@ -361,7 +370,7 @@ fn handle_queue_request(app: &mut App) -> Action {
             }
         }
         View::Pipelines => {
-            if let Some(def) = app.filtered_pipelines.get(app.pipelines_index) {
+            if let Some(def) = app.filtered_pipelines.get(app.pipelines_nav.index()) {
                 (def.id, def.name.clone())
             } else {
                 return Action::None;
@@ -387,7 +396,7 @@ fn handle_queue_request(app: &mut App) -> Action {
 }
 
 fn handle_approve_request(app: &mut App) -> Action {
-    let idx = app.log_viewer.log_entries_index;
+    let idx = app.log_viewer.log_entries_nav.index();
     if app.timeline_row_kind(idx) != Some("checkpoint") {
         return Action::None;
     }
@@ -407,7 +416,7 @@ fn handle_approve_request(app: &mut App) -> Action {
 }
 
 fn handle_reject_request(app: &mut App) -> Action {
-    let idx = app.log_viewer.log_entries_index;
+    let idx = app.log_viewer.log_entries_nav.index();
     if app.timeline_row_kind(idx) != Some("checkpoint") {
         return Action::None;
     }
@@ -453,11 +462,11 @@ fn rebuild_search_results(app: &mut App) {
     match app.view {
         View::Pipelines => {
             app.rebuild_filtered_pipelines();
-            app.pipelines_index = 0;
+            app.pipelines_nav.set_index(0);
         }
         View::ActiveRuns => {
             app.rebuild_filtered_active_builds();
-            app.active_runs_index = 0;
+            app.active_runs_nav.set_index(0);
         }
         _ => {}
     }
@@ -466,10 +475,10 @@ fn rebuild_search_results(app: &mut App) {
 fn handle_enter(app: &mut App) -> Action {
     match app.view {
         View::Dashboard => {
-            if let Some(row) = app.dashboard_rows.get(app.dashboard_index) {
+            if let Some(row) = app.dashboard_rows.get(app.dashboard_nav.index()) {
                 match row {
                     crate::app::DashboardRow::FolderHeader { .. } => {
-                        app.toggle_folder_at(app.dashboard_index);
+                        app.toggle_folder_at(app.dashboard_nav.index());
                         Action::None
                     }
                     crate::app::DashboardRow::Pipeline { definition, .. } => {
@@ -483,7 +492,11 @@ fn handle_enter(app: &mut App) -> Action {
             }
         }
         View::Pipelines => {
-            if let Some(def) = app.filtered_pipelines.get(app.pipelines_index).cloned() {
+            if let Some(def) = app
+                .filtered_pipelines
+                .get(app.pipelines_nav.index())
+                .cloned()
+            {
                 let def_id = def.id;
                 app.navigate_to_build_history(def);
                 Action::FetchBuildHistory(def_id)
@@ -494,7 +507,7 @@ fn handle_enter(app: &mut App) -> Action {
         View::ActiveRuns => {
             if let Some(build) = app
                 .filtered_active_builds
-                .get(app.active_runs_index)
+                .get(app.active_runs_nav.index())
                 .cloned()
             {
                 let build_id = build.id;
@@ -505,7 +518,7 @@ fn handle_enter(app: &mut App) -> Action {
             }
         }
         View::BuildHistory => {
-            if let Some(build) = app.definition_builds.get(app.builds_index).cloned() {
+            if let Some(build) = app.definition_builds.get(app.builds_nav.index()).cloned() {
                 let build_id = build.id;
                 app.navigate_to_log_viewer(build);
                 Action::FetchTimeline(build_id)
@@ -514,7 +527,7 @@ fn handle_enter(app: &mut App) -> Action {
             }
         }
         View::LogViewer => {
-            let idx = app.log_viewer.log_entries_index;
+            let idx = app.log_viewer.log_entries_nav.index();
             match app.timeline_row_kind(idx) {
                 Some("stage") | Some("job") => {
                     app.toggle_timeline_node(idx);

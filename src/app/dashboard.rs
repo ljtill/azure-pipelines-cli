@@ -87,6 +87,7 @@ impl App {
         }
 
         self.dashboard_rows = rows;
+        self.dashboard_nav.set_len(self.dashboard_rows.len());
     }
 
     /// Rebuild the filtered pipelines list from search query.
@@ -104,6 +105,7 @@ impl App {
                 .cloned()
                 .collect();
         }
+        self.pipelines_nav.set_len(self.filtered_pipelines.len());
     }
 
     /// Toggle collapse state for a folder at the given dashboard row index.

@@ -231,6 +231,7 @@ pub fn handle_message(
         }
         AppMessage::BuildHistory { builds } => {
             app.definition_builds = builds;
+            app.builds_nav.set_len(app.definition_builds.len());
         }
         AppMessage::Timeline {
             build_id,
@@ -251,7 +252,7 @@ pub fn handle_message(
             if !is_refresh {
                 // Initial load: full setup with auto-select
                 app.log_viewer.log_content.clear();
-                app.log_viewer.log_entries_index = 0;
+                app.log_viewer.log_entries_nav.set_index(0);
                 app.log_viewer.follow_mode = true;
                 app.rebuild_timeline_rows();
 
@@ -259,7 +260,7 @@ pub fn handle_message(
                     if let Some(TimelineRow::Task { name, .. }) = app
                         .log_viewer
                         .timeline_rows
-                        .get(app.log_viewer.log_entries_index)
+                        .get(app.log_viewer.log_entries_nav.index())
                     {
                         app.log_viewer.followed_task_name = name.clone();
                     }
@@ -454,7 +455,7 @@ pub fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMes
     let log_id_to_refresh = if app.log_viewer.follow_mode {
         app.log_viewer.followed_log_id
     } else {
-        app.timeline_task_log_id(app.log_viewer.log_entries_index)
+        app.timeline_task_log_id(app.log_viewer.log_entries_nav.index())
     };
 
     if !app.log_viewer.log_content.is_empty()

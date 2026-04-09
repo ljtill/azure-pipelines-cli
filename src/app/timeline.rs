@@ -134,7 +134,7 @@ impl App {
             });
 
         if let Some(idx) = row_idx {
-            self.log_viewer.log_entries_index = idx;
+            self.log_viewer.log_entries_nav.set_index(idx);
             Some((idx, log_id))
         } else {
             None
@@ -326,6 +326,9 @@ impl App {
         }
 
         self.log_viewer.timeline_rows = rows;
+        self.log_viewer
+            .log_entries_nav
+            .set_len(self.log_viewer.timeline_rows.len());
     }
 
     /// Toggle collapse for a timeline stage or job at the given row index.

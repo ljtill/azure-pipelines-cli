@@ -59,7 +59,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 ),
                 Span::styled(time_info, Style::default().fg(Color::DarkGray)),
             ]))
-            .style(if i == app.builds_index {
+            .style(if i == app.builds_nav.index() {
                 Style::default().bg(Color::DarkGray)
             } else {
                 Style::default()
@@ -75,6 +75,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.builds_index));
+    state.select(Some(app.builds_nav.index()));
     f.render_stateful_widget(list, chunks[1], &mut state);
 }

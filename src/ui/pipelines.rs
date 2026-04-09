@@ -38,7 +38,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 ),
                 Span::styled(folder, Style::default().fg(Color::DarkGray)),
             ]))
-            .style(if i == app.pipelines_index {
+            .style(if i == app.pipelines_nav.index() {
                 Style::default().bg(Color::DarkGray)
             } else {
                 Style::default()
@@ -55,6 +55,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.pipelines_index));
+    state.select(Some(app.pipelines_nav.index()));
     f.render_stateful_widget(list, list_area, &mut state);
 }

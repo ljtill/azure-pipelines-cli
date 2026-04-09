@@ -62,7 +62,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 ),
                 Span::styled(elapsed, Style::default().fg(Color::Yellow)),
             ]))
-            .style(if i == app.active_runs_index {
+            .style(if i == app.active_runs_nav.index() {
                 Style::default().bg(Color::DarkGray)
             } else {
                 Style::default()
@@ -91,6 +91,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.active_runs_index));
+    state.select(Some(app.active_runs_nav.index()));
     f.render_stateful_widget(list, list_area, &mut state);
 }

@@ -1,6 +1,7 @@
 pub mod actions;
 mod dashboard;
 mod messages;
+pub mod nav;
 pub mod notifications;
 pub mod run;
 mod timeline;
@@ -97,11 +98,11 @@ pub struct App {
     // Multi-select (Active Runs)
     pub selected_builds: HashSet<u32>,
 
-    // List state indices
-    pub dashboard_index: usize,
-    pub pipelines_index: usize,
-    pub active_runs_index: usize,
-    pub builds_index: usize,
+    // List navigation
+    pub dashboard_nav: nav::ListNav,
+    pub pipelines_nav: nav::ListNav,
+    pub active_runs_nav: nav::ListNav,
+    pub builds_nav: nav::ListNav,
 
     // Search
     pub search_query: String,
@@ -128,7 +129,7 @@ pub struct LogViewerState {
     pub follow_mode: bool,
     pub followed_task_name: String,
     pub followed_log_id: Option<u32>,
-    pub log_entries_index: usize,
+    pub log_entries_nav: nav::ListNav,
     pub log_scroll_offset: u16,
     /// The view to return to when pressing Esc from LogViewer.
     pub return_to_view: View,
@@ -149,7 +150,7 @@ impl Default for LogViewerState {
             follow_mode: false,
             followed_task_name: String::new(),
             followed_log_id: None,
-            log_entries_index: 0,
+            log_entries_nav: nav::ListNav::default(),
             log_scroll_offset: 0,
             return_to_view: View::BuildHistory,
         }
@@ -186,10 +187,10 @@ impl App {
 
             selected_builds: HashSet::new(),
 
-            dashboard_index: 0,
-            pipelines_index: 0,
-            active_runs_index: 0,
-            builds_index: 0,
+            dashboard_nav: nav::ListNav::default(),
+            pipelines_nav: nav::ListNav::default(),
+            active_runs_nav: nav::ListNav::default(),
+            builds_nav: nav::ListNav::default(),
 
             search_query: String::new(),
             filtered_pipelines: Vec::new(),
@@ -228,7 +229,7 @@ impl App {
                         self.view = return_to;
                         self.selected_definition = None;
                         self.definition_builds.clear();
-                        self.builds_index = 0;
+                        self.builds_nav.reset();
                     }
                 }
             }
@@ -236,7 +237,7 @@ impl App {
                 self.view = self.previous_view.unwrap_or(View::Dashboard);
                 self.selected_definition = None;
                 self.definition_builds.clear();
-                self.builds_index = 0;
+                self.builds_nav.reset();
             }
             _ => {}
         }
@@ -296,7 +297,7 @@ impl App {
         self.previous_view = Some(self.view);
         self.selected_definition = Some(def);
         self.definition_builds.clear();
-        self.builds_index = 0;
+        self.builds_nav.reset();
         self.view = View::BuildHistory;
     }
 
@@ -315,48 +316,14 @@ impl App {
         self.view = View::LogViewer;
     }
 
-    pub fn current_list_len(&self) -> usize {
+    pub fn current_nav_mut(&mut self) -> &mut nav::ListNav {
         match self.view {
-            View::Dashboard => self.dashboard_rows.len(),
-            View::Pipelines => self.filtered_pipelines.len(),
-            View::ActiveRuns => self.filtered_active_builds.len(),
-            View::BuildHistory => self.definition_builds.len(),
-            View::LogViewer => self.log_viewer.timeline_rows.len(),
+            View::Dashboard => &mut self.dashboard_nav,
+            View::Pipelines => &mut self.pipelines_nav,
+            View::ActiveRuns => &mut self.active_runs_nav,
+            View::BuildHistory => &mut self.builds_nav,
+            View::LogViewer => &mut self.log_viewer.log_entries_nav,
         }
-    }
-
-    pub fn current_index(&self) -> usize {
-        match self.view {
-            View::Dashboard => self.dashboard_index,
-            View::Pipelines => self.pipelines_index,
-            View::ActiveRuns => self.active_runs_index,
-            View::BuildHistory => self.builds_index,
-            View::LogViewer => self.log_viewer.log_entries_index,
-        }
-    }
-
-    pub fn set_current_index(&mut self, idx: usize) {
-        let max = self.current_list_len().saturating_sub(1);
-        let clamped = idx.min(max);
-        match self.view {
-            View::Dashboard => self.dashboard_index = clamped,
-            View::Pipelines => self.pipelines_index = clamped,
-            View::ActiveRuns => self.active_runs_index = clamped,
-            View::BuildHistory => self.builds_index = clamped,
-            View::LogViewer => self.log_viewer.log_entries_index = clamped,
-        }
-    }
-
-    pub fn move_up(&mut self) {
-        let idx = self.current_index();
-        if idx > 0 {
-            self.set_current_index(idx - 1);
-        }
-    }
-
-    pub fn move_down(&mut self) {
-        let idx = self.current_index();
-        self.set_current_index(idx + 1);
     }
 
     // Web URL helpers for opening in browser
@@ -389,5 +356,7 @@ impl App {
                 .cloned()
                 .collect();
         }
+        self.active_runs_nav
+            .set_len(self.filtered_active_builds.len());
     }
 }
