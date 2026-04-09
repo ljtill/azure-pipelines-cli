@@ -33,6 +33,7 @@ pub async fn run(
 
     let (tx, mut rx) = mpsc::channel::<AppMessage>(64);
     let mut event_stream = EventStream::new();
+    let mut ui_tick = tokio::time::interval(Duration::from_secs(1));
 
     // Spawn background update check (once, at startup)
     if config.update.check_for_updates {
@@ -98,6 +99,10 @@ pub async fn run(
             Some(msg) = rx.recv() => {
                 handle_message(&mut app, &client, &tx, msg);
             }
+
+            // Periodic UI tick: keeps the "Xs ago" counter and refresh
+            // scheduling alive without requiring user input.
+            _ = ui_tick.tick() => {}
         }
     }
 
