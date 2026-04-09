@@ -25,6 +25,8 @@ pub struct Notifications {
     ttl_secs: u64,
 }
 
+const MAX_QUEUE_SIZE: usize = 100;
+
 impl Notifications {
     pub fn new(ttl_secs: u64) -> Self {
         Self {
@@ -40,6 +42,7 @@ impl Notifications {
             created_at: Instant::now(),
             persistent: false,
         });
+        self.prune_overflow();
     }
 
     pub fn push_persistent(&mut self, level: NotificationLevel, message: impl Into<String>) {
@@ -49,6 +52,13 @@ impl Notifications {
             created_at: Instant::now(),
             persistent: true,
         });
+        self.prune_overflow();
+    }
+
+    fn prune_overflow(&mut self) {
+        while self.queue.len() > MAX_QUEUE_SIZE {
+            self.queue.pop_front();
+        }
     }
 
     #[allow(dead_code)]
