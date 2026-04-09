@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::time::Instant;
 
+use anyhow::Result;
 use tokio::sync::mpsc;
 
 use crate::api::client::AdoClient;
@@ -11,6 +13,29 @@ use super::App;
 use super::View;
 use super::log_viewer::TimelineRow;
 use super::messages::AppMessage;
+
+/// Spawn an async API call on a background task, routing the result to AppMessage.
+fn spawn_api<F, Fut, T>(
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    context: &'static str,
+    call: F,
+    on_ok: impl FnOnce(T) -> AppMessage + Send + 'static,
+) where
+    F: FnOnce(AdoClient) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send,
+    T: Send + 'static,
+{
+    let client = client.clone();
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let msg = match call(client).await {
+            Ok(val) => on_ok(val),
+            Err(e) => AppMessage::Error(format!("{context}: {e}")),
+        };
+        let _ = tx.send(msg).await;
+    });
+}
 
 pub fn handle_action(
     app: &mut App,
@@ -30,20 +55,13 @@ pub fn handle_action(
             *last_data_fetch = Instant::now();
         }
         Action::FetchBuildHistory(def_id) => {
-            let client = client.clone();
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                match client.list_builds_for_definition(def_id).await {
-                    Ok(builds) => {
-                        let _ = tx.send(AppMessage::BuildHistory { builds }).await;
-                    }
-                    Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::Error(format!("Fetch builds: {e}")))
-                            .await;
-                    }
-                }
-            });
+            spawn_api(
+                client,
+                tx,
+                "Fetch builds",
+                move |c| async move { c.list_builds_for_definition(def_id).await },
+                |builds| AppMessage::BuildHistory { builds },
+            );
         }
         Action::FetchTimeline(build_id) => {
             spawn_timeline_fetch(client, tx, build_id, app.log_viewer.generation(), false);
@@ -70,20 +88,13 @@ pub fn handle_action(
             let _ = open_url(&url);
         }
         Action::CancelBuild(build_id) => {
-            let client = client.clone();
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                match client.cancel_build(build_id).await {
-                    Ok(()) => {
-                        let _ = tx.send(AppMessage::BuildCancelled).await;
-                    }
-                    Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::Error(format!("Cancel build: {e}")))
-                            .await;
-                    }
-                }
-            });
+            spawn_api(
+                client,
+                tx,
+                "Cancel build",
+                move |c| async move { c.cancel_build(build_id).await },
+                |()| AppMessage::BuildCancelled,
+            );
         }
         Action::CancelBuilds(build_ids) => {
             let client = client.clone();
@@ -111,86 +122,54 @@ pub fn handle_action(
             build_id,
             stage_ref_name,
         } => {
-            let client = client.clone();
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                match client.retry_stage(build_id, &stage_ref_name).await {
-                    Ok(()) => {
-                        let _ = tx.send(AppMessage::StageRetried).await;
-                    }
-                    Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::Error(format!("Retry stage: {e}")))
-                            .await;
-                    }
-                }
-            });
+            spawn_api(
+                client,
+                tx,
+                "Retry stage",
+                move |c| async move { c.retry_stage(build_id, &stage_ref_name).await },
+                |()| AppMessage::StageRetried,
+            );
         }
         Action::QueuePipeline(definition_id) => {
-            let client = client.clone();
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                match client.run_pipeline(definition_id).await {
-                    Ok(run) => match client.get_build(run.id).await {
-                        Ok(build) => {
-                            let _ = tx
-                                .send(AppMessage::PipelineQueued {
-                                    build,
-                                    definition_id,
-                                })
-                                .await;
-                        }
-                        Err(e) => {
-                            let _ = tx
-                                .send(AppMessage::Error(format!("Fetch queued build: {e}")))
-                                .await;
-                        }
-                    },
-                    Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::Error(format!("Queue pipeline: {e}")))
-                            .await;
-                    }
-                }
-            });
+            spawn_api(
+                client,
+                tx,
+                "Queue pipeline",
+                move |c| async move {
+                    let run = c.run_pipeline(definition_id).await?;
+                    c.get_build(run.id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Fetch queued build: {e}"))
+                },
+                move |build| AppMessage::PipelineQueued {
+                    build,
+                    definition_id,
+                },
+            );
         }
         Action::ApproveCheck(approval_id) => {
-            let client = client.clone();
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                match client
-                    .update_approval(&approval_id, "approved", "Approved via CLI")
-                    .await
-                {
-                    Ok(()) => {
-                        let _ = tx.send(AppMessage::CheckUpdated).await;
-                    }
-                    Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::Error(format!("Approve check: {e}")))
-                            .await;
-                    }
-                }
-            });
+            spawn_api(
+                client,
+                tx,
+                "Approve check",
+                move |c| async move {
+                    c.update_approval(&approval_id, "approved", "Approved via CLI")
+                        .await
+                },
+                |()| AppMessage::CheckUpdated,
+            );
         }
         Action::RejectCheck(approval_id) => {
-            let client = client.clone();
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                match client
-                    .update_approval(&approval_id, "rejected", "Rejected via CLI")
-                    .await
-                {
-                    Ok(()) => {
-                        let _ = tx.send(AppMessage::CheckUpdated).await;
-                    }
-                    Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::Error(format!("Reject check: {e}")))
-                            .await;
-                    }
-                }
-            });
+            spawn_api(
+                client,
+                tx,
+                "Reject check",
+                move |c| async move {
+                    c.update_approval(&approval_id, "rejected", "Rejected via CLI")
+                        .await
+                },
+                |()| AppMessage::CheckUpdated,
+            );
         }
         Action::None => {}
     }
