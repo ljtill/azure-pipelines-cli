@@ -21,6 +21,7 @@ pub enum AppMessage {
         generation: u64,
     },
     BuildCancelled,
+    BuildsCancelled { cancelled: u32, failed: u32 },
     StageRetried,
     PipelineQueued {
         build: Build,

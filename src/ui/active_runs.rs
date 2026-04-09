@@ -14,8 +14,18 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, build)| {
             let elapsed = build_elapsed(build);
+            let selected = app.selected_builds.contains(&build.id);
+            let check = if selected { "✓ " } else { "  " };
 
             ListItem::new(Line::from(vec![
+                Span::styled(
+                    check,
+                    if selected {
+                        Style::default().fg(Color::Green)
+                    } else {
+                        Style::default()
+                    },
+                ),
                 Span::styled(" ⏳ ", Style::default().fg(Color::Yellow)),
                 Span::styled(
                     format!("{:<36} ", build.definition.name),
@@ -43,7 +53,16 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = format!(" Active Runs ({}) ", app.active_builds.len());
+    let sel_count = app.selected_builds.len();
+    let title = if sel_count > 0 {
+        format!(
+            " Active Runs ({}) — {} selected ",
+            app.active_builds.len(),
+            sel_count
+        )
+    } else {
+        format!(" Active Runs ({}) ", app.active_builds.len())
+    };
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::NONE)

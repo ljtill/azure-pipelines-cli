@@ -226,6 +226,28 @@ fn handle_action(
                 }
             });
         }
+        Action::CancelBuilds(build_ids) => {
+            let client = client.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let mut set = tokio::task::JoinSet::new();
+                for &id in &build_ids {
+                    let client = client.clone();
+                    set.spawn(async move { client.cancel_build(id).await });
+                }
+                let mut cancelled = 0u32;
+                let mut failed = 0u32;
+                while let Some(result) = set.join_next().await {
+                    match result {
+                        Ok(Ok(())) => cancelled += 1,
+                        _ => failed += 1,
+                    }
+                }
+                let _ = tx
+                    .send(AppMessage::BuildsCancelled { cancelled, failed })
+                    .await;
+            });
+        }
         Action::RetryStage {
             build_id,
             stage_ref_name,
@@ -398,6 +420,14 @@ fn handle_message(
                             .await;
                     }
                 });
+            }
+        }
+        AppMessage::BuildsCancelled { cancelled, failed } => {
+            app.selected_builds.clear();
+            spawn_data_refresh(client, tx);
+            if failed > 0 {
+                app.error_message =
+                    Some(format!("Cancelled {cancelled}, {failed} failed"));
             }
         }
         AppMessage::StageRetried => {

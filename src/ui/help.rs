@@ -37,6 +37,7 @@ pub fn draw(f: &mut Frame) {
         )]),
         Line::from(""),
         Line::from("  /              Search / filter (Pipelines view)"),
+        Line::from("  Space          Select / deselect (Active Runs)"),
         Line::from("  f              Follow latest active task (Log Viewer)"),
         Line::from("  Q              Queue pipeline run"),
         Line::from("  R              Retry failed stage (Log Viewer)"),

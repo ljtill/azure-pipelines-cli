@@ -24,6 +24,7 @@ pub enum Action {
     FollowLatest,
     OpenInBrowser(String),
     CancelBuild(u32),
+    CancelBuilds(Vec<u32>),
     RetryStage { build_id: u32, stage_ref_name: String },
     QueuePipeline(u32),
 }
@@ -69,7 +70,18 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         // Open in browser
         KeyCode::Char('o') => handle_open_in_browser(app),
 
-        // Cancel build
+        // Multi-select toggle in Active Runs
+        KeyCode::Char(' ') if app.view == View::ActiveRuns => {
+            if let Some(build) = app.active_builds.get(app.active_runs_index) {
+                let id = build.id;
+                if !app.selected_builds.remove(&id) {
+                    app.selected_builds.insert(id);
+                }
+            }
+            Action::None
+        }
+
+        // Cancel build(s)
         KeyCode::Char('c') if app.view == View::LogViewer || app.view == View::ActiveRuns => {
             handle_cancel_request(app)
         }
@@ -199,6 +211,7 @@ fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
             let prompt = app.confirm_prompt.take().unwrap();
             match prompt.action {
                 ConfirmAction::CancelBuild { build_id } => Action::CancelBuild(build_id),
+                ConfirmAction::CancelBuilds { build_ids } => Action::CancelBuilds(build_ids),
                 ConfirmAction::RetryStage {
                     build_id,
                     stage_ref_name,
@@ -255,6 +268,18 @@ fn handle_open_in_browser(app: &App) -> Action {
 }
 
 fn handle_cancel_request(app: &mut App) -> Action {
+    // Batch cancel: if items are selected in Active Runs, cancel all of them
+    if app.view == View::ActiveRuns && !app.selected_builds.is_empty() {
+        let count = app.selected_builds.len();
+        let build_ids: Vec<u32> = app.selected_builds.iter().copied().collect();
+        app.confirm_prompt = Some(ConfirmPrompt {
+            message: format!("Cancel {} selected build(s)?  [y/N]", count),
+            action: ConfirmAction::CancelBuilds { build_ids },
+        });
+        return Action::None;
+    }
+
+    // Single cancel: cursor item
     let build = match app.view {
         View::LogViewer => app.selected_build.as_ref(),
         View::ActiveRuns => app.active_builds.get(app.active_runs_index),

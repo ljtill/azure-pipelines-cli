@@ -31,6 +31,7 @@ pub enum InputMode {
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
     CancelBuild { build_id: u32 },
+    CancelBuilds { build_ids: Vec<u32> },
     RetryStage { build_id: u32, stage_ref_name: String },
     QueuePipeline { definition_id: u32 },
 }
@@ -83,6 +84,9 @@ pub struct App {
 
     // Confirmation prompt
     pub confirm_prompt: Option<ConfirmPrompt>,
+
+    // Multi-select (Active Runs)
+    pub selected_builds: HashSet<u32>,
 
     // List state indices
     pub dashboard_index: usize,
@@ -139,6 +143,8 @@ impl App {
             followed_log_id: None,
 
             confirm_prompt: None,
+
+            selected_builds: HashSet::new(),
 
             dashboard_index: 0,
             pipelines_index: 0,
