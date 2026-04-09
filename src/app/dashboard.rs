@@ -80,15 +80,16 @@ impl App {
                 .push((def.clone(), latest));
         }
 
-        for (key, pipelines) in &by_folder {
-            let collapsed = self.collapsed_folders.contains(key);
+        for (key, mut pipelines) in by_folder {
+            pipelines.sort_by(|(a, _), (b, _)| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            let collapsed = self.collapsed_folders.contains(&key);
             rows.push(DashboardRow::FolderHeader {
-                path: folder_display(key),
+                path: folder_display(&key),
                 collapsed,
             });
 
             if !collapsed {
-                for (def, build) in pipelines {
+                for (def, build) in &pipelines {
                     rows.push(DashboardRow::Pipeline {
                         definition: def.clone(),
                         latest_build: build.clone().map(Box::new),
@@ -116,6 +117,8 @@ impl App {
                 .cloned()
                 .collect();
         }
+        self.filtered_pipelines
+            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         self.pipelines_nav.set_len(self.filtered_pipelines.len());
     }
 
