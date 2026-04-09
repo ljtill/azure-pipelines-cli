@@ -62,7 +62,8 @@ azure-pipelines-cli --config /path/to/config.toml
 | Esc          | Go back to previous view                        |
 | 1 / 2 / 3    | Switch between Dashboard / Pipelines / Active Runs |
 | /            | Search / filter (Pipelines view)                |
-| R            | Queue pipeline run / Retry stage (Log Viewer)   |
+| Q            | Queue pipeline run                               |
+| R            | Retry failed stage (Log Viewer)                  |
 | c            | Cancel build (Active Runs / Log Viewer)         |
 | o            | Open in browser                                 |
 | r            | Force data refresh                              |

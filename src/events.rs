@@ -77,8 +77,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         // Retry stage (Shift+R)
         KeyCode::Char('R') if app.view == View::LogViewer => handle_retry_request(app),
 
-        // Queue pipeline (Shift+R)
-        KeyCode::Char('R')
+        // Queue pipeline (Shift+Q)
+        KeyCode::Char('Q')
             if app.view == View::Dashboard
                 || app.view == View::Pipelines
                 || app.view == View::BuildHistory =>
