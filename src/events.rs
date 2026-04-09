@@ -84,10 +84,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Multi-select toggle in Active Runs
         KeyCode::Char(' ') if app.view == View::ActiveRuns => {
-            if let Some(build) = app.filtered_active_builds.get(app.active_runs_nav.index()) {
+            if let Some(build) = app.active_runs.filtered.get(app.active_runs.nav.index()) {
                 let id = build.id;
-                if !app.selected_builds.remove(&id) {
-                    app.selected_builds.insert(id);
+                if !app.active_runs.selected.remove(&id) {
+                    app.active_runs.selected.insert(id);
                 }
             }
             Action::None
@@ -140,7 +140,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('3') => {
             app.search.query.clear();
             app.view = View::ActiveRuns;
-            app.rebuild_filtered_active_builds();
+            app.active_runs.rebuild(
+                &app.active_builds,
+                &app.filter_definition_ids,
+                &app.search.query,
+            );
             Action::None
         }
 
@@ -288,8 +292,9 @@ fn handle_open_in_browser(app: &App) -> Action {
             .get(app.pipelines.nav.index())
             .map(|def| app.endpoints_web_definition(def.id)),
         View::ActiveRuns => app
-            .filtered_active_builds
-            .get(app.active_runs_nav.index())
+            .active_runs
+            .filtered
+            .get(app.active_runs.nav.index())
             .map(|b| app.endpoints_web_build(b.id)),
         View::BuildHistory => app
             .build_history
@@ -310,9 +315,9 @@ fn handle_open_in_browser(app: &App) -> Action {
 
 fn handle_cancel_request(app: &mut App) -> Action {
     // Batch cancel: if items are selected in Active Runs, cancel all of them
-    if app.view == View::ActiveRuns && !app.selected_builds.is_empty() {
-        let count = app.selected_builds.len();
-        let build_ids: Vec<u32> = app.selected_builds.iter().copied().collect();
+    if app.view == View::ActiveRuns && !app.active_runs.selected.is_empty() {
+        let count = app.active_runs.selected.len();
+        let build_ids: Vec<u32> = app.active_runs.selected.iter().copied().collect();
         app.confirm_prompt = Some(ConfirmPrompt {
             message: format!("Cancel {} selected build(s)?  [y/N]", count),
             action: ConfirmAction::CancelBuilds { build_ids },
@@ -323,7 +328,7 @@ fn handle_cancel_request(app: &mut App) -> Action {
     // Single cancel: cursor item
     let build = match app.view {
         View::LogViewer => app.log_viewer.selected_build(),
-        View::ActiveRuns => app.filtered_active_builds.get(app.active_runs_nav.index()),
+        View::ActiveRuns => app.active_runs.filtered.get(app.active_runs.nav.index()),
         View::BuildHistory => app.build_history.builds.get(app.build_history.nav.index()),
         _ => None,
     };
@@ -516,8 +521,12 @@ fn rebuild_search_results(app: &mut App) {
             app.pipelines.nav.set_index(0);
         }
         View::ActiveRuns => {
-            app.rebuild_filtered_active_builds();
-            app.active_runs_nav.set_index(0);
+            app.active_runs.rebuild(
+                &app.active_builds,
+                &app.filter_definition_ids,
+                &app.search.query,
+            );
+            app.active_runs.nav.set_index(0);
         }
         _ => {}
     }
@@ -558,8 +567,9 @@ fn handle_enter(app: &mut App) -> Action {
         }
         View::ActiveRuns => {
             if let Some(build) = app
-                .filtered_active_builds
-                .get(app.active_runs_nav.index())
+                .active_runs
+                .filtered
+                .get(app.active_runs.nav.index())
                 .cloned()
             {
                 let build_id = build.id;

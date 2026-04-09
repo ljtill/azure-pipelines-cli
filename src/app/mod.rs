@@ -19,6 +19,47 @@ pub struct BuildHistoryState {
     pub return_to: Option<View>,
 }
 
+/// State for the Active Runs view.
+#[derive(Debug, Default)]
+pub struct ActiveRunsState {
+    pub filtered: Vec<Build>,
+    pub nav: nav::ListNav,
+    pub selected: HashSet<u32>,
+}
+
+impl ActiveRunsState {
+    pub fn rebuild(
+        &mut self,
+        active_builds: &[Build],
+        filter_definition_ids: &[u32],
+        search_query: &str,
+    ) {
+        let base = active_builds.iter().filter(|b| {
+            if !filter_definition_ids.is_empty()
+                && !filter_definition_ids.contains(&b.definition.id)
+            {
+                return false;
+            }
+            true
+        });
+
+        if search_query.is_empty() {
+            self.filtered = base.cloned().collect();
+        } else {
+            let q = search_query.to_lowercase();
+            self.filtered = base
+                .filter(|b| {
+                    b.definition.name.to_lowercase().contains(&q)
+                        || b.build_number.to_lowercase().contains(&q)
+                        || b.short_branch().to_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect();
+        }
+        self.nav.set_len(self.filtered.len());
+    }
+}
+
 /// State for the Pipelines flat-list view.
 #[derive(Debug, Default)]
 pub struct PipelinesState {
@@ -154,18 +195,14 @@ pub struct App {
     // Confirmation prompt
     pub confirm_prompt: Option<ConfirmPrompt>,
 
-    // Multi-select (Active Runs)
-    pub selected_builds: HashSet<u32>,
+    // Active Runs view
+    pub active_runs: ActiveRunsState,
 
     // List navigation
     pub dashboard_nav: nav::ListNav,
-    pub active_runs_nav: nav::ListNav,
 
     // Pipelines view
     pub pipelines: PipelinesState,
-
-    // Search
-    pub filtered_active_builds: Vec<Build>,
 
     // Status
     pub last_refresh: Option<DateTime<Utc>>,
@@ -199,14 +236,11 @@ impl App {
 
             confirm_prompt: None,
 
-            selected_builds: HashSet::new(),
+            active_runs: ActiveRunsState::default(),
 
             dashboard_nav: nav::ListNav::default(),
-            active_runs_nav: nav::ListNav::default(),
 
             pipelines: PipelinesState::default(),
-
-            filtered_active_builds: Vec::new(),
 
             last_refresh: None,
             notifications: Notifications::new(10),
@@ -280,7 +314,7 @@ impl App {
         match self.view {
             View::Dashboard => &mut self.dashboard_nav,
             View::Pipelines => &mut self.pipelines.nav,
-            View::ActiveRuns => &mut self.active_runs_nav,
+            View::ActiveRuns => &mut self.active_runs.nav,
             View::BuildHistory => &mut self.build_history.nav,
             View::LogViewer => self.log_viewer.nav_mut(),
         }
@@ -292,30 +326,6 @@ impl App {
 
     pub fn endpoints_web_definition(&self, definition_id: u32) -> String {
         self.endpoints.web_definition(definition_id)
-    }
-
-    /// Rebuild the filtered active builds list from search query.
-    pub fn rebuild_filtered_active_builds(&mut self) {
-        let base = self
-            .active_builds
-            .iter()
-            .filter(|b| self.matches_build_filter(b));
-
-        if self.search.query.is_empty() {
-            self.filtered_active_builds = base.cloned().collect();
-        } else {
-            let q = self.search.query.to_lowercase();
-            self.filtered_active_builds = base
-                .filter(|b| {
-                    b.definition.name.to_lowercase().contains(&q)
-                        || b.build_number.to_lowercase().contains(&q)
-                        || b.short_branch().to_lowercase().contains(&q)
-                })
-                .cloned()
-                .collect();
-        }
-        self.active_runs_nav
-            .set_len(self.filtered_active_builds.len());
     }
 }
 
@@ -420,7 +430,7 @@ mod tests {
 
         app.view = View::ActiveRuns;
         app.current_nav_mut().set_len(2);
-        assert_eq!(app.active_runs_nav.index(), 0);
+        assert_eq!(app.active_runs.nav.index(), 0);
     }
 
     #[test]

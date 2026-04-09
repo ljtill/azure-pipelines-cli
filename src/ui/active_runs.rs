@@ -30,12 +30,13 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let name_width = (area.width as usize).saturating_sub(81).clamp(15, 60);
 
     let items: Vec<ListItem> = app
-        .filtered_active_builds
+        .active_runs
+        .filtered
         .iter()
         .enumerate()
         .map(|(i, build)| {
             let elapsed = build_elapsed(build);
-            let selected = app.selected_builds.contains(&build.id);
+            let selected = app.active_runs.selected.contains(&build.id);
             let check = if selected { "✓ " } else { "  " };
 
             ListItem::new(Line::from(vec![
@@ -61,7 +62,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(format!("{:<20} ", build.requestor()), theme::MUTED),
                 Span::styled(elapsed, theme::WARNING),
             ]))
-            .style(if i == app.active_runs_nav.index() {
+            .style(if i == app.active_runs.nav.index() {
                 theme::SELECTED
             } else {
                 Style::default()
@@ -69,8 +70,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let sel_count = app.selected_builds.len();
-    let filtered = app.filtered_active_builds.len();
+    let sel_count = app.active_runs.selected.len();
+    let filtered = app.active_runs.filtered.len();
     let total = app.active_builds.len();
     let title = if sel_count > 0 {
         format!(
@@ -90,6 +91,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.active_runs_nav.index()));
+    state.select(Some(app.active_runs.nav.index()));
     f.render_stateful_widget(list, list_area, &mut state);
 }

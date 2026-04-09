@@ -356,11 +356,15 @@ mod tests {
         build.definition.name = "Outside Infra".to_string();
         app.active_builds = vec![build];
 
-        app.rebuild_filtered_active_builds();
+        app.active_runs.rebuild(
+            &app.active_builds,
+            &app.filter_definition_ids,
+            &app.search.query,
+        );
 
         // Build should still appear because folder filters can't apply to builds.
-        assert_eq!(app.filtered_active_builds.len(), 1);
-        assert_eq!(app.filtered_active_builds[0].definition.id, 99);
+        assert_eq!(app.active_runs.filtered.len(), 1);
+        assert_eq!(app.active_runs.filtered[0].definition.id, 99);
     }
 
     // --- rebuild_filtered_active_builds ---
@@ -377,8 +381,12 @@ mod tests {
         app.active_builds = vec![b1, b2];
 
         app.search.query = "deploy".to_string();
-        app.rebuild_filtered_active_builds();
-        assert_eq!(app.filtered_active_builds.len(), 1);
-        assert_eq!(app.filtered_active_builds[0].definition.name, "Deploy");
+        app.active_runs.rebuild(
+            &app.active_builds,
+            &app.filter_definition_ids,
+            &app.search.query,
+        );
+        assert_eq!(app.active_runs.filtered.len(), 1);
+        assert_eq!(app.active_runs.filtered[0].definition.name, "Deploy");
     }
 }

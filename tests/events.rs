@@ -243,7 +243,11 @@ fn enter_on_active_runs_fetches_timeline() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
     app.active_builds = vec![make_build(42, BuildStatus::InProgress, None)];
-    app.rebuild_filtered_active_builds();
+    app.active_runs.rebuild(
+        &app.active_builds,
+        &app.filter_definition_ids,
+        &app.search.query,
+    );
 
     let action = handle_key(&mut app, key(KeyCode::Enter));
     assert!(
@@ -331,16 +335,20 @@ fn space_toggles_in_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
     app.active_builds = vec![make_build(10, BuildStatus::InProgress, None)];
-    app.rebuild_filtered_active_builds();
+    app.active_runs.rebuild(
+        &app.active_builds,
+        &app.filter_definition_ids,
+        &app.search.query,
+    );
 
     // Toggle on
     let action = handle_key(&mut app, key(KeyCode::Char(' ')));
-    assert!(app.selected_builds.contains(&10));
+    assert!(app.active_runs.selected.contains(&10));
     assert!(matches!(action, Action::None));
 
     // Toggle off
     let action = handle_key(&mut app, key(KeyCode::Char(' ')));
-    assert!(!app.selected_builds.contains(&10));
+    assert!(!app.active_runs.selected.contains(&10));
     assert!(matches!(action, Action::None));
 }
 
@@ -349,7 +357,7 @@ fn space_noop_on_other_views() {
     let mut app = test_app();
     app.view = View::Dashboard;
     let action = handle_key(&mut app, key(KeyCode::Char(' ')));
-    assert!(app.selected_builds.is_empty());
+    assert!(app.active_runs.selected.is_empty());
     assert!(matches!(action, Action::None));
 }
 
@@ -362,7 +370,11 @@ fn c_sets_confirm_on_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
     app.active_builds = vec![make_build(7, BuildStatus::InProgress, None)];
-    app.rebuild_filtered_active_builds();
+    app.active_runs.rebuild(
+        &app.active_builds,
+        &app.filter_definition_ids,
+        &app.search.query,
+    );
 
     let action = handle_key(&mut app, key(KeyCode::Char('c')));
     assert!(app.confirm_prompt.is_some());

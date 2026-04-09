@@ -214,7 +214,11 @@ pub fn handle_message(
                 &app.filter_definition_ids,
                 &app.search.query,
             );
-            app.rebuild_filtered_active_builds();
+            app.active_runs.rebuild(
+                &app.active_builds,
+                &app.filter_definition_ids,
+                &app.search.query,
+            );
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
         }
@@ -305,7 +309,7 @@ pub fn handle_message(
             }
         }
         AppMessage::BuildsCancelled { cancelled, failed } => {
-            app.selected_builds.clear();
+            app.active_runs.selected.clear();
             spawn_data_refresh(client, tx);
             if app.view == View::BuildHistory {
                 spawn_build_history_refresh(app, client, tx);
@@ -567,7 +571,11 @@ mod tests {
             &app.filter_definition_ids,
             &app.search.query,
         );
-        app.rebuild_filtered_active_builds();
+        app.active_runs.rebuild(
+            &app.active_builds,
+            &app.filter_definition_ids,
+            &app.search.query,
+        );
         app.last_refresh = Some(chrono::Utc::now());
         app.loading = false;
 
@@ -608,13 +616,17 @@ mod tests {
             &app.filter_definition_ids,
             &app.search.query,
         );
-        app.rebuild_filtered_active_builds();
+        app.active_runs.rebuild(
+            &app.active_builds,
+            &app.filter_definition_ids,
+            &app.search.query,
+        );
         app.last_refresh = Some(chrono::Utc::now());
         app.loading = false;
 
         assert_eq!(app.definitions.len(), 1);
         assert_eq!(app.pipelines.filtered.len(), 1);
-        assert_eq!(app.filtered_active_builds.len(), 0);
+        assert_eq!(app.active_runs.filtered.len(), 0);
     }
 
     // -----------------------------------------------------------------------
@@ -787,13 +799,13 @@ mod tests {
     #[test]
     fn batch_cancel_clears_selections() {
         let mut app = make_app();
-        app.selected_builds.insert(1);
-        app.selected_builds.insert(2);
-        assert_eq!(app.selected_builds.len(), 2);
+        app.active_runs.selected.insert(1);
+        app.active_runs.selected.insert(2);
+        assert_eq!(app.active_runs.selected.len(), 2);
 
         // BuildsCancelled handler clears selections
-        app.selected_builds.clear();
-        assert!(app.selected_builds.is_empty());
+        app.active_runs.selected.clear();
+        assert!(app.active_runs.selected.is_empty());
     }
 
     #[test]
@@ -802,7 +814,7 @@ mod tests {
         // Simulate partial-failure path from BuildsCancelled
         let cancelled = 2u32;
         let failed = 1u32;
-        app.selected_builds.clear();
+        app.active_runs.selected.clear();
         app.notifications
             .error(format!("Cancelled {cancelled}, {failed} failed"));
         let n = app.notifications.clone_current().unwrap();
@@ -815,7 +827,7 @@ mod tests {
         let mut app = make_app();
         let cancelled = 3u32;
         let failed = 0u32;
-        app.selected_builds.clear();
+        app.active_runs.selected.clear();
         if failed > 0 {
             app.notifications
                 .error(format!("Cancelled {cancelled}, {failed} failed"));
