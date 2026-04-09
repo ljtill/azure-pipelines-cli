@@ -1,17 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::api::models::{BuildResult, TaskState};
+use crate::api::models::{Build, BuildResult, BuildStatus, BuildTimeline, TaskState};
 
-use super::App;
-
-/// A task record extracted from the timeline for auto-selection.
-struct TaskCandidate {
-    name: String,
-    state: Option<TaskState>,
-    result: Option<BuildResult>,
-    parent_id: Option<String>,
-    log_id: u32,
-}
+use super::View;
+use super::nav::ListNav;
 
 /// A row in the timeline tree view — Stage, Job, Task, or Checkpoint.
 #[derive(Debug, Clone)]
@@ -51,11 +43,319 @@ pub enum TimelineRow {
     },
 }
 
-impl App {
+/// State for the log viewer screen — reset as a unit on navigation.
+pub struct LogViewerState {
+    selected_build: Option<Build>,
+    build_timeline: Option<BuildTimeline>,
+    timeline_rows: Vec<TimelineRow>,
+    collapsed_stages: HashSet<String>,
+    collapsed_jobs: HashSet<String>,
+    log_content: Vec<String>,
+    log_auto_scroll: bool,
+    log_generation: u64,
+    timeline_initialized: bool,
+    follow_mode: bool,
+    followed_task_name: String,
+    followed_log_id: Option<u32>,
+    log_entries_nav: ListNav,
+    log_scroll_offset: u16,
+    /// The view to return to when pressing Esc from LogViewer.
+    return_to_view: View,
+}
+
+impl Default for LogViewerState {
+    fn default() -> Self {
+        Self {
+            selected_build: None,
+            build_timeline: None,
+            timeline_rows: Vec::new(),
+            collapsed_stages: HashSet::new(),
+            collapsed_jobs: HashSet::new(),
+            log_content: Vec::new(),
+            log_auto_scroll: false,
+            log_generation: 0,
+            timeline_initialized: false,
+            follow_mode: false,
+            followed_task_name: String::new(),
+            followed_log_id: None,
+            log_entries_nav: ListNav::default(),
+            log_scroll_offset: 0,
+            return_to_view: View::BuildHistory,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
+impl LogViewerState {
+    /// Create a new log viewer state for navigating to a specific build.
+    pub(super) fn new_for_build(build: Build, return_to: View, generation: u64) -> Self {
+        Self {
+            selected_build: Some(build),
+            log_auto_scroll: true,
+            follow_mode: true,
+            log_generation: generation,
+            return_to_view: return_to,
+            ..Default::default()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Getters
+// ---------------------------------------------------------------------------
+impl LogViewerState {
+    pub fn selected_build(&self) -> Option<&Build> {
+        self.selected_build.as_ref()
+    }
+
+    #[allow(dead_code)]
+    pub fn build_timeline(&self) -> Option<&BuildTimeline> {
+        self.build_timeline.as_ref()
+    }
+
+    pub fn timeline_rows(&self) -> &[TimelineRow] {
+        &self.timeline_rows
+    }
+
+    pub fn log_content(&self) -> &[String] {
+        &self.log_content
+    }
+
+    pub fn log_auto_scroll(&self) -> bool {
+        self.log_auto_scroll
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.log_generation
+    }
+
+    pub fn is_following(&self) -> bool {
+        self.follow_mode
+    }
+
+    pub fn followed_task_name(&self) -> &str {
+        &self.followed_task_name
+    }
+
+    pub fn followed_log_id(&self) -> Option<u32> {
+        self.followed_log_id
+    }
+
+    pub fn log_scroll_offset(&self) -> u16 {
+        self.log_scroll_offset
+    }
+
+    pub fn return_to_view(&self) -> View {
+        self.return_to_view
+    }
+
+    pub fn nav(&self) -> &ListNav {
+        &self.log_entries_nav
+    }
+
+    pub fn nav_mut(&mut self) -> &mut ListNav {
+        &mut self.log_entries_nav
+    }
+}
+
+// ---------------------------------------------------------------------------
+// State transitions
+// ---------------------------------------------------------------------------
+impl LogViewerState {
+    pub fn enter_follow_mode(&mut self) {
+        self.follow_mode = true;
+    }
+
+    pub fn enter_inspect_mode(&mut self) {
+        self.follow_mode = false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mutators
+// ---------------------------------------------------------------------------
+impl LogViewerState {
+    pub fn set_build_timeline(&mut self, timeline: BuildTimeline) {
+        self.build_timeline = Some(timeline);
+    }
+
+    pub fn set_log_content(&mut self, content: String) {
+        self.log_content = content.lines().map(String::from).collect();
+        self.log_auto_scroll = true;
+        self.log_scroll_offset = 0;
+    }
+
+    pub fn set_followed(&mut self, task_name: String, log_id: u32) {
+        self.followed_task_name = task_name;
+        self.followed_log_id = Some(log_id);
+    }
+
+    pub fn clear_log(&mut self) {
+        self.log_content.clear();
+    }
+
+    #[allow(dead_code)]
+    pub fn set_log_auto_scroll(&mut self, auto: bool) {
+        self.log_auto_scroll = auto;
+    }
+
+    #[allow(dead_code)]
+    pub fn set_log_scroll_offset(&mut self, offset: u16) {
+        self.log_scroll_offset = offset;
+    }
+
+    pub fn set_generation(&mut self, generation: u64) {
+        self.log_generation = generation;
+    }
+
+    pub fn scroll_up(&mut self, amount: u16) {
+        self.log_auto_scroll = false;
+        self.log_scroll_offset = self.log_scroll_offset.saturating_sub(amount);
+    }
+
+    pub fn scroll_down(&mut self, amount: u16) {
+        self.log_scroll_offset = self.log_scroll_offset.saturating_add(amount);
+    }
+
+    #[allow(dead_code)]
+    pub fn set_timeline_rows(&mut self, rows: Vec<TimelineRow>) {
+        self.timeline_rows = rows;
+        self.log_entries_nav.set_len(self.timeline_rows.len());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline collapse state
+// ---------------------------------------------------------------------------
+impl LogViewerState {
+    #[allow(dead_code)]
+    pub fn is_stage_collapsed(&self, id: &str) -> bool {
+        self.collapsed_stages.contains(id)
+    }
+
+    #[allow(dead_code)]
+    pub fn is_job_collapsed(&self, id: &str) -> bool {
+        self.collapsed_jobs.contains(id)
+    }
+
+    pub fn collapse_stage(&mut self, id: String) {
+        self.collapsed_stages.insert(id);
+    }
+
+    pub fn expand_stage(&mut self, id: &str) {
+        self.collapsed_stages.remove(id);
+    }
+
+    pub fn collapse_job(&mut self, id: String) {
+        self.collapsed_jobs.insert(id);
+    }
+
+    pub fn expand_job(&mut self, id: &str) {
+        self.collapsed_jobs.remove(id);
+    }
+
+    pub fn toggle_stage(&mut self, id: &str) -> bool {
+        if self.collapsed_stages.contains(id) {
+            self.collapsed_stages.remove(id);
+            false
+        } else {
+            self.collapsed_stages.insert(id.to_owned());
+            true
+        }
+    }
+
+    pub fn toggle_job(&mut self, id: &str) -> bool {
+        if self.collapsed_jobs.contains(id) {
+            self.collapsed_jobs.remove(id);
+            false
+        } else {
+            self.collapsed_jobs.insert(id.to_owned());
+            true
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is_timeline_initialized(&self) -> bool {
+        self.timeline_initialized
+    }
+
+    #[allow(dead_code)]
+    pub fn set_timeline_initialized(&mut self) {
+        self.timeline_initialized = true;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Build status derived from timeline
+// ---------------------------------------------------------------------------
+impl LogViewerState {
+    /// Update `selected_build` status/result from timeline records.
+    /// Called on each timeline refresh so the log viewer header stays current.
+    pub fn refresh_build_status_from_timeline(&mut self) {
+        let timeline = match &self.build_timeline {
+            Some(t) => t,
+            None => return,
+        };
+        let build = match &mut self.selected_build {
+            Some(b) => b,
+            None => return,
+        };
+
+        let stages: Vec<_> = timeline
+            .records
+            .iter()
+            .filter(|r| r.record_type == "Stage" && r.parent_id.is_none())
+            .collect();
+
+        if stages.is_empty() {
+            return;
+        }
+
+        let all_completed = stages.iter().all(|s| s.state == Some(TaskState::Completed));
+
+        if all_completed && build.status.is_in_progress() {
+            build.status = BuildStatus::Completed;
+            let has_failed = stages.iter().any(|s| s.result == Some(BuildResult::Failed));
+            let has_partial = stages
+                .iter()
+                .any(|s| s.result == Some(BuildResult::PartiallySucceeded));
+            let has_canceled = stages
+                .iter()
+                .any(|s| s.result == Some(BuildResult::Canceled));
+
+            build.result = Some(if has_failed {
+                BuildResult::Failed
+            } else if has_partial {
+                BuildResult::PartiallySucceeded
+            } else if has_canceled {
+                BuildResult::Canceled
+            } else {
+                BuildResult::Succeeded
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline tree building & queries (moved from app/timeline.rs)
+// ---------------------------------------------------------------------------
+
+/// A task record extracted from the timeline for auto-selection.
+struct TaskCandidate {
+    name: String,
+    state: Option<TaskState>,
+    result: Option<BuildResult>,
+    parent_id: Option<String>,
+    log_id: u32,
+}
+
+impl LogViewerState {
     /// Pick the most relevant timeline task to auto-show logs for.
     /// Returns (row_index, log_id) if found. Ensures parent stage/job are expanded.
     pub fn auto_select_log_entry(&mut self) -> Option<(usize, u32)> {
-        let timeline = self.log_viewer.build_timeline.as_ref()?;
+        let timeline = self.build_timeline.as_ref()?;
         let tasks: Vec<TaskCandidate> = timeline
             .records
             .iter()
@@ -74,12 +374,10 @@ impl App {
         }
 
         let is_running = self
-            .log_viewer
             .selected_build
             .as_ref()
             .is_some_and(|b| b.status.is_in_progress());
 
-        // Find best task index: in-progress > failed > last
         let best_idx = if is_running {
             tasks
                 .iter()
@@ -98,18 +396,18 @@ impl App {
         let parent_job_id = best.parent_id.clone();
 
         // Walk up the ancestor chain to expand all parent nodes.
-        if let Some(timeline) = self.log_viewer.build_timeline.as_ref() {
+        if let Some(timeline) = self.build_timeline.as_ref() {
             let records = &timeline.records;
             let mut current_id = parent_job_id.clone();
             while let Some(cid) = &current_id {
                 if let Some(rec) = records.iter().find(|r| r.id == *cid) {
                     match rec.record_type.as_str() {
                         "Stage" => {
-                            self.log_viewer.collapsed_stages.remove(cid.as_str());
+                            self.collapsed_stages.remove(cid.as_str());
                             break;
                         }
                         "Phase" | "Job" => {
-                            self.log_viewer.collapsed_jobs.remove(cid.as_str());
+                            self.collapsed_jobs.remove(cid.as_str());
                         }
                         _ => {}
                     }
@@ -123,18 +421,18 @@ impl App {
         self.rebuild_timeline_rows();
 
         let row_idx = self
-            .log_viewer.timeline_rows
+            .timeline_rows
             .iter()
             .position(|row| matches!(row, TimelineRow::Task { log_id: Some(lid), .. } if *lid == log_id))
             .or_else(|| {
-                self.log_viewer.timeline_rows.iter().position(|row| {
+                self.timeline_rows.iter().position(|row| {
                     matches!(row, TimelineRow::Task { name, parent_job_id: pjid, .. }
                         if parent_job_id.as_ref().is_some_and(|pid| pid == pjid) && *name == best_name)
                 })
             });
 
         if let Some(idx) = row_idx {
-            self.log_viewer.log_entries_nav.set_index(idx);
+            self.log_entries_nav.set_index(idx);
             Some((idx, log_id))
         } else {
             None
@@ -143,7 +441,7 @@ impl App {
 
     /// Find the currently active task without moving cursor or changing state.
     pub fn find_active_task(&self) -> Option<(String, u32)> {
-        let timeline = self.log_viewer.build_timeline.as_ref()?;
+        let timeline = self.build_timeline.as_ref()?;
         let tasks: Vec<_> = timeline
             .records
             .iter()
@@ -155,7 +453,6 @@ impl App {
         }
 
         let is_running = self
-            .log_viewer
             .selected_build
             .as_ref()
             .is_some_and(|b| b.status.is_in_progress());
@@ -184,10 +481,10 @@ impl App {
     /// ADO timeline hierarchy: Stage → Phase → Job → Task
     /// We display: Stage → Phase (as "Job" row) → Task
     pub fn rebuild_timeline_rows(&mut self) {
-        let timeline = match &self.log_viewer.build_timeline {
+        let timeline = match &self.build_timeline {
             Some(t) => t,
             None => {
-                self.log_viewer.timeline_rows.clear();
+                self.timeline_rows.clear();
                 return;
             }
         };
@@ -212,14 +509,14 @@ impl App {
         stages.sort_by_key(|s| s.order.unwrap_or(999));
 
         // Pre-collapse all on first load for a compact overview
-        if !self.log_viewer.timeline_initialized {
-            self.log_viewer.timeline_initialized = true;
+        if !self.timeline_initialized {
+            self.timeline_initialized = true;
             for stage in &stages {
-                self.log_viewer.collapsed_stages.insert(stage.id.clone());
+                self.collapsed_stages.insert(stage.id.clone());
                 if let Some(phase_children) = children_of.get(&stage.id) {
                     for child in phase_children {
                         if child.record_type == "Phase" || child.record_type == "Job" {
-                            self.log_viewer.collapsed_jobs.insert(child.id.clone());
+                            self.collapsed_jobs.insert(child.id.clone());
                         }
                     }
                 }
@@ -229,7 +526,7 @@ impl App {
         let mut rows = Vec::new();
 
         for stage in &stages {
-            let stage_collapsed = self.log_viewer.collapsed_stages.contains(&stage.id);
+            let stage_collapsed = self.collapsed_stages.contains(&stage.id);
             rows.push(TimelineRow::Stage {
                 id: stage.id.clone(),
                 identifier: stage.identifier.clone(),
@@ -246,20 +543,19 @@ impl App {
             // Insert checkpoint rows (approval gates) before jobs
             if let Some(stage_children) = children_of.get(&stage.id) {
                 for child in stage_children.iter() {
-                    if child.record_type == "Checkpoint" {
-                        // Look for Checkpoint.Approval sub-records
-                        if let Some(cp_children) = children_of.get(&child.id) {
-                            for cp_child in cp_children.iter() {
-                                if cp_child.record_type.starts_with("Checkpoint.Approval") {
-                                    rows.push(TimelineRow::Checkpoint {
-                                        name: cp_child.name.clone(),
-                                        record_type: cp_child.record_type.clone(),
-                                        state: cp_child.state,
-                                        result: cp_child.result,
-                                        approval_id: cp_child.identifier.clone(),
-                                        parent_stage_id: stage.id.clone(),
-                                    });
-                                }
+                    if child.record_type == "Checkpoint"
+                        && let Some(cp_children) = children_of.get(&child.id)
+                    {
+                        for cp_child in cp_children.iter() {
+                            if cp_child.record_type.starts_with("Checkpoint.Approval") {
+                                rows.push(TimelineRow::Checkpoint {
+                                    name: cp_child.name.clone(),
+                                    record_type: cp_child.record_type.clone(),
+                                    state: cp_child.state,
+                                    result: cp_child.result,
+                                    approval_id: cp_child.identifier.clone(),
+                                    parent_stage_id: stage.id.clone(),
+                                });
                             }
                         }
                     }
@@ -277,7 +573,7 @@ impl App {
             phases.sort_by_key(|p| p.order.unwrap_or(999));
 
             for phase in &phases {
-                let phase_collapsed = self.log_viewer.collapsed_jobs.contains(&phase.id);
+                let phase_collapsed = self.collapsed_jobs.contains(&phase.id);
                 rows.push(TimelineRow::Job {
                     id: phase.id.clone(),
                     name: phase.name.clone(),
@@ -325,33 +621,23 @@ impl App {
             }
         }
 
-        self.log_viewer.timeline_rows = rows;
-        self.log_viewer
-            .log_entries_nav
-            .set_len(self.log_viewer.timeline_rows.len());
+        self.timeline_rows = rows;
+        self.log_entries_nav.set_len(self.timeline_rows.len());
     }
 
     /// Toggle collapse for a timeline stage or job at the given row index.
     pub fn toggle_timeline_node(&mut self, index: usize) -> bool {
-        if let Some(row) = self.log_viewer.timeline_rows.get(index) {
+        if let Some(row) = self.timeline_rows.get(index) {
             match row {
                 TimelineRow::Stage { id, .. } => {
                     let id = id.clone();
-                    if self.log_viewer.collapsed_stages.contains(&id) {
-                        self.log_viewer.collapsed_stages.remove(&id);
-                    } else {
-                        self.log_viewer.collapsed_stages.insert(id);
-                    }
+                    self.toggle_stage(&id);
                     self.rebuild_timeline_rows();
                     return true;
                 }
                 TimelineRow::Job { id, .. } => {
                     let id = id.clone();
-                    if self.log_viewer.collapsed_jobs.contains(&id) {
-                        self.log_viewer.collapsed_jobs.remove(&id);
-                    } else {
-                        self.log_viewer.collapsed_jobs.insert(id);
-                    }
+                    self.toggle_job(&id);
                     self.rebuild_timeline_rows();
                     return true;
                 }
@@ -363,17 +649,17 @@ impl App {
 
     /// Collapse a timeline stage or job. Returns true if it was expanded.
     pub fn collapse_timeline_node(&mut self, index: usize) -> bool {
-        if let Some(row) = self.log_viewer.timeline_rows.get(index) {
+        if let Some(row) = self.timeline_rows.get(index) {
             match row {
                 TimelineRow::Stage { id, collapsed, .. } if !collapsed => {
                     let id = id.clone();
-                    self.log_viewer.collapsed_stages.insert(id);
+                    self.collapse_stage(id);
                     self.rebuild_timeline_rows();
                     return true;
                 }
                 TimelineRow::Job { id, collapsed, .. } if !collapsed => {
                     let id = id.clone();
-                    self.log_viewer.collapsed_jobs.insert(id);
+                    self.collapse_job(id);
                     self.rebuild_timeline_rows();
                     return true;
                 }
@@ -385,17 +671,17 @@ impl App {
 
     /// Expand a timeline stage or job. Returns true if it was collapsed.
     pub fn expand_timeline_node(&mut self, index: usize) -> bool {
-        if let Some(row) = self.log_viewer.timeline_rows.get(index) {
+        if let Some(row) = self.timeline_rows.get(index) {
             match row {
                 TimelineRow::Stage { id, collapsed, .. } if *collapsed => {
                     let id = id.clone();
-                    self.log_viewer.collapsed_stages.remove(&id);
+                    self.expand_stage(&id);
                     self.rebuild_timeline_rows();
                     return true;
                 }
                 TimelineRow::Job { id, collapsed, .. } if *collapsed => {
                     let id = id.clone();
-                    self.log_viewer.collapsed_jobs.remove(&id);
+                    self.expand_job(&id);
                     self.rebuild_timeline_rows();
                     return true;
                 }
@@ -407,11 +693,11 @@ impl App {
 
     /// Find the parent row index for a timeline row (job→stage, task→job).
     pub fn find_timeline_parent_index(&self, index: usize) -> Option<usize> {
-        if let Some(row) = self.log_viewer.timeline_rows.get(index) {
+        if let Some(row) = self.timeline_rows.get(index) {
             match row {
                 TimelineRow::Task { parent_job_id, .. } => {
                     return self
-                        .log_viewer.timeline_rows
+                        .timeline_rows
                         .iter()
                         .enumerate()
                         .rev()
@@ -425,7 +711,7 @@ impl App {
                     parent_stage_id, ..
                 } => {
                     return self
-                        .log_viewer.timeline_rows
+                        .timeline_rows
                         .iter()
                         .enumerate()
                         .rev()
@@ -443,20 +729,17 @@ impl App {
 
     /// Check what kind of timeline row is at the given index.
     pub fn timeline_row_kind(&self, index: usize) -> Option<&str> {
-        self.log_viewer
-            .timeline_rows
-            .get(index)
-            .map(|row| match row {
-                TimelineRow::Stage { .. } => "stage",
-                TimelineRow::Job { .. } => "job",
-                TimelineRow::Task { .. } => "task",
-                TimelineRow::Checkpoint { .. } => "checkpoint",
-            })
+        self.timeline_rows.get(index).map(|row| match row {
+            TimelineRow::Stage { .. } => "stage",
+            TimelineRow::Job { .. } => "job",
+            TimelineRow::Task { .. } => "task",
+            TimelineRow::Checkpoint { .. } => "checkpoint",
+        })
     }
 
     /// Get the log_id for a Task timeline row at the given index.
     pub fn timeline_task_log_id(&self, index: usize) -> Option<u32> {
-        if let Some(TimelineRow::Task { log_id, .. }) = self.log_viewer.timeline_rows.get(index) {
+        if let Some(TimelineRow::Task { log_id, .. }) = self.timeline_rows.get(index) {
             *log_id
         } else {
             None
@@ -467,7 +750,7 @@ impl App {
     pub fn timeline_stage_ref_name(&self, index: usize) -> Option<String> {
         if let Some(TimelineRow::Stage {
             identifier, name, ..
-        }) = self.log_viewer.timeline_rows.get(index)
+        }) = self.timeline_rows.get(index)
         {
             Some(identifier.as_ref().unwrap_or(name).clone())
         } else {
@@ -477,9 +760,7 @@ impl App {
 
     /// Get the approval ID for a Checkpoint timeline row at the given index.
     pub fn timeline_approval_id(&self, index: usize) -> Option<String> {
-        if let Some(TimelineRow::Checkpoint { approval_id, .. }) =
-            self.log_viewer.timeline_rows.get(index)
-        {
+        if let Some(TimelineRow::Checkpoint { approval_id, .. }) = self.timeline_rows.get(index) {
             approval_id.clone()
         } else {
             None

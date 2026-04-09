@@ -8,8 +8,8 @@ use crate::api::models;
 use crate::events::Action;
 
 use super::App;
+use super::log_viewer::TimelineRow;
 use super::messages::AppMessage;
-use super::timeline::TimelineRow;
 
 pub fn handle_action(
     app: &mut App,
@@ -42,21 +42,23 @@ pub fn handle_action(
             });
         }
         Action::FetchTimeline(build_id) => {
-            spawn_timeline_fetch(client, tx, build_id, app.log_viewer.log_generation, false);
+            spawn_timeline_fetch(client, tx, build_id, app.log_viewer.generation(), false);
         }
         Action::FetchBuildLog { build_id, log_id } => {
-            spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.log_generation);
+            spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
         }
         Action::FollowLatest => {
             // Switch to follow mode: jump cursor to active task and fetch its log
-            if let Some((idx, log_id)) = app.auto_select_log_entry() {
-                if let Some(TimelineRow::Task { name, .. }) = app.log_viewer.timeline_rows.get(idx)
+            if let Some((idx, log_id)) = app.log_viewer.auto_select_log_entry() {
+                if let Some(TimelineRow::Task { name, .. }) =
+                    app.log_viewer.timeline_rows().get(idx)
                 {
-                    app.log_viewer.followed_task_name = name.clone();
+                    app.log_viewer.set_followed(name.clone(), log_id);
+                } else {
+                    app.log_viewer.set_followed(String::new(), log_id);
                 }
-                app.log_viewer.followed_log_id = Some(log_id);
-                if let Some(build) = &app.log_viewer.selected_build {
-                    spawn_log_fetch(client, tx, build.id, log_id, app.log_viewer.log_generation);
+                if let Some(build) = app.log_viewer.selected_build() {
+                    spawn_log_fetch(client, tx, build.id, log_id, app.log_viewer.generation());
                 }
             }
         }
@@ -240,55 +242,49 @@ pub fn handle_message(
             is_refresh,
         } => {
             // Discard stale timeline results
-            if generation != app.log_viewer.log_generation {
+            if generation != app.log_viewer.generation() {
                 return;
             }
 
-            app.log_viewer.build_timeline = Some(timeline);
+            app.log_viewer.set_build_timeline(timeline);
 
             // Update selected_build status from timeline data so the header stays current
-            app.refresh_build_status_from_timeline();
+            app.log_viewer.refresh_build_status_from_timeline();
 
             if !is_refresh {
                 // Initial load: full setup with auto-select
-                app.log_viewer.log_content.clear();
-                app.log_viewer.log_entries_nav.set_index(0);
-                app.log_viewer.follow_mode = true;
-                app.rebuild_timeline_rows();
+                app.log_viewer.clear_log();
+                app.log_viewer.nav_mut().set_index(0);
+                app.log_viewer.enter_follow_mode();
+                app.log_viewer.rebuild_timeline_rows();
 
-                if let Some((_idx, log_id)) = app.auto_select_log_entry() {
+                if let Some((_idx, log_id)) = app.log_viewer.auto_select_log_entry() {
                     if let Some(TimelineRow::Task { name, .. }) = app
                         .log_viewer
-                        .timeline_rows
-                        .get(app.log_viewer.log_entries_nav.index())
+                        .timeline_rows()
+                        .get(app.log_viewer.nav().index())
                     {
-                        app.log_viewer.followed_task_name = name.clone();
+                        app.log_viewer.set_followed(name.clone(), log_id);
+                    } else {
+                        app.log_viewer.set_followed(String::new(), log_id);
                     }
-                    app.log_viewer.followed_log_id = Some(log_id);
-                    spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.log_generation);
+                    spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
                 }
-            } else if app.log_viewer.follow_mode {
+            } else if app.log_viewer.is_following() {
                 // Refresh in follow mode: update tree, track latest active task
-                app.rebuild_timeline_rows();
+                app.log_viewer.rebuild_timeline_rows();
 
-                if let Some((task_name, log_id)) = app.find_active_task() {
-                    let task_changed = app.log_viewer.followed_log_id != Some(log_id);
-                    app.log_viewer.followed_task_name = task_name;
-                    app.log_viewer.followed_log_id = Some(log_id);
+                if let Some((task_name, log_id)) = app.log_viewer.find_active_task() {
+                    let task_changed = app.log_viewer.followed_log_id() != Some(log_id);
+                    app.log_viewer.set_followed(task_name, log_id);
 
                     if task_changed {
-                        spawn_log_fetch(
-                            client,
-                            tx,
-                            build_id,
-                            log_id,
-                            app.log_viewer.log_generation,
-                        );
+                        spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
                     }
                 }
             } else {
                 // Refresh in inspect mode: only update tree status, preserve cursor + log
-                app.rebuild_timeline_rows();
+                app.log_viewer.rebuild_timeline_rows();
             }
         }
         AppMessage::LogContent {
@@ -296,12 +292,10 @@ pub fn handle_message(
             generation,
         } => {
             // Discard stale log results
-            if generation != app.log_viewer.log_generation {
+            if generation != app.log_viewer.generation() {
                 return;
             }
-            app.log_viewer.log_content = content.lines().map(String::from).collect();
-            app.log_viewer.log_auto_scroll = true;
-            app.log_viewer.log_scroll_offset = 0;
+            app.log_viewer.set_log_content(content);
         }
         AppMessage::Error(msg) => {
             tracing::warn!(error = %msg, "app error");
@@ -310,8 +304,8 @@ pub fn handle_message(
         AppMessage::BuildCancelled => {
             app.notifications.success("Build cancelled");
             spawn_data_refresh(client, tx);
-            if let Some(build) = &app.log_viewer.selected_build {
-                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
+            if let Some(build) = app.log_viewer.selected_build() {
+                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
             }
         }
         AppMessage::BuildsCancelled { cancelled, failed } => {
@@ -327,16 +321,16 @@ pub fn handle_message(
         }
         AppMessage::StageRetried => {
             app.notifications.success("Stage retried");
-            if let Some(build) = &app.log_viewer.selected_build {
-                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
+            if let Some(build) = app.log_viewer.selected_build() {
+                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
             }
             spawn_data_refresh(client, tx);
         }
         AppMessage::CheckUpdated => {
             app.notifications.success("Check updated");
             spawn_data_refresh(client, tx);
-            if let Some(build) = &app.log_viewer.selected_build {
-                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.log_generation, true);
+            if let Some(build) = app.log_viewer.selected_build() {
+                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
             }
         }
         AppMessage::PipelineQueued {
@@ -345,7 +339,7 @@ pub fn handle_message(
         } => {
             let build_id = build.id;
             app.navigate_to_log_viewer(build);
-            spawn_timeline_fetch(client, tx, build_id, app.log_viewer.log_generation, false);
+            spawn_timeline_fetch(client, tx, build_id, app.log_viewer.generation(), false);
         }
     }
 }
@@ -440,10 +434,10 @@ pub fn spawn_data_refresh(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
 }
 
 pub fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
-    let generation = app.log_viewer.log_generation;
+    let generation = app.log_viewer.generation();
 
     // Re-fetch timeline for in-progress builds
-    if let Some(build) = &app.log_viewer.selected_build
+    if let Some(build) = app.log_viewer.selected_build()
         && build.status.is_in_progress()
     {
         spawn_timeline_fetch(client, tx, build.id, generation, true);
@@ -452,14 +446,15 @@ pub fn spawn_log_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMes
     // Re-fetch log content for the currently viewed task.
     // In follow mode: refresh the followed task's log.
     // In inspect mode: refresh the selected (pinned) task's log.
-    let log_id_to_refresh = if app.log_viewer.follow_mode {
-        app.log_viewer.followed_log_id
+    let log_id_to_refresh = if app.log_viewer.is_following() {
+        app.log_viewer.followed_log_id()
     } else {
-        app.timeline_task_log_id(app.log_viewer.log_entries_nav.index())
+        app.log_viewer
+            .timeline_task_log_id(app.log_viewer.nav().index())
     };
 
-    if !app.log_viewer.log_content.is_empty()
-        && let Some(build) = &app.log_viewer.selected_build
+    if !app.log_viewer.log_content().is_empty()
+        && let Some(build) = app.log_viewer.selected_build()
         && let Some(log_id) = log_id_to_refresh
     {
         let client = client.clone();

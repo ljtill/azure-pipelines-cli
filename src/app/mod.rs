@@ -1,19 +1,19 @@
 pub mod actions;
 mod dashboard;
+mod log_viewer;
 mod messages;
 pub mod nav;
 pub mod notifications;
 pub mod run;
-mod timeline;
 
 pub use dashboard::DashboardRow;
-pub use timeline::TimelineRow;
+pub use log_viewer::{LogViewerState, TimelineRow};
 
 use std::collections::{BTreeMap, HashSet};
 
 use chrono::{DateTime, Utc};
 
-use crate::api::models::{Approval, Build, BuildTimeline, PipelineDefinition};
+use crate::api::models::{Approval, Build, PipelineDefinition};
 
 use notifications::Notifications;
 
@@ -115,48 +115,6 @@ pub struct App {
     pub loading: bool,
 }
 
-/// State for the log viewer screen — reset as a unit on navigation.
-pub struct LogViewerState {
-    pub selected_build: Option<Build>,
-    pub build_timeline: Option<BuildTimeline>,
-    pub timeline_rows: Vec<TimelineRow>,
-    pub collapsed_stages: HashSet<String>,
-    pub collapsed_jobs: HashSet<String>,
-    pub log_content: Vec<String>,
-    pub log_auto_scroll: bool,
-    pub log_generation: u64,
-    pub timeline_initialized: bool,
-    pub follow_mode: bool,
-    pub followed_task_name: String,
-    pub followed_log_id: Option<u32>,
-    pub log_entries_nav: nav::ListNav,
-    pub log_scroll_offset: u16,
-    /// The view to return to when pressing Esc from LogViewer.
-    pub return_to_view: View,
-}
-
-impl Default for LogViewerState {
-    fn default() -> Self {
-        Self {
-            selected_build: None,
-            build_timeline: None,
-            timeline_rows: Vec::new(),
-            collapsed_stages: HashSet::new(),
-            collapsed_jobs: HashSet::new(),
-            log_content: Vec::new(),
-            log_auto_scroll: false,
-            log_generation: 0,
-            timeline_initialized: false,
-            follow_mode: false,
-            followed_task_name: String::new(),
-            followed_log_id: None,
-            log_entries_nav: nav::ListNav::default(),
-            log_scroll_offset: 0,
-            return_to_view: View::BuildHistory,
-        }
-    }
-}
-
 impl App {
     pub fn new(organization: &str, project: &str, config: &crate::config::Config) -> Self {
         Self {
@@ -215,17 +173,17 @@ impl App {
         }
         match self.view {
             View::LogViewer => {
-                let return_to = self.log_viewer.return_to_view;
-                let next_gen = self.log_viewer.log_generation + 1;
+                let return_to = self.log_viewer.return_to_view();
+                let next_gen = self.log_viewer.generation() + 1;
                 self.log_viewer = LogViewerState::default();
-                self.log_viewer.log_generation = next_gen;
+                // Preserve generation across resets to invalidate stale messages.
+                self.log_viewer.set_generation(next_gen);
 
                 match return_to {
                     View::BuildHistory => {
                         self.view = View::BuildHistory;
                     }
                     _ => {
-                        // Returning to a top-level view — clean up build history state
                         self.view = return_to;
                         self.selected_definition = None;
                         self.definition_builds.clear();
@@ -243,56 +201,6 @@ impl App {
         }
     }
 
-    /// Update `selected_build` status/result from timeline records.
-    /// Called on each timeline refresh so the log viewer header stays current.
-    pub fn refresh_build_status_from_timeline(&mut self) {
-        use crate::api::models::{BuildResult, BuildStatus, TaskState};
-
-        let timeline = match &self.log_viewer.build_timeline {
-            Some(t) => t,
-            None => return,
-        };
-        let build = match &mut self.log_viewer.selected_build {
-            Some(b) => b,
-            None => return,
-        };
-
-        // If all root stages are completed, the build is completed
-        let stages: Vec<_> = timeline
-            .records
-            .iter()
-            .filter(|r| r.record_type == "Stage" && r.parent_id.is_none())
-            .collect();
-
-        if stages.is_empty() {
-            return;
-        }
-
-        let all_completed = stages.iter().all(|s| s.state == Some(TaskState::Completed));
-
-        if all_completed && build.status.is_in_progress() {
-            build.status = BuildStatus::Completed;
-            // Derive overall result: Failed > PartiallySucceeded > Canceled > Succeeded
-            let has_failed = stages.iter().any(|s| s.result == Some(BuildResult::Failed));
-            let has_partial = stages
-                .iter()
-                .any(|s| s.result == Some(BuildResult::PartiallySucceeded));
-            let has_canceled = stages
-                .iter()
-                .any(|s| s.result == Some(BuildResult::Canceled));
-
-            build.result = Some(if has_failed {
-                BuildResult::Failed
-            } else if has_partial {
-                BuildResult::PartiallySucceeded
-            } else if has_canceled {
-                BuildResult::Canceled
-            } else {
-                BuildResult::Succeeded
-            });
-        }
-    }
-
     pub fn navigate_to_build_history(&mut self, def: PipelineDefinition) {
         self.previous_view = Some(self.view);
         self.selected_definition = Some(def);
@@ -304,15 +212,8 @@ impl App {
     pub fn navigate_to_log_viewer(&mut self, build: Build) {
         tracing::info!(build_id = build.id, "navigating to log viewer");
         let return_to = self.view;
-        let next_gen = self.log_viewer.log_generation + 1;
-        self.log_viewer = LogViewerState {
-            selected_build: Some(build),
-            log_auto_scroll: true,
-            follow_mode: true,
-            log_generation: next_gen,
-            return_to_view: return_to,
-            ..Default::default()
-        };
+        let next_gen = self.log_viewer.generation() + 1;
+        self.log_viewer = LogViewerState::new_for_build(build, return_to, next_gen);
         self.view = View::LogViewer;
     }
 
@@ -322,7 +223,7 @@ impl App {
             View::Pipelines => &mut self.pipelines_nav,
             View::ActiveRuns => &mut self.active_runs_nav,
             View::BuildHistory => &mut self.builds_nav,
-            View::LogViewer => &mut self.log_viewer.log_entries_nav,
+            View::LogViewer => self.log_viewer.nav_mut(),
         }
     }
 

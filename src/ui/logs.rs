@@ -12,8 +12,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     let build_label = app
         .log_viewer
-        .selected_build
-        .as_ref()
+        .selected_build()
         .map(|b| format!("{} #{}", b.definition.name, b.build_number))
         .unwrap_or_else(|| "Build".to_string());
 
@@ -48,7 +47,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
-    if app.log_viewer.timeline_rows.is_empty() {
+    if app.log_viewer.timeline_rows().is_empty() {
         let loading = Paragraph::new(" Loading timeline...")
             .style(Style::default().fg(Color::DarkGray))
             .block(
@@ -63,11 +62,11 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
 
     let items: Vec<ListItem> = app
         .log_viewer
-        .timeline_rows
+        .timeline_rows()
         .iter()
         .enumerate()
         .map(|(i, row)| {
-            let selected = i == app.log_viewer.log_entries_nav.index();
+            let selected = i == app.log_viewer.nav().index();
             match row {
                 TimelineRow::Stage {
                     name,
@@ -166,22 +165,23 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.log_viewer.log_entries_nav.index()));
+    state.select(Some(app.log_viewer.nav().index()));
     f.render_stateful_widget(list, area, &mut state);
 }
 
 fn draw_log(f: &mut Frame, app: &App, area: Rect) {
-    let title = if app.log_viewer.follow_mode && !app.log_viewer.followed_task_name.is_empty() {
+    let title = if app.log_viewer.is_following() && !app.log_viewer.followed_task_name().is_empty()
+    {
         format!(
             " Log Output — FOLLOW: {} ",
-            app.log_viewer.followed_task_name
+            app.log_viewer.followed_task_name()
         )
-    } else if !app.log_viewer.follow_mode {
+    } else if !app.log_viewer.is_following() {
         // Show the name of the pinned task
         if let Some(TimelineRow::Task { name, .. }) = app
             .log_viewer
-            .timeline_rows
-            .get(app.log_viewer.log_entries_nav.index())
+            .timeline_rows()
+            .get(app.log_viewer.nav().index())
         {
             format!(" Log Output — {} ", name)
         } else {
@@ -191,7 +191,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         " Log Output ".to_string()
     };
 
-    if app.log_viewer.log_content.is_empty() {
+    if app.log_viewer.log_content().is_empty() {
         let hint = Paragraph::new(" Select a task and press Enter to view its log")
             .style(Style::default().fg(Color::DarkGray))
             .block(Block::default().borders(Borders::ALL).title(title));
@@ -199,7 +199,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
     } else {
         let lines: Vec<Line> = app
             .log_viewer
-            .log_content
+            .log_content()
             .iter()
             .map(|l| Line::from(Span::raw(l.as_str())))
             .collect();
@@ -208,13 +208,13 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         let visible_height = area.height.saturating_sub(2);
         let max_scroll = total_lines.saturating_sub(visible_height);
 
-        let scroll_offset = if app.log_viewer.log_auto_scroll {
+        let scroll_offset = if app.log_viewer.log_auto_scroll() {
             max_scroll
         } else {
-            app.log_viewer.log_scroll_offset.min(max_scroll)
+            app.log_viewer.log_scroll_offset().min(max_scroll)
         };
 
-        let title_style = if app.log_viewer.follow_mode {
+        let title_style = if app.log_viewer.is_following() {
             Style::default().fg(Color::Green)
         } else {
             Style::default().fg(Color::Cyan)

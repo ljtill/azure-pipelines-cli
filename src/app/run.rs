@@ -42,7 +42,7 @@ pub async fn run(
         // Spawn periodic background refreshes
         let should_refresh_data = last_data_fetch.elapsed() >= refresh_interval;
         let should_refresh_logs = app.view == View::LogViewer
-            && app.log_viewer.selected_build.is_some()
+            && app.log_viewer.selected_build().is_some()
             && last_log_fetch
                 .map(|t| t.elapsed() >= log_refresh_interval)
                 .unwrap_or(true);
