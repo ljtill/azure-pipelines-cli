@@ -74,7 +74,7 @@ azure-pipelines-cli --config /path/to/config.toml
 | f            | Follow latest active task (Log Viewer)          |
 | PgUp / PgDn  | Scroll log content                              |
 | ?            | Toggle help overlay                             |
-| q            | Quit                                            |
+| q            | Quit (root views) / Go back (child views)       |
 
 ## Authentication
 

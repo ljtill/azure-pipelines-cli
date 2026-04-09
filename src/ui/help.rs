@@ -47,7 +47,7 @@ pub fn draw(f: &mut Frame) {
         Line::from("  o              Open in browser"),
         Line::from("  r              Force data refresh"),
         Line::from("  ?              Toggle this help"),
-        Line::from("  q              Quit"),
+        Line::from("  q              Quit (root views) / Go back (child views)"),
         Line::from(""),
     ];
 

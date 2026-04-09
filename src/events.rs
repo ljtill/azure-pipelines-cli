@@ -61,7 +61,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 
     match key.code {
-        KeyCode::Char('q') => Action::Quit,
+        KeyCode::Char('q') => match app.view {
+            View::Dashboard | View::Pipelines | View::ActiveRuns => Action::Quit,
+            _ => {
+                app.go_back();
+                Action::None
+            }
+        },
         KeyCode::Char('?') => {
             app.show_help = true;
             Action::None
