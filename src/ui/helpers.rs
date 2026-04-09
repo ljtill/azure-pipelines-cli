@@ -213,4 +213,120 @@ mod tests {
     fn truncate_zero_len() {
         assert_eq!(truncate("hello", 0), "");
     }
+
+    // --- build_elapsed tests ---
+
+    use crate::api::models::BuildDefinitionRef;
+
+    fn make_build(
+        status: BuildStatus,
+        result: Option<BuildResult>,
+        start_time: Option<chrono::DateTime<chrono::Utc>>,
+        finish_time: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Build {
+        Build {
+            id: 1,
+            build_number: "1".to_string(),
+            status,
+            result,
+            queue_time: None,
+            start_time,
+            finish_time,
+            definition: BuildDefinitionRef {
+                id: 1,
+                name: "test".to_string(),
+            },
+            source_branch: None,
+            requested_for: None,
+        }
+    }
+
+    #[test]
+    fn build_elapsed_running() {
+        use chrono::{TimeDelta, Utc};
+        let build = make_build(
+            BuildStatus::InProgress,
+            None,
+            Some(Utc::now() - TimeDelta::minutes(5)),
+            None,
+        );
+        let result = build_elapsed(&build);
+        assert!(
+            result.contains("running"),
+            "expected 'running' in: {result}"
+        );
+        assert!(result.contains("5m"), "expected '5m' in: {result}");
+    }
+
+    #[test]
+    fn build_elapsed_queued() {
+        let build = make_build(BuildStatus::InProgress, None, None, None);
+        assert_eq!(build_elapsed(&build), "queued");
+    }
+
+    #[test]
+    fn build_elapsed_recent() {
+        use chrono::{TimeDelta, Utc};
+        let build = make_build(
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+            None,
+            Some(Utc::now() - TimeDelta::minutes(30)),
+        );
+        assert_eq!(build_elapsed(&build), "30m ago");
+    }
+
+    #[test]
+    fn build_elapsed_hours_ago() {
+        use chrono::{TimeDelta, Utc};
+        let build = make_build(
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+            None,
+            Some(Utc::now() - TimeDelta::hours(3)),
+        );
+        assert_eq!(build_elapsed(&build), "3h ago");
+    }
+
+    #[test]
+    fn build_elapsed_days_ago() {
+        use chrono::{TimeDelta, Utc};
+        let build = make_build(
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+            None,
+            Some(Utc::now() - TimeDelta::days(2)),
+        );
+        assert_eq!(build_elapsed(&build), "2d ago");
+    }
+
+    // --- checkpoint_status_icon tests ---
+
+    #[test]
+    fn checkpoint_approved() {
+        let (icon, color) = checkpoint_status_icon(None, Some(BuildResult::Succeeded));
+        assert_eq!(icon, "✓");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn checkpoint_rejected() {
+        let (icon, color) = checkpoint_status_icon(None, Some(BuildResult::Failed));
+        assert_eq!(icon, "✗");
+        assert_eq!(color, Color::Red);
+    }
+
+    #[test]
+    fn checkpoint_pending_in_progress() {
+        let (icon, color) = checkpoint_status_icon(Some(TaskState::InProgress), None);
+        assert_eq!(icon, "⏸");
+        assert_eq!(color, Color::Magenta);
+    }
+
+    #[test]
+    fn checkpoint_pending_none() {
+        let (icon, color) = checkpoint_status_icon(None, None);
+        assert_eq!(icon, "⏸");
+        assert_eq!(color, Color::Magenta);
+    }
 }

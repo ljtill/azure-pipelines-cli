@@ -447,4 +447,196 @@ mod tests {
         };
         assert_eq!(build.requestor(), "Unknown");
     }
+
+    // --- Full object deserialization ---
+
+    #[test]
+    fn deserialize_full_build() {
+        let json = r#"{
+            "id": 42,
+            "buildNumber": "20240101.1",
+            "status": "completed",
+            "result": "succeeded",
+            "queueTime": "2024-01-01T10:00:00Z",
+            "startTime": "2024-01-01T10:00:05Z",
+            "finishTime": "2024-01-01T10:05:00Z",
+            "definition": {"id": 1, "name": "CI"},
+            "sourceBranch": "refs/heads/main",
+            "requestedFor": {"displayName": "Jane Doe"}
+        }"#;
+        let build: Build = serde_json::from_str(json).unwrap();
+        assert_eq!(build.id, 42);
+        assert_eq!(build.build_number, "20240101.1");
+        assert_eq!(build.status, BuildStatus::Completed);
+        assert_eq!(build.result, Some(BuildResult::Succeeded));
+        assert!(build.queue_time.is_some());
+        assert!(build.start_time.is_some());
+        assert!(build.finish_time.is_some());
+        assert_eq!(build.definition.id, 1);
+        assert_eq!(build.definition.name, "CI");
+        assert_eq!(build.source_branch.as_deref(), Some("refs/heads/main"));
+        assert_eq!(build.requestor(), "Jane Doe");
+    }
+
+    #[test]
+    fn deserialize_build_no_optional_fields() {
+        let json = r#"{
+            "id": 99,
+            "buildNumber": "20240201.3",
+            "status": "inProgress",
+            "definition": {"id": 5, "name": "Nightly"}
+        }"#;
+        let build: Build = serde_json::from_str(json).unwrap();
+        assert_eq!(build.id, 99);
+        assert_eq!(build.status, BuildStatus::InProgress);
+        assert!(build.result.is_none());
+        assert!(build.finish_time.is_none());
+        assert!(build.requested_for.is_none());
+        assert_eq!(build.requestor(), "Unknown");
+    }
+
+    #[test]
+    fn deserialize_definition() {
+        let json = r#"{
+            "id": 10,
+            "name": "Release Pipeline",
+            "path": "\\Production",
+            "queueStatus": "enabled"
+        }"#;
+        let def: PipelineDefinition = serde_json::from_str(json).unwrap();
+        assert_eq!(def.id, 10);
+        assert_eq!(def.name, "Release Pipeline");
+        assert_eq!(def.path, "\\Production");
+        assert_eq!(def.queue_status.as_deref(), Some("enabled"));
+    }
+
+    #[test]
+    fn deserialize_definition_list_response() {
+        let json = r#"{
+            "value": [
+                {"id": 1, "name": "CI", "path": "\\", "queueStatus": "enabled"},
+                {"id": 2, "name": "CD", "path": "\\Deploy"}
+            ],
+            "count": 2
+        }"#;
+        let resp: DefinitionListResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.count, 2);
+        assert_eq!(resp.value.len(), 2);
+        assert_eq!(resp.value[0].name, "CI");
+        assert_eq!(resp.value[1].path, "\\Deploy");
+    }
+
+    #[test]
+    fn deserialize_build_timeline() {
+        let json = r#"{
+            "records": [
+                {
+                    "id": "stage-1",
+                    "parentId": null,
+                    "name": "Build Stage",
+                    "identifier": "build_stage",
+                    "type": "Stage",
+                    "state": "completed",
+                    "result": "succeeded",
+                    "order": 1,
+                    "log": null
+                },
+                {
+                    "id": "task-1",
+                    "parentId": "stage-1",
+                    "name": "Run Tests",
+                    "identifier": "run_tests",
+                    "type": "Task",
+                    "state": "completed",
+                    "result": "succeeded",
+                    "order": 1,
+                    "log": {"id": 5}
+                }
+            ]
+        }"#;
+        let tl: BuildTimeline = serde_json::from_str(json).unwrap();
+        assert_eq!(tl.records.len(), 2);
+        assert_eq!(tl.records[0].record_type, "Stage");
+        assert!(tl.records[0].parent_id.is_none());
+        assert_eq!(tl.records[1].parent_id.as_deref(), Some("stage-1"));
+        assert!(tl.records[1].log.is_some());
+        assert_eq!(tl.records[1].log.as_ref().unwrap().id, 5);
+    }
+
+    #[test]
+    fn deserialize_approval() {
+        let json = r#"{
+            "id": "approval-abc",
+            "status": "pending",
+            "instructions": "Please approve the release",
+            "createdOn": "2024-06-15T12:00:00Z",
+            "steps": [
+                {
+                    "assignedApprover": {"displayName": "Alice"},
+                    "status": "pending",
+                    "order": 1
+                }
+            ]
+        }"#;
+        let approval: Approval = serde_json::from_str(json).unwrap();
+        assert_eq!(approval.id, "approval-abc");
+        assert_eq!(approval.status, "pending");
+        assert_eq!(
+            approval.instructions.as_deref(),
+            Some("Please approve the release")
+        );
+        assert!(approval.created_on.is_some());
+        assert_eq!(approval.steps.len(), 1);
+        assert_eq!(
+            approval.steps[0]
+                .assigned_approver
+                .as_ref()
+                .unwrap()
+                .display_name,
+            "Alice"
+        );
+        assert_eq!(approval.steps[0].order, Some(1));
+    }
+
+    #[test]
+    fn deserialize_timeline_record_with_log() {
+        let json = r#"{
+            "id": "rec-1",
+            "parentId": "parent-1",
+            "name": "Compile",
+            "identifier": "compile_step",
+            "type": "Task",
+            "state": "completed",
+            "result": "succeeded",
+            "order": 2,
+            "log": {"id": 42}
+        }"#;
+        let rec: TimelineRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(rec.id, "rec-1");
+        assert_eq!(rec.parent_id.as_deref(), Some("parent-1"));
+        assert_eq!(rec.name, "Compile");
+        assert_eq!(rec.record_type, "Task");
+        assert_eq!(rec.state, Some(TaskState::Completed));
+        assert_eq!(rec.result, Some(BuildResult::Succeeded));
+        assert!(rec.log.is_some());
+        assert_eq!(rec.log.unwrap().id, 42);
+    }
+
+    #[test]
+    fn deserialize_timeline_record_without_log() {
+        let json = r#"{
+            "id": "rec-2",
+            "name": "Deploy Stage",
+            "type": "Stage",
+            "state": "pending",
+            "order": 1
+        }"#;
+        let rec: TimelineRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(rec.id, "rec-2");
+        assert!(rec.parent_id.is_none());
+        assert_eq!(rec.record_type, "Stage");
+        assert_eq!(rec.state, Some(TaskState::Pending));
+        assert!(rec.result.is_none());
+        assert!(rec.log.is_none());
+    }
 }

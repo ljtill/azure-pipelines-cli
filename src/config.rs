@@ -143,4 +143,43 @@ refresh_interval_secs = 30
         let result: Result<Config, _> = toml::from_str(toml);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn default_config_path_with_xdg_override() {
+        let test_dir = "/test/custom/xdg";
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", test_dir) };
+        let path = default_config_path().unwrap();
+        unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
+        assert_eq!(
+            path,
+            PathBuf::from("/test/custom/xdg/azure-pipelines-cli/config.toml")
+        );
+    }
+
+    #[test]
+    fn default_config_path_falls_back_to_home() {
+        unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
+        let path = default_config_path().unwrap();
+        let path_str = path.to_string_lossy();
+        assert!(
+            path_str.contains("azure-pipelines-cli/config.toml"),
+            "Expected path to contain 'azure-pipelines-cli/config.toml', got: {path_str}"
+        );
+    }
+
+    #[test]
+    fn parse_config_empty_filters() {
+        let toml = r#"
+[azure_devops]
+organization = "org"
+project = "proj"
+
+[filters]
+folders = []
+definition_ids = []
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.filters.folders.is_empty());
+        assert!(config.filters.definition_ids.is_empty());
+    }
 }
