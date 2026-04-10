@@ -135,15 +135,22 @@ pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: Input
 }
 
 /// Truncate a string to at most `max_len` characters, safe for multi-byte UTF-8.
-pub fn truncate(s: &str, max_len: usize) -> &str {
+/// Appends `…` when the text is clipped so the user knows content was cut.
+pub fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
-        return s;
+        return s.to_string();
     }
-    let mut end = max_len;
+    if max_len <= 1 {
+        return "…".to_string();
+    }
+    // Reserve one char for the ellipsis.
+    let mut end = max_len - 1;
     while end > 0 && !s.is_char_boundary(end) {
         end -= 1;
     }
-    &s[..end]
+    let mut result = s[..end].to_string();
+    result.push('…');
+    result
 }
 
 #[cfg(test)]
@@ -223,14 +230,14 @@ mod tests {
 
     #[test]
     fn truncate_long_string() {
-        assert_eq!(truncate("hello world", 5), "hello");
+        assert_eq!(truncate("hello world", 5), "hell…");
     }
 
     #[test]
     fn truncate_multibyte_safe() {
         // "café" = 5 bytes (é = 2 bytes), truncate at 4 should not split é
         let result = truncate("café", 4);
-        assert_eq!(result, "caf");
+        assert_eq!(result, "caf…");
     }
 
     #[test]
@@ -240,7 +247,7 @@ mod tests {
 
     #[test]
     fn truncate_zero_len() {
-        assert_eq!(truncate("hello", 0), "");
+        assert_eq!(truncate("hello", 0), "…");
     }
 
     // --- build_elapsed tests ---

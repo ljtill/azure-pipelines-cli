@@ -52,6 +52,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let (icon, icon_color) = status_icon(build.status, build.result);
             let label = status_label(build.status, build.result);
 
+            let row_style = if i == app.active_runs.nav.index() {
+                theme::SELECTED
+            } else if i % 2 == 1 {
+                theme::ROW_ALT
+            } else {
+                Style::new()
+            };
+
             ListItem::new(Line::from(vec![
                 Span::styled(
                     check,
@@ -98,13 +106,12 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     theme::MUTED,
                 ),
-                Span::styled(elapsed, theme::WARNING),
+                Span::styled(
+                    format!("{:>width$}", elapsed, width = widths[7]),
+                    theme::WARNING,
+                ),
             ]))
-            .style(if i == app.active_runs.nav.index() {
-                theme::SELECTED
-            } else {
-                Style::new()
-            })
+            .style(row_style)
         })
         .collect();
 

@@ -42,6 +42,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .map(|(i, def)| {
             let folder = def.path.trim_start_matches('\\').replace('\\', " / ");
 
+            let row_style = if i == app.pipelines.nav.index() {
+                theme::SELECTED
+            } else if i % 2 == 1 {
+                theme::ROW_ALT
+            } else {
+                Style::new()
+            };
+
             ListItem::new(Line::from(vec![
                 Span::raw(" "),
                 Span::styled(
@@ -52,13 +60,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     theme::TEXT,
                 ),
-                Span::styled(truncate(&folder, widths[2]).to_string(), theme::MUTED),
+                Span::styled(truncate(&folder, widths[2]), theme::MUTED),
             ]))
-            .style(if i == app.pipelines.nav.index() {
-                theme::SELECTED
-            } else {
-                Style::new()
-            })
+            .style(row_style)
         })
         .collect();
 

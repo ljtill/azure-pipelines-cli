@@ -55,6 +55,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let time_info = build_elapsed(build);
             let branch = build.branch_display();
 
+            let row_style = if i == app.build_history.nav.index() {
+                theme::SELECTED
+            } else if i % 2 == 1 {
+                theme::ROW_ALT
+            } else {
+                Style::new()
+            };
+
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", icon), Style::new().fg(icon_color)),
                 Span::styled(
@@ -85,13 +93,12 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     theme::MUTED,
                 ),
-                Span::styled(time_info, theme::MUTED),
+                Span::styled(
+                    format!("{:>width$}", time_info, width = widths[5]),
+                    theme::MUTED,
+                ),
             ]))
-            .style(if i == app.build_history.nav.index() {
-                theme::SELECTED
-            } else {
-                Style::new()
-            })
+            .style(row_style)
         })
         .collect();
 

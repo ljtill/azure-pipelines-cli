@@ -31,89 +31,101 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .rows
         .iter()
         .enumerate()
-        .map(|(i, row)| match row {
-            DashboardRow::FolderHeader { path, collapsed } => {
-                let icon = if *collapsed { "▸" } else { "▾" };
-                ListItem::new(Line::from(vec![
-                    Span::styled(format!(" {} ", icon), theme::ARROW),
-                    Span::styled(path.to_string(), theme::FOLDER),
-                ]))
-                .style(if i == app.dashboard.nav.index() {
-                    theme::SELECTED
-                } else {
-                    Style::new()
-                })
-            }
-            DashboardRow::Pipeline {
-                definition,
-                latest_build,
-            } => {
-                let (icon, icon_color) = match latest_build {
-                    Some(b) => status_icon(b.status, b.result),
-                    None => ("○", Color::DarkGray),
-                };
-                let label = match latest_build {
-                    Some(b) => status_label(b.status, b.result),
-                    None => "",
-                };
+        .map(|(i, row)| {
+            let row_style = if i == app.dashboard.nav.index() {
+                theme::SELECTED
+            } else if i % 2 == 1 {
+                theme::ROW_ALT
+            } else {
+                Style::new()
+            };
 
-                let build_spans = if let Some(b) = latest_build {
-                    let branch = b.branch_display();
-                    let elapsed = build_elapsed(b);
-                    vec![
-                        Span::styled(
-                            format!(
-                                "#{:<width$}",
-                                truncate(&b.build_number, widths[4] - 1),
-                                width = widths[4] - 1
+            match row {
+                DashboardRow::FolderHeader { path, collapsed } => {
+                    let icon = if *collapsed { "▸" } else { "▾" };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!(" {} ", icon), theme::ARROW),
+                        Span::styled(path.to_string(), theme::FOLDER),
+                    ]))
+                    .style(row_style)
+                }
+                DashboardRow::Pipeline {
+                    definition,
+                    latest_build,
+                } => {
+                    let (icon, icon_color) = match latest_build {
+                        Some(b) => status_icon(b.status, b.result),
+                        None => ("○", Color::DarkGray),
+                    };
+                    let label = match latest_build {
+                        Some(b) => status_label(b.status, b.result),
+                        None => "",
+                    };
+
+                    let build_spans = if let Some(b) = latest_build {
+                        let branch = b.branch_display();
+                        let elapsed = build_elapsed(b);
+                        vec![
+                            Span::styled(
+                                format!(
+                                    "#{:<width$}",
+                                    truncate(&b.build_number, widths[4] - 1),
+                                    width = widths[4] - 1
+                                ),
+                                theme::MUTED,
                             ),
-                            theme::MUTED,
+                            Span::styled(
+                                format!(
+                                    "{:<width$} ",
+                                    truncate(&branch, widths[5].saturating_sub(1)),
+                                    width = widths[5].saturating_sub(1)
+                                ),
+                                theme::BRANCH,
+                            ),
+                            Span::styled(
+                                format!(
+                                    "{:<width$} ",
+                                    truncate(b.requestor(), widths[6].saturating_sub(1)),
+                                    width = widths[6].saturating_sub(1)
+                                ),
+                                theme::MUTED,
+                            ),
+                            Span::styled(
+                                format!("{:>width$}", elapsed, width = widths[7]),
+                                theme::MUTED,
+                            ),
+                        ]
+                    } else {
+                        vec![Span::styled("no builds", theme::MUTED)]
+                    };
+
+                    // Dim rows for pipelines with no builds.
+                    let name_style = if latest_build.is_some() {
+                        theme::TEXT
+                    } else {
+                        theme::MUTED
+                    };
+
+                    let mut spans = vec![
+                        Span::raw("    "),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(
+                            format!("{:<width$}", label, width = widths[2]),
+                            Style::new().fg(icon_color),
                         ),
                         Span::styled(
                             format!(
                                 "{:<width$} ",
-                                truncate(&branch, widths[5].saturating_sub(1)),
-                                width = widths[5].saturating_sub(1)
+                                truncate(&definition.name, widths[3].saturating_sub(1)),
+                                width = widths[3].saturating_sub(1)
                             ),
-                            theme::BRANCH,
+                            name_style,
                         ),
-                        Span::styled(
-                            format!(
-                                "{:<width$} ",
-                                truncate(b.requestor(), widths[6].saturating_sub(1)),
-                                width = widths[6].saturating_sub(1)
-                            ),
-                            theme::MUTED,
-                        ),
-                        Span::styled(elapsed, theme::MUTED),
-                    ]
-                } else {
-                    vec![Span::styled("no builds", theme::MUTED)]
-                };
+                    ];
+                    spans.extend(build_spans);
 
-                let mut spans = vec![
-                    Span::raw("    "),
-                    Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
-                    Span::styled(
-                        format!("{:<width$}", label, width = widths[2]),
-                        Style::new().fg(icon_color),
-                    ),
-                    Span::styled(
-                        format!(
-                            "{:<width$} ",
-                            truncate(&definition.name, widths[3].saturating_sub(1)),
-                            width = widths[3].saturating_sub(1)
-                        ),
-                        theme::TEXT,
-                    ),
-                ];
-                spans.extend(build_spans);
-
-                ListItem::new(Line::from(spans)).style(if i == app.dashboard.nav.index() {
-                    theme::SELECTED
-                } else {
-                    Style::new()
-                })
+                    ListItem::new(Line::from(spans)).style(row_style)
+                }
             }
         })
         .collect();
