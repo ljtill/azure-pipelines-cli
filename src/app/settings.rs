@@ -54,30 +54,32 @@ impl SettingsState {
     /// Build a new `SettingsState` from the running config and file path.
     pub fn from_config(config: &Config, config_path: PathBuf) -> Self {
         let fields = vec![
+            // Connection
             SettingsField {
                 label: "Organization",
-                section: "azure_devops",
+                section: "Connection",
                 kind: FieldKind::Text,
                 value: config.azure_devops.organization.clone(),
                 hint: "restart required",
             },
             SettingsField {
                 label: "Project",
-                section: "azure_devops",
+                section: "Connection",
                 kind: FieldKind::Text,
                 value: config.azure_devops.project.clone(),
                 hint: "restart required",
             },
+            // Filters
             SettingsField {
                 label: "Filter folders",
-                section: "filters",
+                section: "Filters",
                 kind: FieldKind::StringList,
                 value: config.filters.folders.join(", "),
                 hint: "comma-separated",
             },
             SettingsField {
                 label: "Filter definition IDs",
-                section: "filters",
+                section: "Filters",
                 kind: FieldKind::IntList,
                 value: config
                     .filters
@@ -88,40 +90,42 @@ impl SettingsState {
                     .join(", "),
                 hint: "comma-separated",
             },
-            SettingsField {
-                label: "Check for updates",
-                section: "update",
-                kind: FieldKind::Toggle,
-                value: config.update.check_for_updates.to_string(),
-                hint: "",
-            },
-            SettingsField {
-                label: "Log level",
-                section: "logging",
-                kind: FieldKind::Cycle,
-                value: config.logging.level.clone(),
-                hint: "trace/debug/info/warn/error",
-            },
-            SettingsField {
-                label: "Notifications",
-                section: "notifications",
-                kind: FieldKind::Toggle,
-                value: config.notifications.enabled.to_string(),
-                hint: "",
-            },
+            // Display
             SettingsField {
                 label: "Refresh interval (secs)",
-                section: "display",
+                section: "Display",
                 kind: FieldKind::Number,
                 value: config.display.refresh_interval_secs.to_string(),
                 hint: "min 5",
             },
             SettingsField {
                 label: "Log refresh interval (secs)",
-                section: "display",
+                section: "Display",
                 kind: FieldKind::Number,
                 value: config.display.log_refresh_interval_secs.to_string(),
                 hint: "min 1",
+            },
+            SettingsField {
+                label: "Notifications",
+                section: "Display",
+                kind: FieldKind::Toggle,
+                value: config.notifications.enabled.to_string(),
+                hint: "",
+            },
+            // General
+            SettingsField {
+                label: "Log level",
+                section: "General",
+                kind: FieldKind::Cycle,
+                value: config.logging.level.clone(),
+                hint: "trace/debug/info/warn/error",
+            },
+            SettingsField {
+                label: "Check for updates",
+                section: "General",
+                kind: FieldKind::Toggle,
+                value: config.update.check_for_updates.to_string(),
+                hint: "",
             },
         ];
         Self {
@@ -345,30 +349,30 @@ mod tests {
     #[test]
     fn toggle_field() {
         let mut s = make_settings();
-        // Find the "Check for updates" field (index 4)
-        s.selected = 4;
-        assert_eq!(s.fields[4].kind, FieldKind::Toggle);
-        assert_eq!(s.fields[4].value, "true");
+        // "Check for updates" is now index 8
+        s.selected = 8;
+        assert_eq!(s.fields[8].kind, FieldKind::Toggle);
+        assert_eq!(s.fields[8].value, "true");
         s.start_edit();
-        assert_eq!(s.fields[4].value, "false");
+        assert_eq!(s.fields[8].value, "false");
         assert!(!s.editing); // Toggle doesn't enter edit mode
         s.start_edit();
-        assert_eq!(s.fields[4].value, "true");
+        assert_eq!(s.fields[8].value, "true");
     }
 
     #[test]
     fn cycle_field() {
         let mut s = make_settings();
-        // Find the "Log level" field (index 5)
-        s.selected = 5;
-        assert_eq!(s.fields[5].kind, FieldKind::Cycle);
-        assert_eq!(s.fields[5].value, "info");
+        // "Log level" is now index 7
+        s.selected = 7;
+        assert_eq!(s.fields[7].kind, FieldKind::Cycle);
+        assert_eq!(s.fields[7].value, "info");
         s.start_edit(); // info -> warn
-        assert_eq!(s.fields[5].value, "warn");
+        assert_eq!(s.fields[7].value, "warn");
         s.start_edit(); // warn -> error
-        assert_eq!(s.fields[5].value, "error");
+        assert_eq!(s.fields[7].value, "error");
         s.start_edit(); // error -> trace (wraps)
-        assert_eq!(s.fields[5].value, "trace");
+        assert_eq!(s.fields[7].value, "trace");
     }
 
     #[test]
@@ -387,14 +391,14 @@ mod tests {
     #[test]
     fn number_field_rejects_non_digits() {
         let mut s = make_settings();
-        // "Refresh interval (secs)" is index 7
-        s.selected = 7;
+        // "Refresh interval (secs)" is now index 4
+        s.selected = 4;
         s.start_edit();
-        let before = s.fields[7].value.clone();
+        let before = s.fields[4].value.clone();
         s.insert_char('a');
-        assert_eq!(s.fields[7].value, before); // unchanged
+        assert_eq!(s.fields[4].value, before); // unchanged
         s.insert_char('5');
-        assert!(s.fields[7].value.ends_with('5'));
+        assert!(s.fields[4].value.ends_with('5'));
     }
 
     #[test]

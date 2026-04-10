@@ -1,38 +1,37 @@
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
+use ratatui::widgets::{Block, Clear, Paragraph};
 
 use crate::app::settings::{FieldKind, SettingsState};
 
 use super::theme;
 
 pub fn draw(f: &mut Frame, settings: &SettingsState) {
-    let height = (settings.field_count() as u16) + 6; // fields + border + title + hints + spacing
-    let width = 64;
-    let area = centered_rect(width, height, f.area());
+    let area = centered_rect(60, 70, f.area());
 
     f.render_widget(Clear, area);
 
-    let block = Block::bordered()
-        .title(" Settings ")
-        .title_style(theme::BRAND)
-        .border_type(BorderType::Rounded);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
+    let mut lines: Vec<Line> = Vec::new();
 
-    // Split inner into field rows + hints row
-    let mut constraints: Vec<Constraint> = settings
-        .fields
-        .iter()
-        .map(|_| Constraint::Length(1))
-        .collect();
-    constraints.push(Constraint::Length(1)); // blank
-    constraints.push(Constraint::Length(1)); // hints
-
-    let rows = Layout::vertical(constraints).split(inner);
+    // Track the current section so we can insert headers at group transitions.
+    let mut current_section: Option<&str> = None;
 
     for (i, field) in settings.fields.iter().enumerate() {
+        // Section header on group transition
+        if current_section != Some(field.section) {
+            if current_section.is_some() {
+                lines.push(Line::from("")); // spacing between groups
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                format!("  {}", field.section),
+                theme::SECTION_HEADER,
+            )]));
+            lines.push(Line::from(""));
+            current_section = Some(field.section);
+        }
+
         let is_selected = i == settings.selected;
         let is_editing = is_selected && settings.editing;
 
@@ -42,17 +41,14 @@ pub fn draw(f: &mut Frame, settings: &SettingsState) {
             theme::MUTED
         };
 
-        let value_display = format_field_value(field.kind, &field.value, is_editing);
+        let value_display = format_field_value(field.kind, &field.value);
 
-        let cursor_indicator = if is_editing { "█" } else { "" };
-
-        let mut spans = vec![Span::styled(format!("  {:<28}", field.label), label_style)];
+        let mut spans = vec![Span::styled(format!("  {:<30}", field.label), label_style)];
 
         if is_editing {
-            // Show value with cursor
             let (before, after) = field.value.split_at(settings.cursor.min(field.value.len()));
             spans.push(Span::styled(before.to_string(), theme::TEXT));
-            spans.push(Span::styled(cursor_indicator, theme::CURSOR));
+            spans.push(Span::styled("█", theme::CURSOR));
             spans.push(Span::styled(after.to_string(), theme::TEXT));
         } else {
             spans.push(Span::styled(value_display, theme::TEXT));
@@ -62,22 +58,31 @@ pub fn draw(f: &mut Frame, settings: &SettingsState) {
             spans.push(Span::styled(format!("  ({})", field.hint), theme::MUTED));
         }
 
-        let line = Line::from(spans);
-        f.render_widget(Paragraph::new(line), rows[i]);
+        lines.push(Line::from(spans));
     }
 
-    // Hints footer
+    // Footer hints
+    lines.push(Line::from(""));
     let hint_text = if settings.editing {
         "Enter confirm  Esc cancel  ←→ move cursor"
     } else {
-        "↑↓ navigate  Enter/Space edit  s save  Esc close"
+        "↑↓ navigate  Enter/Space edit  Ctrl+S save  Esc close"
     };
-    let hints = Line::from(vec![Span::styled(format!("  {hint_text}"), theme::MUTED)]);
-    let hint_row = settings.field_count() + 1;
-    f.render_widget(Paragraph::new(hints), rows[hint_row]);
+    lines.push(Line::from(vec![Span::styled(
+        format!("  {hint_text}"),
+        theme::MUTED,
+    )]));
+    lines.push(Line::from(""));
+
+    let block = Block::bordered()
+        .title(" Settings ")
+        .title_style(theme::BRAND);
+
+    let content = Paragraph::new(lines).style(theme::TEXT).block(block);
+    f.render_widget(content, area);
 }
 
-fn format_field_value(kind: FieldKind, value: &str, _editing: bool) -> String {
+fn format_field_value(kind: FieldKind, value: &str) -> String {
     match kind {
         FieldKind::Toggle => {
             if value == "true" {
@@ -91,11 +96,18 @@ fn format_field_value(kind: FieldKind, value: &str, _editing: bool) -> String {
     }
 }
 
-fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
-    let vertical = Layout::vertical([Constraint::Length(height)])
-        .flex(Flex::Center)
-        .split(area);
-    Layout::horizontal([Constraint::Length(width)])
-        .flex(Flex::Center)
-        .split(vertical[0])[0]
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Percentage(percent_y),
+        Constraint::Percentage((100 - percent_y) / 2),
+    ])
+    .split(r);
+
+    Layout::horizontal([
+        Constraint::Percentage((100 - percent_x) / 2),
+        Constraint::Percentage(percent_x),
+        Constraint::Percentage((100 - percent_x) / 2),
+    ])
+    .split(popup_layout[1])[1]
 }
