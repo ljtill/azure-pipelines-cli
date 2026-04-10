@@ -48,7 +48,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     widths[5] = widths[5].min(40); // branch
     widths[6] = widths[6].min(35); // requestor
 
-    let items: Vec<ListItem> = app
+    let mut items: Vec<ListItem> = app
         .build_history
         .builds
         .iter()
@@ -116,6 +116,19 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             .style(row_style)
         })
         .collect();
+
+    // Show loading/more indicator at the bottom
+    if app.build_history.loading_more {
+        items.push(ListItem::new(Line::from(vec![Span::styled(
+            "   ⟳ Loading more...",
+            theme::MUTED,
+        )])));
+    } else if app.build_history.has_more {
+        items.push(ListItem::new(Line::from(vec![Span::styled(
+            "   ▾ ↓ for more",
+            theme::MUTED,
+        )])));
+    }
 
     let sel_count = app.build_history.selected.len();
     let total = app.build_history.builds.len();

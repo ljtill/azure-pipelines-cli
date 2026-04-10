@@ -1,6 +1,6 @@
 const API_VERSION: &str = "7.1";
 const TOP_BUILDS: u32 = 100;
-const TOP_DEFINITION_BUILDS: u32 = 20;
+pub const TOP_DEFINITION_BUILDS: u32 = 20;
 
 /// Percent-encode a string for use in a URL path segment.
 ///
@@ -76,6 +76,13 @@ impl Endpoints {
     pub fn builds_for_definition(&self, definition_id: u32) -> String {
         format!(
             "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={TOP_DEFINITION_BUILDS}&queryOrder=queueTimeDescending",
+            self.base_url
+        )
+    }
+
+    pub fn builds_for_definition_paged(&self, definition_id: u32, top: u32, skip: u32) -> String {
+        format!(
+            "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={top}&$skip={skip}&queryOrder=queueTimeDescending",
             self.base_url
         )
     }
@@ -178,6 +185,16 @@ mod tests {
             ep().builds_for_definition(42),
             format!(
                 "{BASE}/build/builds?definitions=42&api-version=7.1&$top=20&queryOrder=queueTimeDescending"
+            )
+        );
+    }
+
+    #[test]
+    fn builds_for_definition_paged_url() {
+        assert_eq!(
+            ep().builds_for_definition_paged(42, 20, 40),
+            format!(
+                "{BASE}/build/builds?definitions=42&api-version=7.1&$top=20&$skip=40&queryOrder=queueTimeDescending"
             )
         );
     }

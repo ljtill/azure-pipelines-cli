@@ -51,6 +51,11 @@ impl ListNav {
         }
     }
 
+    /// Whether the cursor is on the last item in the list.
+    pub fn is_at_bottom(&self) -> bool {
+        self.len > 0 && self.index == self.len - 1
+    }
+
     #[allow(dead_code)]
     pub fn page_up(&mut self, page_size: usize) {
         self.index = self.index.saturating_sub(page_size);
@@ -151,5 +156,27 @@ mod tests {
         nav.reset();
         assert_eq!(nav.index(), 0);
         assert_eq!(nav.len(), 0);
+    }
+
+    #[test]
+    fn is_at_bottom_true_at_last_item() {
+        let mut nav = ListNav::default();
+        nav.set_len(5);
+        nav.end();
+        assert!(nav.is_at_bottom());
+    }
+
+    #[test]
+    fn is_at_bottom_false_when_not_at_end() {
+        let mut nav = ListNav::default();
+        nav.set_len(5);
+        nav.set_index(3);
+        assert!(!nav.is_at_bottom());
+    }
+
+    #[test]
+    fn is_at_bottom_false_when_empty() {
+        let nav = ListNav::default();
+        assert!(!nav.is_at_bottom());
     }
 }

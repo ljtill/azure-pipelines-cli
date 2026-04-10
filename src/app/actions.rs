@@ -113,6 +113,22 @@ pub fn handle_action(
                 |builds| AppMessage::BuildHistory { builds },
             );
         }
+        Action::FetchMoreBuilds {
+            definition_id,
+            skip,
+        } => {
+            app.build_history.loading_more = true;
+            spawn_api(
+                client,
+                tx,
+                "Fetch more builds",
+                move |c| async move {
+                    c.list_builds_for_definition_paged(definition_id, skip)
+                        .await
+                },
+                |builds| AppMessage::BuildHistoryMore { builds },
+            );
+        }
         Action::FetchTimeline(build_id) => {
             spawn_timeline_fetch(client, tx, build_id, app.log_viewer.generation(), false);
         }
@@ -397,7 +413,19 @@ pub fn handle_message(
         }
         AppMessage::BuildHistory { builds } => {
             tracing::info!(count = builds.len(), "build history loaded");
+            app.build_history.has_more =
+                builds.len() >= crate::api::endpoints::TOP_DEFINITION_BUILDS as usize;
             app.build_history.builds = builds;
+            app.build_history
+                .nav
+                .set_len(app.build_history.builds.len());
+        }
+        AppMessage::BuildHistoryMore { builds } => {
+            tracing::info!(count = builds.len(), "more build history loaded");
+            app.build_history.loading_more = false;
+            app.build_history.has_more =
+                builds.len() >= crate::api::endpoints::TOP_DEFINITION_BUILDS as usize;
+            app.build_history.builds.extend(builds);
             app.build_history
                 .nav
                 .set_len(app.build_history.builds.len());

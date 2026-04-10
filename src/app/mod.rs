@@ -21,6 +21,10 @@ pub struct BuildHistoryState {
     pub selected: HashSet<u32>,
     /// The view to return to when pressing Esc/back from Build History.
     pub return_to: Option<View>,
+    /// Whether more builds may be available beyond what's loaded.
+    pub has_more: bool,
+    /// Whether a "load more" request is currently in flight.
+    pub loading_more: bool,
 }
 
 /// State for the Active Runs view.

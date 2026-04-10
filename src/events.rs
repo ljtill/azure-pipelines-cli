@@ -11,6 +11,10 @@ pub enum Action {
     Quit,
     ForceRefresh,
     FetchBuildHistory(u32),
+    FetchMoreBuilds {
+        definition_id: u32,
+        skip: u32,
+    },
     FetchBuildLog {
         build_id: u32,
         log_id: u32,
@@ -184,6 +188,19 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Down => {
+            // Load more builds when scrolling past the bottom
+            if app.view == View::BuildHistory
+                && app.build_history.nav.is_at_bottom()
+                && app.build_history.has_more
+                && !app.build_history.loading_more
+            {
+                if let Some(def) = &app.build_history.selected_definition {
+                    return Action::FetchMoreBuilds {
+                        definition_id: def.id,
+                        skip: app.build_history.builds.len() as u32,
+                    };
+                }
+            }
             app.current_nav_mut().down();
             Action::None
         }
@@ -291,6 +308,19 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::End => {
             app.current_nav_mut().end();
+            // Load more builds when jumping to end in Build History
+            if app.view == View::BuildHistory
+                && app.build_history.nav.is_at_bottom()
+                && app.build_history.has_more
+                && !app.build_history.loading_more
+            {
+                if let Some(def) = &app.build_history.selected_definition {
+                    return Action::FetchMoreBuilds {
+                        definition_id: def.id,
+                        skip: app.build_history.builds.len() as u32,
+                    };
+                }
+            }
             Action::None
         }
 

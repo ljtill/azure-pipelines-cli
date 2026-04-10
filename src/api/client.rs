@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use reqwest::{Client, Url};
 
 use super::auth::AdoAuth;
-use super::endpoints::Endpoints;
+use super::endpoints::{Endpoints, TOP_DEFINITION_BUILDS};
 use super::models::*;
 
 #[derive(Clone)]
@@ -220,6 +220,19 @@ impl AdoClient {
     pub async fn list_builds_for_definition(&self, definition_id: u32) -> Result<Vec<Build>> {
         tracing::debug!(definition_id, "listing builds for definition");
         let url = self.endpoints.builds_for_definition(definition_id);
+        let resp: BuildListResponse = self.get(&url).await?;
+        Ok(resp.value)
+    }
+
+    pub async fn list_builds_for_definition_paged(
+        &self,
+        definition_id: u32,
+        skip: u32,
+    ) -> Result<Vec<Build>> {
+        tracing::debug!(definition_id, skip, "listing builds for definition (paged)");
+        let url =
+            self.endpoints
+                .builds_for_definition_paged(definition_id, TOP_DEFINITION_BUILDS, skip);
         let resp: BuildListResponse = self.get(&url).await?;
         Ok(resp.value)
     }

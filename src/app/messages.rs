@@ -19,6 +19,9 @@ pub enum AppMessage {
     BuildHistory {
         builds: Vec<Build>,
     },
+    BuildHistoryMore {
+        builds: Vec<Build>,
+    },
     Timeline {
         build_id: u32,
         timeline: BuildTimeline,
