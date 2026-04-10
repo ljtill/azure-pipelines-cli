@@ -54,44 +54,71 @@ fn key_3_switches_to_active_runs() {
 }
 
 // ---------------------------------------------------------------------------
-// Quit behavior
+// Quit / Esc behavior
 // ---------------------------------------------------------------------------
 
 #[test]
-fn q_quits_from_dashboard() {
+fn esc_shows_quit_prompt_on_dashboard() {
     let mut app = test_app();
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
-    assert!(matches!(action, Action::Quit));
+    assert_eq!(app.view, View::Dashboard);
+    let action = handle_key(&mut app, key(KeyCode::Esc));
+    assert!(app.confirm_prompt.is_some());
+    assert!(matches!(
+        app.confirm_prompt.as_ref().unwrap().action,
+        ConfirmAction::Quit
+    ));
+    assert!(matches!(action, Action::None));
 }
 
 #[test]
-fn q_quits_from_pipelines() {
+fn esc_navigates_to_dashboard_from_pipelines() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
-    assert!(matches!(action, Action::Quit));
-}
-
-#[test]
-fn q_goes_back_from_build_history() {
-    let mut app = test_app();
-    app.view = View::BuildHistory;
-    app.build_history.return_to = Some(View::Dashboard);
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    let action = handle_key(&mut app, key(KeyCode::Esc));
     assert_eq!(app.view, View::Dashboard);
     assert!(matches!(action, Action::None));
 }
 
 #[test]
-fn q_goes_back_from_log_viewer() {
+fn esc_navigates_to_dashboard_from_active_runs() {
+    let mut app = test_app();
+    app.view = View::ActiveRuns;
+    let action = handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.view, View::Dashboard);
+    assert!(matches!(action, Action::None));
+}
+
+#[test]
+fn esc_goes_back_from_build_history_to_dashboard() {
+    let mut app = test_app();
+    app.view = View::BuildHistory;
+    app.build_history.return_to = Some(View::Dashboard);
+    let action = handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.view, View::Dashboard);
+    assert!(matches!(action, Action::None));
+}
+
+#[test]
+fn esc_goes_back_from_log_viewer() {
     let mut app = test_app();
     let build = make_build(1, BuildStatus::InProgress, None);
     app.navigate_to_log_viewer(build);
     assert_eq!(app.view, View::LogViewer);
 
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    let action = handle_key(&mut app, key(KeyCode::Esc));
     assert_ne!(app.view, View::LogViewer);
     assert!(matches!(action, Action::None));
+}
+
+#[test]
+fn confirm_quit_y_quits() {
+    let mut app = test_app();
+    app.confirm_prompt = Some(ConfirmPrompt {
+        message: "Quit? (y/n)".into(),
+        action: ConfirmAction::Quit,
+    });
+    let action = handle_key(&mut app, key(KeyCode::Char('y')));
+    assert!(matches!(action, Action::Quit));
 }
 
 #[test]

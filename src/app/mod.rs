@@ -178,6 +178,7 @@ pub enum ConfirmAction {
     RejectCheck {
         approval_id: String,
     },
+    Quit,
 }
 
 /// A pending confirmation prompt shown in the footer.

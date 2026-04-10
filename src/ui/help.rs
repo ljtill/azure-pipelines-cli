@@ -17,7 +17,7 @@ pub fn draw(f: &mut Frame) {
         Line::from("  ↑ / ↓          Move selection up / down"),
         Line::from("  ← / →          Collapse / expand folder (Dashboard)"),
         Line::from("  Enter          Drill into selected item"),
-        Line::from("  Esc            Go back to previous view"),
+        Line::from("  Esc            Go back / return to Dashboard / quit (with confirmation)"),
         Line::from("  PgUp / PgDn    Scroll log content"),
         Line::from("  Mouse wheel    Scroll log content"),
         Line::from(""),
@@ -42,7 +42,7 @@ pub fn draw(f: &mut Frame) {
         Line::from("  x              Dismiss notification"),
         Line::from("  ,              Open settings"),
         Line::from("  ?              Toggle this help"),
-        Line::from("  q              Quit (root views) / Go back (child views)"),
+        Line::from("  Ctrl+C         Quit immediately"),
         Line::from(""),
     ];
 

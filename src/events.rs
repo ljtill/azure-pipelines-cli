@@ -55,13 +55,6 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 
     match key.code {
-        KeyCode::Char('q') => match app.view {
-            View::Dashboard | View::Pipelines | View::ActiveRuns => Action::Quit,
-            _ => {
-                app.go_back();
-                Action::None
-            }
-        },
         KeyCode::Char('?') => {
             app.show_help = true;
             Action::None
@@ -258,10 +251,25 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
 
-        KeyCode::Esc => {
-            app.go_back();
-            Action::None
-        }
+        KeyCode::Esc => match app.view {
+            View::Dashboard => {
+                app.confirm_prompt = Some(ConfirmPrompt {
+                    message: "Quit? (y/n)".into(),
+                    action: ConfirmAction::Quit,
+                });
+                Action::None
+            }
+            View::Pipelines | View::ActiveRuns => {
+                app.search.mode = InputMode::Normal;
+                app.search.query.clear();
+                app.view = View::Dashboard;
+                Action::None
+            }
+            _ => {
+                app.go_back();
+                Action::None
+            }
+        },
 
         KeyCode::Enter => handle_enter(app),
 
@@ -298,6 +306,7 @@ fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
                 }
                 ConfirmAction::ApproveCheck { approval_id } => Action::ApproveCheck(approval_id),
                 ConfirmAction::RejectCheck { approval_id } => Action::RejectCheck(approval_id),
+                ConfirmAction::Quit => Action::Quit,
             }
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
