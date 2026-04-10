@@ -13,24 +13,24 @@
 //!
 //! | Module         | Purpose |
 //! |----------------|---------|
-//! | [`api`]        | Azure DevOps REST layer — split by domain (`models/`, `client/`, `endpoints/`) with per-domain submodules for builds, definitions, approvals, and retention leases. |
-//! | [`app`]        | Application state (`App`), per-view sub-states, and the async action/message loop (`actions/dispatch.rs`, `actions/messages.rs`, `actions/spawn.rs`). |
+//! | [`client`]     | Azure DevOps REST layer — split by domain (`models/`, `client/`, `endpoints/`) with per-domain submodules for builds, definitions, approvals, and retention leases. |
+//! | [`state`]      | Application state (`App`), per-view sub-states, and the async action/message loop (`actions/dispatch.rs`, `actions/messages.rs`, `actions/spawn.rs`). |
 //! | [`components`] | Self-contained UI components following the ratatui Component trait pattern. Each view (Dashboard, Pipelines, Active Runs, Build History, Log Viewer) plus overlays (Header, Help, Settings) has its own module. |
 //! | [`config`]     | TOML configuration loading and validation (`--config` flag or XDG default). |
 //! | [`events`]     | Keyboard/mouse event handling — split per-view (`events/dashboard.rs`, etc.) with shared handlers in `events/common.rs`. |
 //! | [`shared`]     | Cross-cutting infrastructure: `RefreshState`, `ListNav`, `Notifications`. |
-//! | [`ui`]         | Shared rendering utilities: `helpers.rs` (status icons, elapsed time), `theme.rs` (color constants), `setup.rs` (first-run wizard). |
+//! | [`render`]     | Shared rendering utilities: `helpers.rs` (status icons, elapsed time), `theme.rs` (color constants), `setup.rs` (first-run wizard). |
 //! | [`update`]     | Self-update mechanism that pulls new releases from GitHub. |
 //!
 //! ## Data flow
 //!
 //! 1. **Input** — Terminal events are dispatched to per-view handlers in [`events`],
 //!    which return an [`events::Action`] describing the intent.
-//! 2. **Action handling** — [`app::actions::handle_action`] processes the action,
+//! 2. **Action handling** — [`state::actions::handle_action`] processes the action,
 //!    spawning async API calls via helpers in `actions/spawn.rs`.
 //! 3. **Message handling** — Async results arrive as `AppMessage` variants.
-//!    [`app::actions::handle_message`] applies them to [`app::App`] state.
-//! 4. **Rendering** — [`ui::draw`] delegates to each component's `draw_with_app()`
+//!    [`state::actions::handle_message`] applies them to [`state::App`] state.
+//! 4. **Rendering** — [`render::draw`] delegates to each component's `draw_with_app()`
 //!    method. Components never perform mutations or network calls.
 //!
 //! ## Adding a new view
@@ -38,15 +38,15 @@
 //! 1. Create `src/components/my_view.rs` with a struct implementing rendering.
 //! 2. Create `src/events/my_view.rs` with view-specific key handling.
 //! 3. Add the view state to `App` and a `View::MyView` variant.
-//! 4. Register rendering in `ui/mod.rs` and event dispatch in `events/mod.rs`.
+//! 4. Register rendering in `render/mod.rs` and event dispatch in `events/mod.rs`.
 
-pub mod api;
-pub mod app;
+pub mod client;
 pub mod components;
 pub mod config;
 pub mod events;
+pub mod render;
 pub mod shared;
-pub mod ui;
+pub mod state;
 pub mod update;
 
 /// Test factory functions used by unit and integration tests.

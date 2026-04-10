@@ -5,11 +5,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
 use super::Component;
-use crate::api::models::PipelineDefinition;
-use crate::app::nav::ListNav;
-use crate::app::{App, InputMode};
-use crate::ui::helpers::{row_style, split_with_search_bar, truncate};
-use crate::ui::theme;
+use crate::client::models::PipelineDefinition;
+use crate::render::helpers::{row_style, split_with_search_bar, truncate};
+use crate::render::theme;
+use crate::state::nav::ListNav;
+use crate::state::{App, InputMode};
 
 /// Pipelines flat-list component — renders all pipeline definitions with search.
 #[derive(Debug, Default)]

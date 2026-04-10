@@ -1,4 +1,4 @@
-use azure_pipelines_cli::api::models::*;
+use azure_pipelines_cli::client::models::*;
 
 fn load_fixture(name: &str) -> String {
     std::fs::read_to_string(format!("tests/fixtures/{}", name))

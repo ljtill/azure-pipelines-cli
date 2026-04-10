@@ -21,7 +21,7 @@ pub struct PipelineDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::*;
+    use crate::client::models::*;
 
     #[test]
     fn deserialize_definition() {

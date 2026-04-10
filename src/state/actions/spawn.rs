@@ -4,7 +4,7 @@ use anyhow::Result;
 use tokio::sync::mpsc;
 use tracing::Instrument;
 
-use crate::api::client::AdoClient;
+use crate::client::http::AdoClient;
 
 use super::super::App;
 use super::super::messages::{AppMessage, RefreshSource};

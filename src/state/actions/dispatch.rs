@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use tokio::sync::mpsc;
 
-use crate::api::client::AdoClient;
+use crate::client::http::AdoClient;
 use crate::events::Action;
 
 use super::super::App;

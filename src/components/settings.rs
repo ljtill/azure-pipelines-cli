@@ -5,9 +5,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 
 use super::Component;
-use crate::app::settings::{FieldKind, SettingsState};
-use crate::ui::helpers::centered_rect;
-use crate::ui::theme;
+use crate::render::helpers::centered_rect;
+use crate::render::theme;
+use crate::state::settings::{FieldKind, SettingsState};
 
 /// Settings overlay component — renders the config editor overlay.
 pub struct Settings;

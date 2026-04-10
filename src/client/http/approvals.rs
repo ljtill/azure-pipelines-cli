@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-use crate::api::models::*;
+use crate::client::models::*;
 
 impl super::AdoClient {
     pub async fn list_pending_approvals(&self) -> Result<Vec<Approval>> {

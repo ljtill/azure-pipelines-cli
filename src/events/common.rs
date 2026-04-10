@@ -3,7 +3,7 @@ use std::time::Duration;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::Action;
-use crate::app::{App, ConfirmAction, InputMode, View};
+use crate::state::{App, ConfirmAction, InputMode, View};
 
 pub fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {

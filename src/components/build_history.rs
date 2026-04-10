@@ -8,11 +8,13 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 
 use super::Component;
-use crate::api::models::{Build, PipelineDefinition};
-use crate::app::nav::ListNav;
-use crate::app::{App, View};
-use crate::ui::helpers::{build_elapsed, effective_status_icon, effective_status_label, truncate};
-use crate::ui::theme;
+use crate::client::models::{Build, PipelineDefinition};
+use crate::render::helpers::{
+    build_elapsed, effective_status_icon, effective_status_label, truncate,
+};
+use crate::render::theme;
+use crate::state::nav::ListNav;
+use crate::state::{App, View};
 
 /// Build History component — renders builds for a selected pipeline definition.
 #[derive(Debug, Default)]

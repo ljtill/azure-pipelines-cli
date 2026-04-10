@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::api::models::{BuildResult, TaskState};
+use crate::client::models::{BuildResult, TaskState};
 
 use super::LogViewer;
 
@@ -60,7 +60,7 @@ impl LogViewer {
             }
         };
 
-        let mut children_of: HashMap<String, Vec<&crate::api::models::TimelineRecord>> =
+        let mut children_of: HashMap<String, Vec<&crate::client::models::TimelineRecord>> =
             HashMap::new();
         let mut stages = Vec::new();
 
@@ -158,7 +158,7 @@ impl LogViewer {
                     continue;
                 }
 
-                let mut tasks: Vec<&crate::api::models::TimelineRecord> = Vec::new();
+                let mut tasks: Vec<&crate::client::models::TimelineRecord> = Vec::new();
 
                 if let Some(phase_children) = children_of.get(&phase.id) {
                     for child in phase_children {

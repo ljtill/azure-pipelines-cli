@@ -8,14 +8,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
 use super::Component;
-use crate::api::models::Build;
-use crate::app::nav::ListNav;
-use crate::app::{App, InputMode};
-use crate::ui::helpers::{
+use crate::client::models::Build;
+use crate::render::helpers::{
     build_elapsed, effective_status_icon, effective_status_label, row_style, split_with_search_bar,
     truncate,
 };
-use crate::ui::theme;
+use crate::render::theme;
+use crate::state::nav::ListNav;
+use crate::state::{App, InputMode};
 
 /// Active Runs component — renders currently running builds with multi-select.
 #[derive(Debug, Default)]
@@ -68,7 +68,7 @@ impl ActiveRuns {
     }
 
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
-        let show_search = app.view == crate::app::View::ActiveRuns
+        let show_search = app.view == crate::state::View::ActiveRuns
             && (app.search.mode == InputMode::Search || !app.search.query.is_empty());
         let list_area =
             split_with_search_bar(f, area, &app.search.query, app.search.mode, show_search);

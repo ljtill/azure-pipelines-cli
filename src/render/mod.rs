@@ -4,8 +4,8 @@ pub mod theme;
 
 use ratatui::Frame;
 
-use crate::app::App;
 use crate::components::Component;
+use crate::state::App;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     use ratatui::layout::{Constraint, Layout};
@@ -20,11 +20,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     app.header.draw_with_app(f, app, chunks[0]);
 
     match app.view {
-        crate::app::View::Dashboard => app.dashboard.draw_with_app(f, app, chunks[1]),
-        crate::app::View::Pipelines => app.pipelines.draw_with_app(f, app, chunks[1]),
-        crate::app::View::ActiveRuns => app.active_runs.draw_with_app(f, app, chunks[1]),
-        crate::app::View::BuildHistory => app.build_history.draw_with_app(f, app, chunks[1]),
-        crate::app::View::LogViewer => {
+        crate::state::View::Dashboard => app.dashboard.draw_with_app(f, app, chunks[1]),
+        crate::state::View::Pipelines => app.pipelines.draw_with_app(f, app, chunks[1]),
+        crate::state::View::ActiveRuns => app.active_runs.draw_with_app(f, app, chunks[1]),
+        crate::state::View::BuildHistory => app.build_history.draw_with_app(f, app, chunks[1]),
+        crate::state::View::LogViewer => {
             crate::components::log_viewer::draw_log_viewer(f, app, chunks[1])
         }
     }
@@ -57,11 +57,11 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     }
 
     let hints = match app.view {
-        crate::app::View::Dashboard => app.dashboard.footer_hints(),
-        crate::app::View::Pipelines => app.pipelines.footer_hints(),
-        crate::app::View::ActiveRuns => app.active_runs.footer_hints(),
-        crate::app::View::BuildHistory => app.build_history.footer_hints(),
-        crate::app::View::LogViewer => app.log_viewer.footer_hints(),
+        crate::state::View::Dashboard => app.dashboard.footer_hints(),
+        crate::state::View::Pipelines => app.pipelines.footer_hints(),
+        crate::state::View::ActiveRuns => app.active_runs.footer_hints(),
+        crate::state::View::BuildHistory => app.build_history.footer_hints(),
+        crate::state::View::LogViewer => app.log_viewer.footer_hints(),
     };
 
     let footer = Paragraph::new(Line::from(vec![Span::styled(hints, theme::MUTED)]));

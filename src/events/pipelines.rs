@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
-use crate::app::{App, InputMode};
+use crate::state::{App, InputMode};
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
@@ -36,8 +36,8 @@ fn handle_enter_pipelines(app: &mut App) -> Action {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::View;
     use crate::events::{Action, handle_key};
+    use crate::state::View;
     use crate::test_helpers::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 

@@ -25,7 +25,7 @@ pub struct RetentionLease {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::ListResponse;
+    use crate::client::models::ListResponse;
 
     #[test]
     fn deserialize_retention_lease() {

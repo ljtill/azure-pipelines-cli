@@ -42,8 +42,8 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 
-use crate::api::endpoints::Endpoints;
-use crate::api::models::{
+use crate::client::endpoints::Endpoints;
+use crate::client::models::{
     Approval, Build, BuildResult, BuildStatus, PipelineDefinition, RetentionLease,
 };
 
@@ -398,7 +398,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::api::models::*;
+    use crate::client::models::*;
     use crate::test_helpers::*;
 
     #[test]

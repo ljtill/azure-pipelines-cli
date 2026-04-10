@@ -5,8 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::theme;
-use crate::api::models::{Build, BuildResult, BuildStatus, TaskState};
-use crate::app::InputMode;
+use crate::client::models::{Build, BuildResult, BuildStatus, TaskState};
+use crate::state::InputMode;
 
 /// Short human-readable label for a build's combined status and result.
 pub fn status_label(status: BuildStatus, result: Option<BuildResult>) -> &'static str {
@@ -322,7 +322,7 @@ mod tests {
 
     // --- build_elapsed tests ---
 
-    use crate::api::models::BuildDefinitionRef;
+    use crate::client::models::BuildDefinitionRef;
 
     fn make_build(
         status: BuildStatus,

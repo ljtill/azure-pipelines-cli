@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::api::models::*;
+use crate::client::models::*;
 
 impl super::AdoClient {
     pub async fn list_definitions(&self) -> Result<Vec<PipelineDefinition>> {

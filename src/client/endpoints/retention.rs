@@ -20,7 +20,7 @@ impl Endpoints {
 
 #[cfg(test)]
 mod tests {
-    use crate::api::endpoints::Endpoints;
+    use crate::client::endpoints::Endpoints;
 
     fn ep() -> Endpoints {
         Endpoints::new("myorg", "myproj")

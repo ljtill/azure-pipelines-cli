@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use tokio::sync::mpsc;
 
-use crate::api::client::AdoClient;
-use crate::api::models;
+use crate::client::http::AdoClient;
+use crate::client::models;
 
 use super::super::App;
 use super::super::TimelineRow;
@@ -369,7 +369,7 @@ pub fn handle_message(
         AppMessage::UpdateAvailable { version } => {
             tracing::info!(version = &*version, "update available");
             app.notifications.push_persistent(
-                crate::app::notifications::NotificationLevel::Info,
+                crate::state::notifications::NotificationLevel::Info,
                 format!("Update available: v{version} — run 'pipelines update' to upgrade"),
             );
         }
@@ -398,8 +398,8 @@ pub fn handle_message(
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::api::models::*;
-    use crate::app::View;
+    use crate::client::models::*;
+    use crate::state::View;
     use crate::test_helpers::*;
 
     // -----------------------------------------------------------------------
@@ -959,8 +959,8 @@ mod tests {
 
     /// Helper: simulate the DataRefresh notification-diff logic for a given
     /// app and new latest_builds_by_def map. Mirrors the logic in handle_message.
-    fn simulate_notification_diff(app: &mut crate::app::App, map: &BTreeMap<u32, Build>) {
-        use crate::app::notifications::NotificationLevel;
+    fn simulate_notification_diff(app: &mut crate::state::App, map: &BTreeMap<u32, Build>) {
+        use crate::state::notifications::NotificationLevel;
 
         if app.notifications_enabled && !app.prev_latest_builds.is_empty() {
             for (def_id, build) in map {
@@ -1057,7 +1057,10 @@ mod tests {
 
         let n = app.notifications.clone_current().unwrap();
         assert_eq!(n.message, "CI Pipeline #101 started");
-        assert_eq!(n.level, crate::app::notifications::NotificationLevel::Info);
+        assert_eq!(
+            n.level,
+            crate::state::notifications::NotificationLevel::Info
+        );
     }
 
     #[test]
@@ -1087,7 +1090,10 @@ mod tests {
 
         let n = app.notifications.clone_current().unwrap();
         assert_eq!(n.message, "Deploy #100 failed");
-        assert_eq!(n.level, crate::app::notifications::NotificationLevel::Error);
+        assert_eq!(
+            n.level,
+            crate::state::notifications::NotificationLevel::Error
+        );
     }
 
     #[test]
@@ -1119,7 +1125,7 @@ mod tests {
         assert_eq!(n.message, "CI Pipeline #101 succeeded");
         assert_eq!(
             n.level,
-            crate::app::notifications::NotificationLevel::Success
+            crate::state::notifications::NotificationLevel::Success
         );
     }
 

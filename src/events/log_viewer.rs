@@ -3,7 +3,7 @@ use crossterm::event::KeyEvent;
 
 use super::Action;
 use super::navigation;
-use crate::app::{App, TimelineRow};
+use crate::state::{App, TimelineRow};
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
@@ -139,12 +139,12 @@ fn handle_retry_request(app: &mut App) -> Action {
         _ => stage_ref_name.clone(),
     };
 
-    app.confirm_prompt = Some(crate::app::ConfirmPrompt {
+    app.confirm_prompt = Some(crate::state::ConfirmPrompt {
         message: format!(
             "Retry stage \"{}\" in build #{}?  [y/N]",
             stage_name, build_number
         ),
-        action: crate::app::ConfirmAction::RetryStage {
+        action: crate::state::ConfirmAction::RetryStage {
             build_id,
             stage_ref_name,
         },
@@ -162,12 +162,12 @@ fn handle_approve_request(app: &mut App) -> Action {
         None => return Action::None,
     };
     let name = match app.log_viewer.timeline_rows().get(idx) {
-        Some(crate::app::TimelineRow::Checkpoint { name, .. }) => name.clone(),
+        Some(crate::state::TimelineRow::Checkpoint { name, .. }) => name.clone(),
         _ => "check".to_string(),
     };
-    app.confirm_prompt = Some(crate::app::ConfirmPrompt {
+    app.confirm_prompt = Some(crate::state::ConfirmPrompt {
         message: format!("Approve \"{}\"?  [y/N]", name),
-        action: crate::app::ConfirmAction::ApproveCheck { approval_id },
+        action: crate::state::ConfirmAction::ApproveCheck { approval_id },
     });
     Action::None
 }
@@ -182,12 +182,12 @@ fn handle_reject_request(app: &mut App) -> Action {
         None => return Action::None,
     };
     let name = match app.log_viewer.timeline_rows().get(idx) {
-        Some(crate::app::TimelineRow::Checkpoint { name, .. }) => name.clone(),
+        Some(crate::state::TimelineRow::Checkpoint { name, .. }) => name.clone(),
         _ => "check".to_string(),
     };
-    app.confirm_prompt = Some(crate::app::ConfirmPrompt {
+    app.confirm_prompt = Some(crate::state::ConfirmPrompt {
         message: format!("Reject \"{}\"?  [y/N]", name),
-        action: crate::app::ConfirmAction::RejectCheck { approval_id },
+        action: crate::state::ConfirmAction::RejectCheck { approval_id },
     });
     Action::None
 }

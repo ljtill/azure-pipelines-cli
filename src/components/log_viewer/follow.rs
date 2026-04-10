@@ -1,4 +1,4 @@
-use crate::api::models::{BuildResult, BuildStatus, TaskState};
+use crate::client::models::{BuildResult, BuildStatus, TaskState};
 
 use super::LogViewer;
 use super::TimelineRow;

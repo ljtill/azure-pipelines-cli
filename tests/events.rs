@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-use azure_pipelines_cli::api::models::*;
-use azure_pipelines_cli::app::{App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, View};
+use azure_pipelines_cli::client::models::*;
 use azure_pipelines_cli::events::{Action, handle_key};
+use azure_pipelines_cli::state::{
+    App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, View,
+};
 use azure_pipelines_cli::test_helpers::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

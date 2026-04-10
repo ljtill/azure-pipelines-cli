@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
-use crate::app::{App, InputMode};
+use crate::state::{App, InputMode};
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
@@ -41,12 +41,12 @@ fn handle_enter_active_runs(app: &mut App) -> Action {
 
 #[cfg(test)]
 mod tests {
-    use crate::api::models::*;
+    use crate::client::models::*;
     use crate::events::{Action, handle_key};
     use crate::test_helpers::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-    use crate::app::View;
+    use crate::state::View;
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent {

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::api::models::*;
+use crate::client::models::*;
 
 impl super::AdoClient {
     pub async fn list_retention_leases_for_definition(

@@ -5,9 +5,9 @@ use clap::{Parser, Subcommand};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 
-use azure_pipelines_cli::api::client::AdoClient;
-use azure_pipelines_cli::app;
+use azure_pipelines_cli::client::http::AdoClient;
 use azure_pipelines_cli::config::{Config, check_azure_cli};
+use azure_pipelines_cli::state;
 use azure_pipelines_cli::update;
 
 #[derive(Parser)]
@@ -97,7 +97,7 @@ async fn main() -> Result<()> {
         }
         None => {
             // No config file — run interactive setup inside the TUI.
-            let result = azure_pipelines_cli::ui::setup::run_setup(&mut terminal, &config_path);
+            let result = azure_pipelines_cli::render::setup::run_setup(&mut terminal, &config_path);
 
             match result {
                 Ok(Some(config)) => {
@@ -123,11 +123,11 @@ async fn main() -> Result<()> {
 
         tracing::info!("api client connected");
 
-        let result = app::run::run(&mut terminal, client, &config, config_path.clone()).await?;
+        let result = state::run::run(&mut terminal, client, &config, config_path.clone()).await?;
 
         match result {
-            app::run::RunResult::Quit => break,
-            app::run::RunResult::Reload => {
+            state::run::RunResult::Quit => break,
+            state::run::RunResult::Reload => {
                 tracing::info!("reloading application");
                 config = Config::load(Some(&config_path))?;
             }

@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
-use crate::app::App;
+use crate::state::App;
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
@@ -59,7 +59,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 fn handle_enter_dashboard(app: &mut App) -> Action {
     if let Some(row) = app.dashboard.rows.get(app.dashboard.nav.index()) {
         match row {
-            crate::app::DashboardRow::FolderHeader { .. } => {
+            crate::state::DashboardRow::FolderHeader { .. } => {
                 let idx = app.dashboard.nav.index();
                 if app.dashboard.toggle_folder_at(idx, &app.data.definitions) {
                     app.dashboard.rebuild(
@@ -71,7 +71,7 @@ fn handle_enter_dashboard(app: &mut App) -> Action {
                 }
                 Action::None
             }
-            crate::app::DashboardRow::Pipeline { definition, .. } => {
+            crate::state::DashboardRow::Pipeline { definition, .. } => {
                 let def_id = definition.id;
                 app.navigate_to_build_history(definition.clone());
                 Action::FetchBuildHistory(def_id)

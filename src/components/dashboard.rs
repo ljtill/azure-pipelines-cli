@@ -8,11 +8,13 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
 use super::Component;
-use crate::api::models::{Build, PipelineDefinition};
-use crate::app::App;
-use crate::app::nav::ListNav;
-use crate::ui::helpers::{build_elapsed, effective_status_icon, effective_status_label, truncate};
-use crate::ui::theme;
+use crate::client::models::{Build, PipelineDefinition};
+use crate::render::helpers::{
+    build_elapsed, effective_status_icon, effective_status_label, truncate,
+};
+use crate::render::theme;
+use crate::state::App;
+use crate::state::nav::ListNav;
 
 /// A row in the dashboard grouped view — either a folder header or a pipeline entry.
 #[derive(Debug, Clone)]
@@ -350,8 +352,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::api::models::*;
-    use crate::app::App;
+    use crate::client::models::*;
+    use crate::state::App;
     use crate::test_helpers::*;
 
     // --- folder_key / folder_display ---

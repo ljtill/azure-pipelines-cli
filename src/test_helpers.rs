@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use crate::api::models::*;
-use crate::app::App;
+use crate::client::models::*;
 use crate::config::{
     AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
     UpdateConfig,
 };
+use crate::state::App;
 
 pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
     Build {

@@ -13,9 +13,9 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
 
 use super::Component;
-use crate::app::App;
-use crate::ui::helpers::{checkpoint_status_icon, timeline_status_icon};
-use crate::ui::theme;
+use crate::render::helpers::{checkpoint_status_icon, timeline_status_icon};
+use crate::render::theme;
+use crate::state::App;
 
 /// Draw the log viewer. This is a free function rather than a method on `LogViewer`
 /// because it needs `&mut App` (for `set_layout_areas` mouse hit-testing state)
@@ -237,10 +237,10 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{
+    use crate::client::models::{
         Build, BuildResult, BuildStatus, BuildTimeline, LogReference, TaskState, TimelineRecord,
     };
-    use crate::app::View;
+    use crate::state::View;
     use crate::test_helpers::{make_build, make_timeline_record};
 
     // -----------------------------------------------------------------------

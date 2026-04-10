@@ -2,10 +2,10 @@ use std::collections::HashSet;
 
 use ratatui::layout::Rect;
 
-use crate::api::models::{Build, BuildTimeline};
+use crate::client::models::{Build, BuildTimeline};
 
-use crate::app::View;
-use crate::app::nav::ListNav;
+use crate::state::View;
+use crate::state::nav::ListNav;
 
 use super::TimelineRow;
 

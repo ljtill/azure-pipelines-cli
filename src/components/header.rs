@@ -7,9 +7,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 
 use super::Component;
-use crate::app::{App, View};
-use crate::ui::helpers::truncate;
-use crate::ui::theme;
+use crate::render::helpers::truncate;
+use crate::render::theme;
+use crate::state::{App, View};
 
 /// Header bar component — renders the title, refresh status, notifications, and tab bar.
 ///
@@ -44,9 +44,9 @@ impl Header {
 
         let error_span = if let Some(notif) = app.notifications.clone_current() {
             let (prefix, color) = match notif.level {
-                crate::app::notifications::NotificationLevel::Error => ("⚠", Color::Red),
-                crate::app::notifications::NotificationLevel::Success => ("✓", Color::Green),
-                crate::app::notifications::NotificationLevel::Info => ("ℹ", Color::Cyan),
+                crate::state::notifications::NotificationLevel::Error => ("⚠", Color::Red),
+                crate::state::notifications::NotificationLevel::Success => ("✓", Color::Green),
+                crate::state::notifications::NotificationLevel::Info => ("ℹ", Color::Cyan),
             };
             Span::styled(
                 format!("  {} {}", prefix, truncate(&notif.message, 60)),

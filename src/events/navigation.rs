@@ -1,10 +1,10 @@
 use super::Action;
-use crate::app::{App, ConfirmAction, ConfirmPrompt, View};
+use crate::state::{App, ConfirmAction, ConfirmPrompt, View};
 
 pub fn handle_open_in_browser(app: &App) -> Action {
     let url = match app.view {
         View::Dashboard => {
-            if let Some(crate::app::DashboardRow::Pipeline { definition, .. }) =
+            if let Some(crate::state::DashboardRow::Pipeline { definition, .. }) =
                 app.dashboard.rows.get(app.dashboard.nav.index())
             {
                 Some(app.endpoints_web_definition(definition.id))
@@ -73,7 +73,7 @@ pub fn handle_cancel_request(app: &mut App) -> Action {
 pub fn handle_queue_request(app: &mut App) -> Action {
     let (def_id, def_name) = match app.view {
         View::Dashboard => {
-            if let Some(crate::app::DashboardRow::Pipeline { definition, .. }) =
+            if let Some(crate::state::DashboardRow::Pipeline { definition, .. }) =
                 app.dashboard.rows.get(app.dashboard.nav.index())
             {
                 (definition.id, definition.name.clone())

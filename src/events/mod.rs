@@ -8,7 +8,7 @@ mod pipelines;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
-use crate::app::{App, ConfirmAction, ConfirmPrompt, InputMode, View};
+use crate::state::{App, ConfirmAction, ConfirmPrompt, InputMode, View};
 
 /// The action requested by the user after handling a key event.
 #[derive(Debug)]
@@ -244,7 +244,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) -> Action {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::*;
+    use crate::client::models::*;
     use crate::test_helpers::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 

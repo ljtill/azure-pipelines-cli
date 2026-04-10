@@ -5,8 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 
 use super::Component;
-use crate::ui::helpers::centered_rect;
-use crate::ui::theme;
+use crate::render::helpers::centered_rect;
+use crate::render::theme;
 
 /// Help overlay component — renders the full keybinding reference.
 ///

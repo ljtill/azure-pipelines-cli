@@ -7,10 +7,10 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
-use crate::api::client::AdoClient;
+use crate::client::http::AdoClient;
 use crate::config::Config;
 use crate::events::{handle_key, handle_mouse};
-use crate::ui;
+use crate::render;
 
 use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_log_refresh};
 use super::messages::AppMessage;
@@ -83,7 +83,7 @@ pub async fn run(
         }
 
         // Draw
-        terminal.draw(|f| ui::draw(f, &mut app))?;
+        terminal.draw(|f| render::draw(f, &mut app))?;
 
         // Async event stream: no dropped keypresses since EventStream only
         // consumes from crossterm's buffer when the future completes.

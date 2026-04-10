@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use super::encode_continuation_token;
-use crate::api::models::*;
+use crate::client::models::*;
 
 impl super::AdoClient {
     pub async fn list_recent_builds(&self) -> Result<Vec<Build>> {

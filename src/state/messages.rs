@@ -1,4 +1,4 @@
-use crate::api::models::{Approval, Build, BuildTimeline, PipelineDefinition, RetentionLease};
+use crate::client::models::{Approval, Build, BuildTimeline, PipelineDefinition, RetentionLease};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefreshSource {
