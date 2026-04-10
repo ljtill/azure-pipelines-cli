@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use reqwest::{Client, Url};
@@ -33,7 +33,9 @@ impl AdoClient {
 
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
         let token = self.auth.token().await?;
-        tracing::debug!(method = "GET", url = url_without_query(url), "api request");
+        let display_url = url_without_query(url);
+        let start = Instant::now();
+        tracing::debug!(method = "GET", url = display_url, "api request");
         let resp = self
             .http
             .get(url)
@@ -41,19 +43,29 @@ impl AdoClient {
             .send()
             .await?
             .error_for_status()?;
+        let status = resp.status().as_u16();
         let body = resp.json::<T>().await?;
+        tracing::debug!(
+            method = "GET",
+            url = display_url,
+            status,
+            elapsed_ms = start.elapsed().as_millis() as u64,
+            "api response"
+        );
         Ok(body)
     }
 
     async fn get_all_pages<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<Vec<T>> {
         let mut all_items = Vec::new();
         let mut continuation_token: Option<String> = None;
+        let mut page_count: u32 = 0;
+        let start = Instant::now();
 
         loop {
             let full_url = paginated_url(url, continuation_token.as_deref())?;
 
             let token = self.auth.token().await?;
-            tracing::debug!(method = "GET", url = %url_without_query(full_url.as_str()), "api paginated request");
+            tracing::debug!(method = "GET", url = %url_without_query(full_url.as_str()), page = page_count + 1, "api paginated request");
             let resp = self
                 .http
                 .get(full_url)
@@ -70,6 +82,7 @@ impl AdoClient {
 
             let page: ListResponse<T> = resp.json().await?;
             all_items.extend(page.value);
+            page_count += 1;
 
             match next_token {
                 Some(t) if !t.is_empty() => continuation_token = Some(t),
@@ -77,16 +90,22 @@ impl AdoClient {
             }
         }
 
+        tracing::debug!(
+            method = "GET",
+            url = url_without_query(url),
+            pages = page_count,
+            total_items = all_items.len(),
+            elapsed_ms = start.elapsed().as_millis() as u64,
+            "api paginated complete"
+        );
         Ok(all_items)
     }
 
     async fn get_text(&self, url: &str) -> Result<String> {
         let token = self.auth.token().await?;
-        tracing::debug!(
-            method = "GET",
-            url = url_without_query(url),
-            "api text request"
-        );
+        let display_url = url_without_query(url);
+        let start = Instant::now();
+        tracing::debug!(method = "GET", url = display_url, "api text request");
         let resp = self
             .http
             .get(url)
@@ -94,23 +113,40 @@ impl AdoClient {
             .send()
             .await?
             .error_for_status()?;
-        Ok(resp.text().await?)
+        let status = resp.status().as_u16();
+        let text = resp.text().await?;
+        tracing::debug!(
+            method = "GET",
+            url = display_url,
+            status,
+            bytes = text.len(),
+            elapsed_ms = start.elapsed().as_millis() as u64,
+            "api text response"
+        );
+        Ok(text)
     }
 
     async fn patch_json<B: serde::Serialize>(&self, url: &str, body: &B) -> Result<()> {
         let token = self.auth.token().await?;
-        tracing::debug!(
-            method = "PATCH",
-            url = url_without_query(url),
-            "api request"
-        );
-        self.http
+        let display_url = url_without_query(url);
+        let start = Instant::now();
+        tracing::debug!(method = "PATCH", url = display_url, "api request");
+        let resp = self
+            .http
             .patch(url)
             .bearer_auth(&token)
             .json(body)
             .send()
             .await?
             .error_for_status()?;
+        let status = resp.status().as_u16();
+        tracing::debug!(
+            method = "PATCH",
+            url = display_url,
+            status,
+            elapsed_ms = start.elapsed().as_millis() as u64,
+            "api response"
+        );
         Ok(())
     }
 
@@ -120,7 +156,9 @@ impl AdoClient {
         body: &B,
     ) -> Result<T> {
         let token = self.auth.token().await?;
-        tracing::debug!(method = "POST", url = url_without_query(url), "api request");
+        let display_url = url_without_query(url);
+        let start = Instant::now();
+        tracing::debug!(method = "POST", url = display_url, "api request");
         let resp = self
             .http
             .post(url)
@@ -129,39 +167,54 @@ impl AdoClient {
             .send()
             .await?
             .error_for_status()?;
-        Ok(resp.json::<T>().await?)
+        let status = resp.status().as_u16();
+        let body = resp.json::<T>().await?;
+        tracing::debug!(
+            method = "POST",
+            url = display_url,
+            status,
+            elapsed_ms = start.elapsed().as_millis() as u64,
+            "api response"
+        );
+        Ok(body)
     }
 
     // --- Read operations ---
 
     pub async fn list_definitions(&self) -> Result<Vec<PipelineDefinition>> {
+        tracing::debug!("listing pipeline definitions");
         let url = self.endpoints.definitions();
         self.get_all_pages(&url).await
     }
 
     pub async fn list_recent_builds(&self) -> Result<Vec<Build>> {
+        tracing::debug!("listing recent builds");
         let url = self.endpoints.builds_recent();
         let resp: BuildListResponse = self.get(&url).await?;
         Ok(resp.value)
     }
 
     pub async fn list_builds_for_definition(&self, definition_id: u32) -> Result<Vec<Build>> {
+        tracing::debug!(definition_id, "listing builds for definition");
         let url = self.endpoints.builds_for_definition(definition_id);
         let resp: BuildListResponse = self.get(&url).await?;
         Ok(resp.value)
     }
 
     pub async fn get_build(&self, build_id: u32) -> Result<Build> {
+        tracing::debug!(build_id, "getting build");
         let url = self.endpoints.build(build_id);
         self.get(&url).await
     }
 
     pub async fn get_build_timeline(&self, build_id: u32) -> Result<BuildTimeline> {
+        tracing::debug!(build_id, "getting build timeline");
         let url = self.endpoints.build_timeline(build_id);
         self.get(&url).await
     }
 
     pub async fn get_build_log(&self, build_id: u32, log_id: u32) -> Result<String> {
+        tracing::debug!(build_id, log_id, "getting build log");
         let url = self.endpoints.build_log(build_id, log_id);
         self.get_text(&url).await
     }
@@ -169,12 +222,14 @@ impl AdoClient {
     // --- Write operations ---
 
     pub async fn cancel_build(&self, build_id: u32) -> Result<()> {
+        tracing::info!(build_id, "cancelling build");
         let url = self.endpoints.build(build_id);
         self.patch_json(&url, &serde_json::json!({"status": "cancelling"}))
             .await
     }
 
     pub async fn retry_stage(&self, build_id: u32, stage_ref_name: &str) -> Result<()> {
+        tracing::info!(build_id, stage = stage_ref_name, "retrying stage");
         let url = self.endpoints.build_stage(build_id, stage_ref_name);
         self.patch_json(
             &url,
@@ -184,11 +239,13 @@ impl AdoClient {
     }
 
     pub async fn run_pipeline(&self, pipeline_id: u32) -> Result<PipelineRun> {
+        tracing::info!(pipeline_id, "running pipeline");
         let url = self.endpoints.pipeline_runs(pipeline_id);
         self.post_json(&url, &serde_json::json!({})).await
     }
 
     pub async fn list_pending_approvals(&self) -> Result<Vec<Approval>> {
+        tracing::debug!("listing pending approvals");
         let url = self.endpoints.approvals_pending();
         let resp: ApprovalListResponse = self.get(&url).await?;
         Ok(resp.value)
@@ -200,9 +257,12 @@ impl AdoClient {
         status: &str,
         comment: &str,
     ) -> Result<()> {
+        tracing::info!(approval_id, status, "updating approval");
         let url = self.endpoints.approvals_update();
         let token = self.auth.token().await?;
-        self.http
+        let start = Instant::now();
+        let resp = self
+            .http
             .patch(&url)
             .bearer_auth(&token)
             .json(&serde_json::json!([{
@@ -213,6 +273,13 @@ impl AdoClient {
             .send()
             .await?
             .error_for_status()?;
+        let resp_status = resp.status().as_u16();
+        tracing::debug!(
+            method = "PATCH",
+            status = resp_status,
+            elapsed_ms = start.elapsed().as_millis() as u64,
+            "approval updated"
+        );
         Ok(())
     }
 }

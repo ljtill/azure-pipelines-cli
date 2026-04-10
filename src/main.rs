@@ -66,7 +66,14 @@ async fn main() -> Result<()> {
         .as_ref()
         .map(|c| c.logging.level.as_str())
         .unwrap_or("info");
-    init_tracing(log_level);
+    let log_dir_override = early_config
+        .as_ref()
+        .and_then(|c| c.logging.log_directory.as_deref());
+    let max_log_files = early_config
+        .as_ref()
+        .map(|c| c.logging.max_log_files)
+        .unwrap_or(5);
+    init_tracing(log_level, log_dir_override, max_log_files);
 
     // ratatui::init() sets up raw mode, alternate screen, and a panic hook.
     let mut terminal = ratatui::init();
@@ -134,10 +141,12 @@ async fn run_update() -> Result<()> {
     }
 }
 
-/// Initialize tracing to log to a file.
+/// Initialize tracing to log to a rolling daily file.
 /// Uses the given level as default; `RUST_LOG` env var overrides if set.
-/// Logs go to `~/.local/state/pipelines/debug.log`.
-fn init_tracing(level: &str) {
+/// Logs go to `log_dir_override` if set, otherwise `~/.local/state/pipelines/`.
+/// Retains up to `max_log_files` daily log files.
+fn init_tracing(level: &str, log_dir_override: Option<&str>, max_log_files: usize) {
+    use tracing_appender::rolling;
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::fmt;
     use tracing_subscriber::prelude::*;
@@ -154,24 +163,45 @@ fn init_tracing(level: &str) {
         .add_directive("reqwest=warn".parse().unwrap())
         .add_directive("mio=warn".parse().unwrap());
 
-    let log_dir = match dirs::home_dir() {
-        Some(h) => h.join(".local/state/pipelines"),
-        None => return, // No home directory — skip file logging
+    let log_dir = if let Some(dir) = log_dir_override {
+        std::path::PathBuf::from(dir)
+    } else {
+        match dirs::home_dir() {
+            Some(h) => h.join(".local/state/pipelines"),
+            None => {
+                eprintln!("warning: could not determine home directory; file logging disabled");
+                return;
+            }
+        }
     };
-    let _ = std::fs::create_dir_all(&log_dir);
-    let log_path = log_dir.join("debug.log");
 
-    let Ok(file) = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(&log_path)
-    else {
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!(
+            "warning: failed to create log directory {}: {e}; file logging disabled",
+            log_dir.display()
+        );
         return;
+    }
+
+    let file_appender = rolling::RollingFileAppender::builder()
+        .rotation(rolling::Rotation::DAILY)
+        .filename_prefix("pipelines.log")
+        .max_log_files(max_log_files)
+        .build(&log_dir);
+
+    let file_appender = match file_appender {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!(
+                "warning: failed to create log appender in {}: {e}; file logging disabled",
+                log_dir.display()
+            );
+            return;
+        }
     };
 
     let file_layer = fmt::layer()
-        .with_writer(std::sync::Mutex::new(file))
+        .with_writer(file_appender)
         .with_ansi(false)
         .with_target(true);
 
@@ -180,5 +210,10 @@ fn init_tracing(level: &str) {
         .with(file_layer)
         .init();
 
-    tracing::info!("tracing initialized, logging to {}", log_path.display());
+    tracing::info!(
+        log_dir = %log_dir.display(),
+        max_files = max_log_files,
+        level,
+        "tracing initialized"
+    );
 }

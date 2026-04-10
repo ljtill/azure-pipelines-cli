@@ -199,6 +199,7 @@ pub fn run_setup(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     config_path: &PathBuf,
 ) -> Result<Option<Config>> {
+    tracing::info!(path = %config_path.display(), "starting setup wizard");
     let mut state = SetupState::new();
 
     loop {
@@ -210,10 +211,18 @@ pub fn run_setup(
             }
             match handle_key(&mut state, key.code) {
                 Outcome::Continue => {}
-                Outcome::Quit => return Ok(None),
+                Outcome::Quit => {
+                    tracing::debug!("setup wizard cancelled by user");
+                    return Ok(None);
+                }
                 Outcome::Complete => {
                     let org = state.organization.trim().to_string();
                     let proj = state.project.trim().to_string();
+                    tracing::info!(
+                        organization = &*org,
+                        project = &*proj,
+                        "setup wizard complete"
+                    );
                     Config::write_initial(config_path, &org, &proj)?;
                     let config = Config::load(Some(config_path))?;
                     return Ok(Some(config));

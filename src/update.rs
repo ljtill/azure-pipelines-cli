@@ -201,10 +201,17 @@ pub async fn check_for_update() -> Option<String> {
 }
 
 async fn check_for_update_inner() -> Result<Option<String>> {
+    tracing::debug!(current = current_version(), "checking for updates");
     let version = fetch_latest_version().await?;
     if is_newer(&version, current_version()) {
+        tracing::info!(
+            remote = &*version,
+            current = current_version(),
+            "update available"
+        );
         Ok(Some(version))
     } else {
+        tracing::debug!(remote = &*version, "already on latest version");
         Ok(None)
     }
 }
@@ -212,6 +219,7 @@ async fn check_for_update_inner() -> Result<Option<String>> {
 /// Fetch the latest release version string from GitHub.
 async fn fetch_latest_version() -> Result<String> {
     let url = format!("{GITHUB_API_BASE}/{GITHUB_REPO}/releases/latest");
+    tracing::debug!(url = &*url, "fetching latest version from GitHub");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()?;
@@ -231,6 +239,7 @@ async fn fetch_latest_version() -> Result<String> {
 
     // Strip leading 'v' if present
     let version = tag.strip_prefix('v').unwrap_or(tag);
+    tracing::debug!(version, "parsed latest version");
     Ok(version.to_string())
 }
 
@@ -245,12 +254,19 @@ pub async fn self_update() -> Result<UpdateResult> {
     let latest = fetch_latest_version().await?;
 
     if !is_newer(&latest, current_version()) {
+        tracing::info!(version = current_version(), "already on latest version");
         bail!("Already on latest version (v{})", current_version());
     }
 
     let artifact = platform_artifact_name()?;
     let download_url = artifact_download_url(&latest)?;
     let checksums_url = checksums_download_url(&latest);
+
+    tracing::info!(
+        version = &*latest,
+        artifact = &*artifact,
+        "starting self-update"
+    );
 
     // Prepare version directory
     let version_dir = versions_dir()?.join(&latest);
@@ -266,6 +282,7 @@ pub async fn self_update() -> Result<UpdateResult> {
     let temp_path = version_dir.join(format!("{binary_name}.download"));
 
     // Download
+    tracing::info!(url = &*download_url, "downloading binary");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .build()?;
@@ -278,6 +295,7 @@ pub async fn self_update() -> Result<UpdateResult> {
         .error_for_status()
         .with_context(|| format!("Failed to download {download_url}"))?;
 
+    tracing::debug!(url = &*checksums_url, "downloading checksums");
     let checksums = client
         .get(&checksums_url)
         .header("User-Agent", format!("pipelines/{}", current_version()))
@@ -291,6 +309,7 @@ pub async fn self_update() -> Result<UpdateResult> {
     let expected_sha256 = parse_checksum_manifest(&checksums, &artifact)?;
 
     let bytes = resp.bytes().await?;
+    tracing::debug!(size_bytes = bytes.len(), "download complete");
     if temp_path.exists() {
         std::fs::remove_file(&temp_path)
             .with_context(|| format!("Failed to remove stale {}", temp_path.display()))?;
@@ -298,9 +317,11 @@ pub async fn self_update() -> Result<UpdateResult> {
     std::fs::write(&temp_path, &bytes)
         .with_context(|| format!("Failed to write binary to {}", temp_path.display()))?;
     if let Err(err) = verify_sha256(&temp_path, &expected_sha256) {
+        tracing::warn!(error = %err, "SHA256 verification failed");
         let _ = std::fs::remove_file(&temp_path);
         return Err(err);
     }
+    tracing::debug!("SHA256 verification passed");
 
     // Set executable permission (Unix)
     #[cfg(unix)]
@@ -315,13 +336,15 @@ pub async fn self_update() -> Result<UpdateResult> {
     }
     std::fs::rename(&temp_path, &binary_path)
         .with_context(|| format!("Failed to install binary to {}", binary_path.display()))?;
+    tracing::info!(path = %binary_path.display(), "binary installed");
 
     // Update symlink
     update_symlink(&binary_path)?;
+    tracing::debug!(target = %binary_path.display(), "symlink updated");
 
     // Prune old versions
     if let Err(e) = prune_old_versions(VERSIONS_TO_KEEP) {
-        tracing::warn!("Failed to prune old versions: {e}");
+        tracing::warn!(error = %e, "failed to prune old versions");
     }
 
     Ok(UpdateResult {
@@ -395,9 +418,9 @@ fn prune_old_versions(keep: usize) -> Result<()> {
 
     // Delete everything beyond `keep`
     for (_, path) in versions.into_iter().skip(keep) {
-        tracing::info!("Pruning old version: {}", path.display());
+        tracing::info!(path = %path.display(), "pruning old version");
         if let Err(e) = std::fs::remove_dir_all(&path) {
-            tracing::warn!("Failed to remove {}: {e}", path.display());
+            tracing::warn!(path = %path.display(), error = %e, "failed to remove old version");
         }
     }
 

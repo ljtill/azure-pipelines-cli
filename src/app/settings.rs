@@ -284,6 +284,8 @@ impl SettingsState {
             },
             logging: LoggingConfig {
                 level: get("Log level").to_string(),
+                log_directory: None,
+                max_log_files: 5,
             },
             notifications: NotificationsConfig {
                 enabled: parse_bool("Notifications"),

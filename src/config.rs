@@ -57,18 +57,30 @@ fn default_check_for_updates() -> bool {
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
+    /// Directory for log files. Defaults to `~/.local/state/pipelines`.
+    #[serde(default)]
+    pub log_directory: Option<String>,
+    /// Maximum number of daily log files to retain. Defaults to 5.
+    #[serde(default = "default_max_log_files")]
+    pub max_log_files: usize,
 }
 
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: default_log_level(),
+            log_directory: None,
+            max_log_files: default_max_log_files(),
         }
     }
 }
 
 fn default_log_level() -> String {
     "info".to_string()
+}
+
+fn default_max_log_files() -> usize {
+    5
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -121,7 +133,10 @@ impl Config {
             None => default_config_path()?,
         };
 
+        tracing::debug!(path = %config_path.display(), "loading config");
+
         if !config_path.exists() {
+            tracing::warn!(path = %config_path.display(), "config file not found");
             anyhow::bail!(
                 "Config file not found at {}. Create it with:\n\n\
                  [azure_devops]\n\
@@ -137,6 +152,7 @@ impl Config {
         let config: Config = toml::from_str(&contents)
             .with_context(|| format!("Failed to parse config from {}", config_path.display()))?;
 
+        tracing::debug!(path = %config_path.display(), "config loaded");
         Ok(config)
     }
 
@@ -147,11 +163,18 @@ impl Config {
             None => default_config_path()?,
         };
         let exists = path.exists();
+        tracing::debug!(path = %path.display(), exists, "resolved config path");
         Ok((path, exists))
     }
 
     /// Write a minimal config file with the given org and project.
     pub fn write_initial(path: &PathBuf, organization: &str, project: &str) -> Result<()> {
+        tracing::info!(
+            path = %path.display(),
+            organization,
+            project,
+            "writing initial config"
+        );
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).with_context(|| {
                 format!("Failed to create config directory {}", parent.display())
@@ -180,6 +203,7 @@ impl Config {
 
     /// Serialize the full config and write it to the given path.
     pub fn save(&self, path: &PathBuf) -> Result<()> {
+        tracing::info!(path = %path.display(), "saving config");
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).with_context(|| {
                 format!("Failed to create config directory {}", parent.display())
@@ -199,10 +223,16 @@ impl Config {
 /// Check that Azure CLI (`az`) or Azure Developer CLI (`azd`) is available on PATH.
 /// Returns `Ok(())` if at least one is found, or an error with install guidance.
 pub fn check_azure_cli() -> Result<()> {
-    if which("az") || which("azd") {
+    if which("az") {
+        tracing::debug!(cli = "az", "Azure CLI found");
+        return Ok(());
+    }
+    if which("azd") {
+        tracing::debug!(cli = "azd", "Azure Developer CLI found");
         return Ok(());
     }
 
+    tracing::warn!("neither az nor azd found on PATH");
     anyhow::bail!(
         "Azure CLI or Azure Developer CLI is required for authentication.\n\n\
          Install one of the following:\n\
@@ -261,6 +291,8 @@ project = "myproject"
         assert!(config.update.check_for_updates);
         // Logging defaults
         assert_eq!(config.logging.level, "info");
+        assert!(config.logging.log_directory.is_none());
+        assert_eq!(config.logging.max_log_files, 5);
         // Notifications defaults
         assert!(config.notifications.enabled);
         // Display defaults

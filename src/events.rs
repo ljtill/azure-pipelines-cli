@@ -28,6 +28,8 @@ pub enum Action {
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
+    tracing::trace!(key = ?key.code, modifiers = ?key.modifiers, view = ?app.view, "key event");
+
     // Ctrl+C always quits
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Action::Quit;
@@ -56,10 +58,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
     match key.code {
         KeyCode::Char('?') => {
+            tracing::debug!("opening help overlay");
             app.show_help = true;
             Action::None
         }
         KeyCode::Char(',') => {
+            tracing::debug!("opening settings");
             app.open_settings();
             Action::None
         }
@@ -77,6 +81,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::FollowLatest
         }
         KeyCode::Char('/') if app.view == View::Pipelines || app.view == View::ActiveRuns => {
+            tracing::debug!(view = ?app.view, "entering search mode");
             app.search.mode = InputMode::Search;
             Action::None
         }
@@ -124,11 +129,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
         // Tab switching
         KeyCode::Char('1') => {
+            tracing::info!(from = ?app.view, to = ?View::Dashboard, "view switch");
             app.search.query.clear();
             app.view = View::Dashboard;
             Action::None
         }
         KeyCode::Char('2') => {
+            tracing::info!(from = ?app.view, to = ?View::Pipelines, "view switch");
             app.search.query.clear();
             app.view = View::Pipelines;
             app.pipelines.rebuild(
@@ -140,6 +147,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('3') => {
+            tracing::info!(from = ?app.view, to = ?View::ActiveRuns, "view switch");
             app.search.query.clear();
             app.view = View::ActiveRuns;
             app.active_runs.rebuild(

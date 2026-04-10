@@ -37,6 +37,7 @@ impl AdoAuth {
             if let Some(cached) = cache.as_ref()
                 && cached.expires_on > std::time::Instant::now()
             {
+                tracing::trace!("auth token cache hit");
                 return Ok(cached.secret.clone());
             }
         }
@@ -47,31 +48,33 @@ impl AdoAuth {
         if let Some(cached) = cache.as_ref()
             && cached.expires_on > std::time::Instant::now()
         {
+            tracing::trace!("auth token cache hit (after write lock)");
             return Ok(cached.secret.clone());
         }
 
+        tracing::debug!("refreshing auth token");
         let response = self
             .credential
             .get_token(&[&format!("{ADO_RESOURCE}/.default")], None)
             .await
             .map_err(|e| {
+                tracing::warn!(error = %e, "authentication failed");
                 anyhow::anyhow!(
                     "Authentication failed — ensure you are logged in with `az login` or `azd auth login`.\n\nUnderlying error: {e}"
                 )
             })?;
 
-        tracing::debug!("auth token refreshed");
         let secret = response.token.secret().to_string();
         let secs_until = response
             .expires_on
             .unix_timestamp()
             .saturating_sub(OffsetDateTime::now_utc().unix_timestamp());
         let expires_on = if secs_until > EXPIRY_MARGIN.as_secs() as i64 {
-            std::time::Instant::now()
-                + std::time::Duration::from_secs(
-                    (secs_until as u64).saturating_sub(EXPIRY_MARGIN.as_secs()),
-                )
+            let effective_secs = (secs_until as u64).saturating_sub(EXPIRY_MARGIN.as_secs());
+            tracing::debug!(expires_in_secs = effective_secs, "auth token refreshed");
+            std::time::Instant::now() + std::time::Duration::from_secs(effective_secs)
         } else {
+            tracing::debug!("auth token near expiry, will refresh next call");
             std::time::Instant::now() // Already near expiry → will refresh next call
         };
 

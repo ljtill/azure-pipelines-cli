@@ -297,15 +297,18 @@ impl App {
 
     pub fn go_back(&mut self) {
         if self.show_settings {
+            tracing::debug!("closing settings");
             self.show_settings = false;
             self.settings = None;
             return;
         }
         if self.show_help {
+            tracing::debug!("closing help");
             self.show_help = false;
             return;
         }
         if self.search.mode == InputMode::Search {
+            tracing::debug!(query = &*self.search.query, "exiting search mode");
             self.search.mode = InputMode::Normal;
             self.search.query.clear();
             self.pipelines.rebuild(
@@ -319,6 +322,7 @@ impl App {
         match self.view {
             View::LogViewer => {
                 let return_to = self.log_viewer.return_to_view();
+                tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
                 let next_gen = self.log_viewer.generation() + 1;
                 self.log_viewer = LogViewerState::default();
                 // Preserve generation across resets to invalidate stale messages.
@@ -337,7 +341,9 @@ impl App {
                 }
             }
             View::BuildHistory => {
-                self.view = self.build_history.return_to.unwrap_or(View::Dashboard);
+                let return_to = self.build_history.return_to.unwrap_or(View::Dashboard);
+                tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
+                self.view = return_to;
                 self.build_history.selected_definition = None;
                 self.build_history.builds.clear();
                 self.build_history.nav.reset();
@@ -347,6 +353,11 @@ impl App {
     }
 
     pub fn navigate_to_build_history(&mut self, def: PipelineDefinition) {
+        tracing::info!(
+            definition_id = def.id,
+            definition_name = &*def.name,
+            "navigating to build history"
+        );
         self.build_history.return_to = Some(self.view);
         self.build_history.selected_definition = Some(def);
         self.build_history.builds.clear();
