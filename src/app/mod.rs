@@ -27,6 +27,8 @@ pub struct BuildHistoryState {
     pub loading_more: bool,
     /// ADO continuation token for fetching the next page.
     pub continuation_token: Option<String>,
+    /// Stashed nav index to restore after a refresh (e.g. post-lease-deletion).
+    pub pending_nav_index: Option<usize>,
 }
 
 /// State for the Active Runs view.

@@ -178,6 +178,10 @@ pub fn handle_message(
             app.build_history
                 .nav
                 .set_len(app.build_history.builds.len());
+            // Restore stashed scroll position (e.g. after lease deletion refresh)
+            if let Some(idx) = app.build_history.pending_nav_index.take() {
+                app.build_history.nav.set_index(idx);
+            }
         }
         AppMessage::BuildHistoryMore {
             builds,
@@ -378,6 +382,9 @@ pub fn handle_message(
                 app.notifications
                     .success(format!("Deleted {deleted} retention lease(s)"));
             }
+            // Clear stale multi-select state and preserve scroll position
+            app.build_history.selected.clear();
+            app.build_history.pending_nav_index = Some(app.build_history.nav.index());
             // Trigger a full data refresh to re-fetch leases
             spawn_data_refresh(app, client, tx);
             if app.view == View::BuildHistory {
@@ -643,6 +650,78 @@ mod tests {
         assert_eq!(app.build_history.nav.index(), 0);
         // down on empty list is a no-op
         app.build_history.nav.down();
+        assert_eq!(app.build_history.nav.index(), 0);
+    }
+
+    #[test]
+    fn build_history_restores_pending_nav_index() {
+        let mut app = make_app();
+        // Simulate user at index 2 in a 5-item list
+        app.build_history.nav.set_len(5);
+        app.build_history.nav.set_index(2);
+        app.build_history.pending_nav_index = Some(2);
+
+        // Simulate BuildHistory message arriving with fresh data
+        let builds = vec![
+            make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded)),
+            make_build(2, BuildStatus::Completed, Some(BuildResult::Failed)),
+            make_build(3, BuildStatus::InProgress, None),
+            make_build(4, BuildStatus::Completed, Some(BuildResult::Succeeded)),
+            make_build(5, BuildStatus::Completed, Some(BuildResult::Succeeded)),
+        ];
+        app.build_history.builds = builds;
+        app.build_history
+            .nav
+            .set_len(app.build_history.builds.len());
+        if let Some(idx) = app.build_history.pending_nav_index.take() {
+            app.build_history.nav.set_index(idx);
+        }
+
+        assert_eq!(app.build_history.nav.index(), 2);
+        assert!(app.build_history.pending_nav_index.is_none());
+    }
+
+    #[test]
+    fn build_history_pending_nav_clamps_to_shorter_list() {
+        let mut app = make_app();
+        // User was at index 4, but refresh returns only 3 builds
+        app.build_history.pending_nav_index = Some(4);
+
+        let builds = vec![
+            make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded)),
+            make_build(2, BuildStatus::Completed, Some(BuildResult::Failed)),
+            make_build(3, BuildStatus::InProgress, None),
+        ];
+        app.build_history.builds = builds;
+        app.build_history
+            .nav
+            .set_len(app.build_history.builds.len());
+        if let Some(idx) = app.build_history.pending_nav_index.take() {
+            app.build_history.nav.set_index(idx);
+        }
+
+        // Clamped to last item (index 2)
+        assert_eq!(app.build_history.nav.index(), 2);
+    }
+
+    #[test]
+    fn build_history_no_pending_nav_stays_at_zero() {
+        let mut app = make_app();
+        assert!(app.build_history.pending_nav_index.is_none());
+
+        let builds = vec![
+            make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded)),
+            make_build(2, BuildStatus::Completed, Some(BuildResult::Failed)),
+        ];
+        app.build_history.builds = builds;
+        app.build_history
+            .nav
+            .set_len(app.build_history.builds.len());
+        if let Some(idx) = app.build_history.pending_nav_index.take() {
+            app.build_history.nav.set_index(idx);
+        }
+
+        // No pending index — stays at default 0
         assert_eq!(app.build_history.nav.index(), 0);
     }
 
