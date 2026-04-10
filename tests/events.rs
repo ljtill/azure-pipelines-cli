@@ -61,7 +61,8 @@ fn key_3_switches_to_active_runs() {
 fn esc_shows_quit_prompt_on_dashboard() {
     let mut app = test_app();
     assert_eq!(app.view, View::Dashboard);
-    let action = handle_key(&mut app, key(KeyCode::Esc));
+    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    assert!(app.confirm_prompt.is_some());
     assert!(matches!(
         app.confirm_prompt.as_ref().unwrap().action,
         ConfirmAction::Quit
@@ -73,7 +74,7 @@ fn esc_shows_quit_prompt_on_dashboard() {
 fn esc_navigates_to_dashboard_from_pipelines() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    let action = handle_key(&mut app, key(KeyCode::Esc));
+    let action = handle_key(&mut app, key(KeyCode::Char('q')));
     assert_eq!(app.view, View::Dashboard);
     assert!(matches!(action, Action::None));
 }
@@ -82,7 +83,7 @@ fn esc_navigates_to_dashboard_from_pipelines() {
 fn esc_navigates_to_dashboard_from_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    let action = handle_key(&mut app, key(KeyCode::Esc));
+    let action = handle_key(&mut app, key(KeyCode::Char('q')));
     assert_eq!(app.view, View::Dashboard);
     assert!(matches!(action, Action::None));
 }
@@ -92,7 +93,7 @@ fn esc_goes_back_from_build_history_to_dashboard() {
     let mut app = test_app();
     app.view = View::BuildHistory;
     app.build_history.return_to = Some(View::Dashboard);
-    let action = handle_key(&mut app, key(KeyCode::Esc));
+    let action = handle_key(&mut app, key(KeyCode::Char('q')));
     assert_eq!(app.view, View::Dashboard);
     assert!(matches!(action, Action::None));
 }
@@ -104,7 +105,7 @@ fn esc_goes_back_from_log_viewer() {
     app.navigate_to_log_viewer(build);
     assert_eq!(app.view, View::LogViewer);
 
-    let action = handle_key(&mut app, key(KeyCode::Esc));
+    let action = handle_key(&mut app, key(KeyCode::Char('q')));
     assert_ne!(app.view, View::LogViewer);
     assert!(matches!(action, Action::None));
 }
@@ -563,7 +564,7 @@ fn esc_goes_back_from_build_history() {
     app.view = View::BuildHistory;
     app.build_history.return_to = Some(View::Pipelines);
 
-    let action = handle_key(&mut app, key(KeyCode::Esc));
+    let action = handle_key(&mut app, key(KeyCode::Char('q')));
     assert_eq!(app.view, View::Pipelines);
     assert!(matches!(action, Action::None));
 }
