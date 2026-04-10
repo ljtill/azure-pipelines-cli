@@ -6,14 +6,53 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
 use super::Component;
+use crate::api::models::PipelineDefinition;
+use crate::app::nav::ListNav;
 use crate::app::{App, InputMode};
 use crate::ui::helpers::{draw_search_bar, truncate};
 use crate::ui::theme;
 
 /// Pipelines flat-list component — renders all pipeline definitions with search.
-pub struct Pipelines;
+#[derive(Debug, Default)]
+pub struct Pipelines {
+    pub filtered: Vec<PipelineDefinition>,
+    pub nav: ListNav,
+}
 
 impl Pipelines {
+    pub fn rebuild(
+        &mut self,
+        definitions: &[PipelineDefinition],
+        filter_folders: &[String],
+        filter_definition_ids: &[u32],
+        search_query: &str,
+    ) {
+        let base = definitions.iter().filter(|d| {
+            if !filter_definition_ids.is_empty() && !filter_definition_ids.contains(&d.id) {
+                return false;
+            }
+            if !filter_folders.is_empty() && !filter_folders.iter().any(|f| d.path.starts_with(f)) {
+                return false;
+            }
+            true
+        });
+
+        if search_query.is_empty() {
+            self.filtered = base.cloned().collect();
+        } else {
+            let q = search_query.to_lowercase();
+            self.filtered = base
+                .filter(|d| {
+                    d.name.to_lowercase().contains(&q) || d.path.to_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect();
+        }
+        self.filtered
+            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.nav.set_len(self.filtered.len());
+    }
+
     /// Render the pipelines view using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
@@ -41,15 +80,14 @@ impl Pipelines {
         widths[1] = widths[1].min(50);
         widths[2] = widths[2].min(80);
 
-        let items: Vec<ListItem> = app
-            .pipelines
+        let items: Vec<ListItem> = self
             .filtered
             .iter()
             .enumerate()
             .map(|(i, def)| {
                 let folder = def.path.trim_start_matches('\\').replace('\\', " / ");
 
-                let row_style = if i == app.pipelines.nav.index() {
+                let row_style = if i == self.nav.index() {
                     theme::SELECTED
                 } else {
                     Style::new()
@@ -71,11 +109,11 @@ impl Pipelines {
             })
             .collect();
 
-        let title = format!(" All Pipelines ({}) ", app.pipelines.filtered.len());
+        let title = format!(" All Pipelines ({}) ", self.filtered.len());
         let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
 
         let mut state = ListState::default();
-        state.select(Some(app.pipelines.nav.index()));
+        state.select(Some(self.nav.index()));
         f.render_stateful_widget(list, list_area, &mut state);
     }
 }

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -6,6 +8,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
 use super::Component;
+use crate::api::models::Build;
+use crate::app::nav::ListNav;
 use crate::app::{App, InputMode};
 use crate::ui::helpers::{
     build_elapsed, draw_search_bar, effective_status_icon, effective_status_label, truncate,
@@ -13,9 +17,45 @@ use crate::ui::helpers::{
 use crate::ui::theme;
 
 /// Active Runs component — renders currently running builds with multi-select.
-pub struct ActiveRuns;
+#[derive(Debug, Default)]
+pub struct ActiveRuns {
+    pub filtered: Vec<Build>,
+    pub nav: ListNav,
+    pub selected: HashSet<u32>,
+}
 
 impl ActiveRuns {
+    pub fn rebuild(
+        &mut self,
+        active_builds: &[Build],
+        filter_definition_ids: &[u32],
+        search_query: &str,
+    ) {
+        let base = active_builds.iter().filter(|b| {
+            if !filter_definition_ids.is_empty()
+                && !filter_definition_ids.contains(&b.definition.id)
+            {
+                return false;
+            }
+            true
+        });
+
+        if search_query.is_empty() {
+            self.filtered = base.cloned().collect();
+        } else {
+            let q = search_query.to_lowercase();
+            self.filtered = base
+                .filter(|b| {
+                    b.definition.name.to_lowercase().contains(&q)
+                        || b.build_number.to_lowercase().contains(&q)
+                        || b.branch_display().to_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect();
+        }
+        self.nav.set_len(self.filtered.len());
+    }
+
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.view == crate::app::View::ActiveRuns
             && (app.search.mode == InputMode::Search || !app.search.query.is_empty());
@@ -49,14 +89,13 @@ impl ActiveRuns {
         widths[6] = widths[6].min(35);
         widths[7] = widths[7].min(35);
 
-        let items: Vec<ListItem> = app
-            .active_runs
+        let items: Vec<ListItem> = self
             .filtered
             .iter()
             .enumerate()
             .map(|(i, build)| {
                 let elapsed = build_elapsed(build);
-                let selected = app.active_runs.selected.contains(&build.id);
+                let selected = self.selected.contains(&build.id);
                 let retained = app.retention_leases.retained_run_ids.contains(&build.id);
                 let check = if selected { "✓ " } else { "  " };
                 let (icon, icon_color) = {
@@ -68,7 +107,7 @@ impl ActiveRuns {
                     effective_status_label(build.status, build.result, awaiting)
                 };
 
-                let row_style = if i == app.active_runs.nav.index() {
+                let row_style = if i == self.nav.index() {
                     theme::SELECTED
                 } else {
                     Style::new()
@@ -130,8 +169,8 @@ impl ActiveRuns {
             })
             .collect();
 
-        let sel_count = app.active_runs.selected.len();
-        let filtered = app.active_runs.filtered.len();
+        let sel_count = self.selected.len();
+        let filtered = self.filtered.len();
         let total = app.data.active_builds.len();
         let title = if sel_count > 0 {
             format!(
@@ -146,7 +185,7 @@ impl ActiveRuns {
         let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
 
         let mut state = ListState::default();
-        state.select(Some(app.active_runs.nav.index()));
+        state.select(Some(self.nav.index()));
         f.render_stateful_widget(list, list_area, &mut state);
     }
 }

@@ -31,47 +31,6 @@ pub struct BuildHistoryState {
     pub pending_nav_index: Option<usize>,
 }
 
-/// State for the Active Runs view.
-#[derive(Debug, Default)]
-pub struct ActiveRunsState {
-    pub filtered: Vec<Build>,
-    pub nav: nav::ListNav,
-    pub selected: HashSet<u32>,
-}
-
-impl ActiveRunsState {
-    pub fn rebuild(
-        &mut self,
-        active_builds: &[Build],
-        filter_definition_ids: &[u32],
-        search_query: &str,
-    ) {
-        let base = active_builds.iter().filter(|b| {
-            if !filter_definition_ids.is_empty()
-                && !filter_definition_ids.contains(&b.definition.id)
-            {
-                return false;
-            }
-            true
-        });
-
-        if search_query.is_empty() {
-            self.filtered = base.cloned().collect();
-        } else {
-            let q = search_query.to_lowercase();
-            self.filtered = base
-                .filter(|b| {
-                    b.definition.name.to_lowercase().contains(&q)
-                        || b.build_number.to_lowercase().contains(&q)
-                        || b.branch_display().to_lowercase().contains(&q)
-                })
-                .cloned()
-                .collect();
-        }
-        self.nav.set_len(self.filtered.len());
-    }
-}
-
 /// Cached retention lease data, refreshed alongside the periodic data refresh.
 #[derive(Debug, Default)]
 pub struct RetentionLeasesState {
@@ -97,48 +56,6 @@ impl RetentionLeasesState {
             .iter()
             .filter(|l| l.definition_id == definition_id)
             .count()
-    }
-}
-
-/// State for the Pipelines flat-list view.
-#[derive(Debug, Default)]
-pub struct PipelinesState {
-    pub filtered: Vec<PipelineDefinition>,
-    pub nav: nav::ListNav,
-}
-
-impl PipelinesState {
-    pub fn rebuild(
-        &mut self,
-        definitions: &[PipelineDefinition],
-        filter_folders: &[String],
-        filter_definition_ids: &[u32],
-        search_query: &str,
-    ) {
-        let base = definitions.iter().filter(|d| {
-            if !filter_definition_ids.is_empty() && !filter_definition_ids.contains(&d.id) {
-                return false;
-            }
-            if !filter_folders.is_empty() && !filter_folders.iter().any(|f| d.path.starts_with(f)) {
-                return false;
-            }
-            true
-        });
-
-        if search_query.is_empty() {
-            self.filtered = base.cloned().collect();
-        } else {
-            let q = search_query.to_lowercase();
-            self.filtered = base
-                .filter(|d| {
-                    d.name.to_lowercase().contains(&q) || d.path.to_lowercase().contains(&q)
-                })
-                .cloned()
-                .collect();
-        }
-        self.filtered
-            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        self.nav.set_len(self.filtered.len());
     }
 }
 
@@ -260,10 +177,10 @@ pub struct App {
     pub confirm_prompt: Option<ConfirmPrompt>,
 
     // Active Runs view
-    pub active_runs: ActiveRunsState,
+    pub active_runs: crate::components::active_runs::ActiveRuns,
 
     // Pipelines view
-    pub pipelines: PipelinesState,
+    pub pipelines: crate::components::pipelines::Pipelines,
 
     // Retention Leases view
     pub retention_leases: RetentionLeasesState,
@@ -275,8 +192,6 @@ pub struct App {
     pub header: crate::components::header::Header,
     pub help: crate::components::help::Help,
     pub dashboard_component: crate::components::dashboard::Dashboard,
-    pub pipelines_component: crate::components::pipelines::Pipelines,
-    pub active_runs_component: crate::components::active_runs::ActiveRuns,
     pub build_history_component: crate::components::build_history::BuildHistory,
     pub log_viewer_component: crate::components::log_viewer::LogViewer,
     pub settings_component: crate::components::settings::Settings,
@@ -333,9 +248,9 @@ impl App {
 
             confirm_prompt: None,
 
-            active_runs: ActiveRunsState::default(),
+            active_runs: crate::components::active_runs::ActiveRuns::default(),
 
-            pipelines: PipelinesState::default(),
+            pipelines: crate::components::pipelines::Pipelines::default(),
 
             retention_leases: RetentionLeasesState::default(),
 
@@ -344,8 +259,6 @@ impl App {
             header: crate::components::header::Header,
             help: crate::components::help::Help,
             dashboard_component: crate::components::dashboard::Dashboard,
-            pipelines_component: crate::components::pipelines::Pipelines,
-            active_runs_component: crate::components::active_runs::ActiveRuns,
             build_history_component: crate::components::build_history::BuildHistory,
             log_viewer_component: crate::components::log_viewer::LogViewer,
             settings_component: crate::components::settings::Settings,

@@ -21,8 +21,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     match app.view {
         crate::app::View::Dashboard => app.dashboard_component.draw_with_app(f, app, chunks[1]),
-        crate::app::View::Pipelines => app.pipelines_component.draw_with_app(f, app, chunks[1]),
-        crate::app::View::ActiveRuns => app.active_runs_component.draw_with_app(f, app, chunks[1]),
+        crate::app::View::Pipelines => app.pipelines.draw_with_app(f, app, chunks[1]),
+        crate::app::View::ActiveRuns => app.active_runs.draw_with_app(f, app, chunks[1]),
         crate::app::View::BuildHistory => {
             app.build_history_component.draw_with_app(f, app, chunks[1])
         }
@@ -60,8 +60,8 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
     let hints = match app.view {
         crate::app::View::Dashboard => app.dashboard_component.footer_hints(),
-        crate::app::View::Pipelines => app.pipelines_component.footer_hints(),
-        crate::app::View::ActiveRuns => app.active_runs_component.footer_hints(),
+        crate::app::View::Pipelines => app.pipelines.footer_hints(),
+        crate::app::View::ActiveRuns => app.active_runs.footer_hints(),
         crate::app::View::BuildHistory => app.build_history_component.footer_hints(),
         crate::app::View::LogViewer => app.log_viewer_component.footer_hints(),
     };

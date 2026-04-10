@@ -280,7 +280,7 @@ mod tests {
         );
     }
 
-    // --- PipelinesState::rebuild ---
+    // --- Pipelines::rebuild ---
 
     #[test]
     fn rebuild_filtered_pipelines_with_search() {
