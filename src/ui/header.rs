@@ -40,7 +40,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         };
         Span::styled(
             format!("  {} {}", prefix, truncate(&notif.message, 60)),
-            Style::default().fg(color),
+            Style::new().fg(color),
         )
     } else {
         Span::raw("")
@@ -82,7 +82,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let tabs = Tabs::new(tab_titles)
-        .block(Block::default().borders(Borders::BOTTOM))
+        .block(Block::new().borders(Borders::BOTTOM))
         .select(selected)
         .style(theme::MUTED)
         .highlight_style(theme::BRAND);

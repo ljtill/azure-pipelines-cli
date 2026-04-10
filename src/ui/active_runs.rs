@@ -2,11 +2,9 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
+use ratatui::widgets::{Block, List, ListItem, ListState};
 
-use super::helpers::{
-    Column, build_elapsed, compute_columns, draw_search_bar, status_icon, status_label, truncate,
-};
+use super::helpers::{build_elapsed, draw_search_bar, status_icon, status_label, truncate};
 use super::theme;
 use crate::app::{App, InputMode};
 
@@ -28,30 +26,19 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
     }
 
-    // Column layout: check(2) | icon(4) | status(12) | name(flex) | build_number(16) | branch(flex) | requestor(flex) | elapsed(12)
-    let col_spec = [
-        Column::Fixed(2),  // check
-        Column::Fixed(4),  // icon
-        Column::Fixed(12), // status label
-        Column::Flex {
-            weight: 3,
-            min: 10,
-            max: 40,
-        }, // pipeline name
-        Column::Fixed(16), // build number
-        Column::Flex {
-            weight: 2,
-            min: 10,
-            max: 30,
-        }, // branch
-        Column::Flex {
-            weight: 2,
-            min: 10,
-            max: 30,
-        }, // requestor
-        Column::Fixed(16), // elapsed
-    ];
-    let widths = compute_columns(&col_spec, area.width as usize);
+    // Column layout: check(2) | icon(4) | status(12) | name(fill) | build_number(18) | branch(fill) | requestor(fill) | elapsed(15)
+    let rects = Layout::horizontal([
+        Constraint::Length(2),  // check
+        Constraint::Length(4),  // icon
+        Constraint::Length(12), // status label
+        Constraint::Fill(2),    // pipeline name
+        Constraint::Length(18), // build number
+        Constraint::Fill(2),    // branch
+        Constraint::Fill(2),    // requestor
+        Constraint::Length(15), // elapsed
+    ])
+    .split(area);
+    let widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
 
     let items: Vec<ListItem> = app
         .active_runs
@@ -71,13 +58,13 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     if selected {
                         theme::SUCCESS
                     } else {
-                        Style::default()
+                        Style::new()
                     },
                 ),
-                Span::styled(format!(" {} ", icon), Style::default().fg(icon_color)),
+                Span::styled(format!(" {} ", icon), Style::new().fg(icon_color)),
                 Span::styled(
                     format!("{:<width$}", label, width = widths[2]),
-                    Style::default().fg(icon_color),
+                    Style::new().fg(icon_color),
                 ),
                 Span::styled(
                     format!(
@@ -116,7 +103,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             .style(if i == app.active_runs.nav.index() {
                 theme::SELECTED
             } else {
-                Style::default()
+                Style::new()
             })
         })
         .collect();
@@ -134,12 +121,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     } else {
         format!(" Active Runs ({}) ", total)
     };
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::NONE)
-            .title(title)
-            .title_style(theme::TITLE),
-    );
+    let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
 
     let mut state = ListState::default();
     state.select(Some(app.active_runs.nav.index()));

@@ -2,38 +2,29 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
+use ratatui::widgets::{Block, List, ListItem, ListState};
 
-use super::helpers::{Column, build_elapsed, compute_columns, status_icon, status_label, truncate};
+use super::helpers::{build_elapsed, status_icon, status_label, truncate};
 use super::theme;
 use crate::app::{App, DashboardRow};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
+    use ratatui::layout::{Constraint, Layout};
+
     // Column layout for pipeline rows:
-    // indent(4) | icon(3) | status(12) | name(flex) | build_number(16) | branch(flex) | requestor(flex) | elapsed(12)
-    let col_spec = [
-        Column::Fixed(4),  // indent
-        Column::Fixed(3),  // icon
-        Column::Fixed(12), // status label
-        Column::Flex {
-            weight: 3,
-            min: 10,
-            max: 40,
-        }, // pipeline name
-        Column::Fixed(16), // build number
-        Column::Flex {
-            weight: 2,
-            min: 10,
-            max: 30,
-        }, // branch
-        Column::Flex {
-            weight: 2,
-            min: 10,
-            max: 30,
-        }, // requestor
-        Column::Fixed(16), // elapsed
-    ];
-    let widths = compute_columns(&col_spec, area.width as usize);
+    // indent(4) | icon(3) | status(12) | name(fill) | build_number(18) | branch(fill) | requestor(fill) | elapsed(15)
+    let rects = Layout::horizontal([
+        Constraint::Length(4),  // indent
+        Constraint::Length(3),  // icon
+        Constraint::Length(12), // status label
+        Constraint::Fill(2),    // pipeline name
+        Constraint::Length(18), // build number
+        Constraint::Fill(2),    // branch
+        Constraint::Fill(2),    // requestor
+        Constraint::Length(15), // elapsed
+    ])
+    .split(area);
+    let widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
 
     let items: Vec<ListItem> = app
         .dashboard
@@ -50,7 +41,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 .style(if i == app.dashboard.nav.index() {
                     theme::SELECTED
                 } else {
-                    Style::default()
+                    Style::new()
                 })
             }
             DashboardRow::Pipeline {
@@ -102,10 +93,10 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
                 let mut spans = vec![
                     Span::raw("    "),
-                    Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
+                    Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
                     Span::styled(
                         format!("{:<width$}", label, width = widths[2]),
-                        Style::default().fg(icon_color),
+                        Style::new().fg(icon_color),
                     ),
                     Span::styled(
                         format!(
@@ -121,15 +112,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 ListItem::new(Line::from(spans)).style(if i == app.dashboard.nav.index() {
                     theme::SELECTED
                 } else {
-                    Style::default()
+                    Style::new()
                 })
             }
         })
         .collect();
 
     let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::NONE)
+        Block::new()
             .title(" Dashboard — Pipelines by Folder ")
             .title_style(theme::TITLE),
     );

@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Paragraph};
 
 use super::theme;
 use crate::api::models::{Build, BuildResult, BuildStatus, TaskState};
@@ -27,52 +27,6 @@ pub fn status_label(status: BuildStatus, result: Option<BuildResult>) -> &'stati
         Some(BuildResult::Skipped) => "Skipped",
         _ => "",
     }
-}
-
-/// Column sizing specification for list views.
-#[derive(Debug, Clone, Copy)]
-pub enum Column {
-    /// Fixed-width column.
-    Fixed(usize),
-    /// Flexible column that shares remaining space proportionally.
-    Flex {
-        weight: usize,
-        min: usize,
-        max: usize,
-    },
-}
-
-/// Compute concrete column widths from a layout specification and available width.
-pub fn compute_columns(cols: &[Column], available: usize) -> Vec<usize> {
-    let fixed_total: usize = cols
-        .iter()
-        .map(|c| match c {
-            Column::Fixed(w) => *w,
-            _ => 0,
-        })
-        .sum();
-
-    let remaining = available.saturating_sub(fixed_total);
-    let total_weight: usize = cols
-        .iter()
-        .map(|c| match c {
-            Column::Flex { weight, .. } => *weight,
-            _ => 0,
-        })
-        .sum();
-
-    cols.iter()
-        .map(|c| match c {
-            Column::Fixed(w) => *w,
-            Column::Flex { weight, min, max } => {
-                if total_weight == 0 {
-                    *min
-                } else {
-                    (remaining * weight / total_weight).clamp(*min, *max)
-                }
-            }
-        })
-        .collect()
 }
 
 /// Shared status → (icon, color) mapping for build status and result.
@@ -173,8 +127,7 @@ pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: Input
         },
     ]))
     .block(
-        Block::default()
-            .borders(Borders::ALL)
+        Block::bordered()
             .title(" Filter ")
             .title_style(theme::SEARCH_PROMPT),
     );
@@ -497,83 +450,5 @@ mod tests {
     #[test]
     fn status_label_unknown() {
         assert_eq!(status_label(BuildStatus::Completed, None), "");
-    }
-
-    // --- compute_columns tests ---
-
-    #[test]
-    fn compute_columns_all_fixed() {
-        let cols = vec![Column::Fixed(10), Column::Fixed(20), Column::Fixed(5)];
-        let widths = compute_columns(&cols, 100);
-        assert_eq!(widths, vec![10, 20, 5]);
-    }
-
-    #[test]
-    fn compute_columns_flex_distributes_remaining() {
-        let cols = vec![
-            Column::Fixed(10),
-            Column::Flex {
-                weight: 1,
-                min: 5,
-                max: 100,
-            },
-            Column::Flex {
-                weight: 1,
-                min: 5,
-                max: 100,
-            },
-        ];
-        let widths = compute_columns(&cols, 50);
-        // 50 - 10 = 40 remaining, split equally = 20 each
-        assert_eq!(widths, vec![10, 20, 20]);
-    }
-
-    #[test]
-    fn compute_columns_flex_respects_min() {
-        let cols = vec![
-            Column::Fixed(90),
-            Column::Flex {
-                weight: 1,
-                min: 10,
-                max: 50,
-            },
-        ];
-        let widths = compute_columns(&cols, 95);
-        // 95 - 90 = 5 remaining, but min is 10
-        assert_eq!(widths, vec![90, 10]);
-    }
-
-    #[test]
-    fn compute_columns_flex_respects_max() {
-        let cols = vec![
-            Column::Fixed(10),
-            Column::Flex {
-                weight: 1,
-                min: 5,
-                max: 30,
-            },
-        ];
-        let widths = compute_columns(&cols, 200);
-        // 200 - 10 = 190 remaining, but max is 30
-        assert_eq!(widths, vec![10, 30]);
-    }
-
-    #[test]
-    fn compute_columns_weighted_flex() {
-        let cols = vec![
-            Column::Flex {
-                weight: 3,
-                min: 0,
-                max: 100,
-            },
-            Column::Flex {
-                weight: 1,
-                min: 0,
-                max: 100,
-            },
-        ];
-        let widths = compute_columns(&cols, 80);
-        // 3:1 ratio of 80 = 60, 20
-        assert_eq!(widths, vec![60, 20]);
     }
 }

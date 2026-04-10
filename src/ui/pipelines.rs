@@ -2,9 +2,9 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
+use ratatui::widgets::{Block, List, ListItem, ListState};
 
-use super::helpers::{Column, compute_columns, draw_search_bar, truncate};
+use super::helpers::{draw_search_bar, truncate};
 use super::theme;
 use crate::app::{App, InputMode};
 
@@ -25,21 +25,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
     }
 
-    // Column layout: padding(1) | name(flex) | folder(flex)
-    let col_spec = [
-        Column::Fixed(1), // leading padding
-        Column::Flex {
-            weight: 2,
-            min: 15,
-            max: 50,
-        }, // pipeline name
-        Column::Flex {
-            weight: 3,
-            min: 10,
-            max: 80,
-        }, // folder path
-    ];
-    let widths = compute_columns(&col_spec, area.width as usize);
+    // Column layout: padding(1) | name(fill) | folder(fill)
+    let rects = Layout::horizontal([
+        Constraint::Length(1), // leading padding
+        Constraint::Fill(2),   // pipeline name
+        Constraint::Fill(3),   // folder path
+    ])
+    .split(area);
+    let widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
 
     let items: Vec<ListItem> = app
         .pipelines
@@ -64,18 +57,13 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             .style(if i == app.pipelines.nav.index() {
                 theme::SELECTED
             } else {
-                Style::default()
+                Style::new()
             })
         })
         .collect();
 
     let title = format!(" All Pipelines ({}) ", app.pipelines.filtered.len());
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::NONE)
-            .title(title)
-            .title_style(theme::TITLE),
-    );
+    let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
 
     let mut state = ListState::default();
     state.select(Some(app.pipelines.nav.index()));

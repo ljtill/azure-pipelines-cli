@@ -1,7 +1,7 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Clear, Paragraph};
 
 use super::theme;
 
@@ -45,8 +45,7 @@ pub fn draw(f: &mut Frame) {
         Line::from(""),
     ];
 
-    let block = Block::default()
-        .borders(Borders::ALL)
+    let block = Block::bordered()
         .title(" Help — Keybindings ")
         .title_style(theme::BRAND)
         .style(theme::HELP_BG);

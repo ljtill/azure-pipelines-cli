@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
 
 use super::helpers::{checkpoint_status_icon, timeline_status_icon};
 use super::theme;
@@ -47,8 +47,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
         let loading = Paragraph::new(" Loading timeline...")
             .style(theme::MUTED)
             .block(
-                Block::default()
-                    .borders(Borders::ALL)
+                Block::bordered()
                     .title(" Pipeline Stages ")
                     .title_style(theme::TITLE),
             );
@@ -75,13 +74,13 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let (icon, icon_color) = timeline_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::styled(format!("{} ", arrow), theme::ARROW),
-                        Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), theme::STAGE),
                     ]))
                     .style(if selected {
                         theme::SELECTED
                     } else {
-                        Style::default()
+                        Style::new()
                     })
                 }
                 TimelineRow::Job {
@@ -96,13 +95,13 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
                         Span::styled(format!("{} ", arrow), theme::JOB_ARROW),
-                        Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), theme::JOB),
                     ]))
                     .style(if selected {
                         theme::SELECTED
                     } else {
-                        Style::default()
+                        Style::new()
                     })
                 }
                 TimelineRow::Task {
@@ -116,14 +115,14 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let log_indicator = if log_id.is_some() { "" } else { " ·" };
                     ListItem::new(Line::from(vec![
                         Span::raw("      "),
-                        Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), theme::JOB),
                         Span::styled(log_indicator, theme::MUTED),
                     ]))
                     .style(if selected {
                         theme::SELECTED
                     } else {
-                        Style::default()
+                        Style::new()
                     })
                 }
                 TimelineRow::Checkpoint {
@@ -135,13 +134,13 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let (icon, icon_color) = checkpoint_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
-                        Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
-                        Span::styled(name.as_str(), Style::default().fg(icon_color)),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(name.as_str(), Style::new().fg(icon_color)),
                     ]))
                     .style(if selected {
                         theme::SELECTED
                     } else {
-                        Style::default()
+                        Style::new()
                     })
                 }
             }
@@ -149,8 +148,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
+        Block::bordered()
             .title(" Pipeline Stages ")
             .title_style(theme::TITLE),
     );
@@ -185,7 +183,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
     if app.log_viewer.log_content().is_empty() {
         let hint = Paragraph::new(" Select a task and press Enter to view its log")
             .style(theme::MUTED)
-            .block(Block::default().borders(Borders::ALL).title(title));
+            .block(Block::bordered().title(title));
         f.render_widget(hint, area);
     } else {
         let lines: Vec<Line> = app
@@ -216,12 +214,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let log = Paragraph::new(Text::from(lines))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(title)
-                    .title_style(title_style),
-            )
+            .block(Block::bordered().title(title).title_style(title_style))
             .wrap(Wrap { trim: false })
             .scroll((scroll_offset, 0));
         f.render_widget(log, area);

@@ -4,11 +4,6 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
-use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
 
 use azure_pipelines_cli::api::client::AdoClient;
 use azure_pipelines_cli::app;
@@ -32,31 +27,15 @@ enum Command {
     Update,
 }
 
-/// RAII guard that sets up and restores the terminal on drop.
-struct TerminalGuard {
-    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
-}
+/// RAII guard that disables mouse capture and restores the terminal on drop.
+/// Terminal setup (raw mode, alternate screen, panic hook) is handled by
+/// `ratatui::init()` — this guard only adds mouse capture cleanup.
+struct MouseGuard;
 
-impl TerminalGuard {
-    fn new() -> Result<Self> {
-        enable_raw_mode()?;
-        let mut stdout = std::io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-        let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend)?;
-        Ok(Self { terminal })
-    }
-}
-
-impl Drop for TerminalGuard {
+impl Drop for MouseGuard {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        );
-        let _ = self.terminal.show_cursor();
+        let _ = execute!(std::io::stdout(), DisableMouseCapture);
+        ratatui::restore();
     }
 }
 
@@ -89,15 +68,10 @@ async fn main() -> Result<()> {
         .unwrap_or("info");
     init_tracing(log_level);
 
-    // Panic hook to restore terminal (safety net — Drop also restores).
-    let original_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        let _ = disable_raw_mode();
-        let _ = execute!(std::io::stderr(), LeaveAlternateScreen, DisableMouseCapture);
-        original_hook(panic_info);
-    }));
-
-    let mut guard = TerminalGuard::new()?;
+    // ratatui::init() sets up raw mode, alternate screen, and a panic hook.
+    let mut terminal = ratatui::init();
+    execute!(std::io::stdout(), EnableMouseCapture)?;
+    let _guard = MouseGuard;
 
     let config = match early_config {
         Some(c) => {
@@ -110,8 +84,7 @@ async fn main() -> Result<()> {
         }
         None => {
             // No config file — run interactive setup inside the TUI.
-            let result =
-                azure_pipelines_cli::ui::setup::run_setup(&mut guard.terminal, &config_path);
+            let result = azure_pipelines_cli::ui::setup::run_setup(&mut terminal, &config_path);
 
             match result {
                 Ok(Some(config)) => {
@@ -136,7 +109,7 @@ async fn main() -> Result<()> {
 
     tracing::info!("api client connected");
 
-    app::run::run(&mut guard.terminal, client, &config).await
+    app::run::run(&mut terminal, client, &config).await
 }
 
 async fn run_update() -> Result<()> {

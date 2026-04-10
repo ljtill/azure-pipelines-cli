@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use crate::config::Config;
 
@@ -102,12 +102,11 @@ fn draw(f: &mut Frame, state: &SetupState) {
 
     f.render_widget(Clear, area);
 
-    let block = Block::default()
+    let block = Block::bordered()
         .title(" Welcome to pipelines ")
         .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::new().fg(Color::Cyan));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -123,7 +122,7 @@ fn draw(f: &mut Frame, state: &SetupState) {
 
     // Subtitle
     let subtitle = Paragraph::new("No configuration found. Let's set things up.")
-        .style(Style::default().fg(Color::DarkGray))
+        .style(Style::new().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     f.render_widget(subtitle, rows[0]);
 
@@ -147,23 +146,17 @@ fn draw(f: &mut Frame, state: &SetupState) {
     let hints = Paragraph::new(Line::from(vec![
         Span::styled(
             "Enter",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ),
         Span::raw(" next  "),
         Span::styled(
             "Tab",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ),
         Span::raw(" switch  "),
         Span::styled(
             "Esc",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ),
         Span::raw(" quit"),
     ]))
@@ -173,16 +166,16 @@ fn draw(f: &mut Frame, state: &SetupState) {
 
 fn draw_field(f: &mut Frame, area: Rect, label: &str, value: &str, active: bool) {
     let style = if active {
-        Style::default().fg(Color::Cyan)
+        Style::new().fg(Color::Cyan)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::new().fg(Color::DarkGray)
     };
 
     let cursor = if active { "█" } else { "" };
     let line = Line::from(vec![
         Span::styled(format!("  {label}: "), style.add_modifier(Modifier::BOLD)),
-        Span::styled(value, Style::default().fg(Color::White)),
-        Span::styled(cursor, Style::default().fg(Color::Cyan)),
+        Span::styled(value, Style::new().fg(Color::White)),
+        Span::styled(cursor, Style::new().fg(Color::Cyan)),
     ]);
     f.render_widget(Paragraph::new(line), area);
 }
