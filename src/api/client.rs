@@ -139,12 +139,6 @@ impl AdoClient {
         self.get_all_pages(&url).await
     }
 
-    pub async fn list_active_builds(&self) -> Result<Vec<Build>> {
-        let url = self.endpoints.builds_active();
-        let resp: BuildListResponse = self.get(&url).await?;
-        Ok(resp.value)
-    }
-
     pub async fn list_recent_builds(&self) -> Result<Vec<Build>> {
         let url = self.endpoints.builds_recent();
         let resp: BuildListResponse = self.get(&url).await?;

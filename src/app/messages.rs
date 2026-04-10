@@ -13,7 +13,6 @@ pub enum AppMessage {
     DataRefresh {
         definitions: Vec<PipelineDefinition>,
         recent_builds: Vec<Build>,
-        active_builds: Vec<Build>,
         pending_approvals: Vec<Approval>,
     },
     BuildHistory {

@@ -49,13 +49,6 @@ impl Endpoints {
         )
     }
 
-    pub fn builds_active(&self) -> String {
-        format!(
-            "{}/build/builds?statusFilter=inProgress&queryOrder=startTimeDescending&api-version={API_VERSION}&$top={TOP_BUILDS}",
-            self.base_url
-        )
-    }
-
     pub fn builds_recent(&self) -> String {
         format!(
             "{}/build/builds?api-version={API_VERSION}&$top={TOP_BUILDS}&queryOrder=startTimeDescending",
@@ -135,16 +128,6 @@ mod tests {
         assert_eq!(
             ep().definitions(),
             format!("{BASE}/build/definitions?api-version=7.1&includeLatestBuilds=true")
-        );
-    }
-
-    #[test]
-    fn builds_active_url() {
-        assert_eq!(
-            ep().builds_active(),
-            format!(
-                "{BASE}/build/builds?statusFilter=inProgress&queryOrder=startTimeDescending&api-version=7.1&$top=100"
-            )
         );
     }
 

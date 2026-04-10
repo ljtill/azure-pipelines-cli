@@ -234,9 +234,15 @@ pub fn handle_message(
         AppMessage::DataRefresh {
             definitions,
             recent_builds,
-            active_builds,
             pending_approvals,
         } => {
+            // Derive active builds from recent builds instead of a separate API call.
+            let active_builds: Vec<models::Build> = recent_builds
+                .iter()
+                .filter(|b| b.status.is_in_progress())
+                .cloned()
+                .collect();
+
             tracing::info!(
                 definitions = definitions.len(),
                 active = active_builds.len(),
@@ -515,10 +521,9 @@ pub fn spawn_data_refresh(
             },
         );
 
-        let (defs_result, recent_result, active_result, approvals_result) = tokio::join!(
+        let (defs_result, recent_result, approvals_result) = tokio::join!(
             client.list_definitions(),
             client.list_recent_builds(),
-            client.list_active_builds(),
             client.list_pending_approvals(),
         );
 
@@ -535,18 +540,17 @@ pub fn spawn_data_refresh(
             }
         };
 
-        match (defs_result, recent_result, active_result) {
-            (Ok(definitions), Ok(recent_builds), Ok(active_builds)) => {
+        match (defs_result, recent_result) {
+            (Ok(definitions), Ok(recent_builds)) => {
                 let _ = tx
                     .send(AppMessage::DataRefresh {
                         definitions,
                         recent_builds,
-                        active_builds,
                         pending_approvals,
                     })
                     .await;
             }
-            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+            (Err(e), _) | (_, Err(e)) => {
                 let _ = tx
                     .send(AppMessage::RefreshError {
                         message: format!("Refresh: {e}"),
