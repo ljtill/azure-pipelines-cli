@@ -50,7 +50,7 @@ pub fn draw(f: &mut Frame) {
         .title_style(theme::BRAND)
         .style(theme::HELP_BG);
 
-    let help = Paragraph::new(help_text).block(block);
+    let help = Paragraph::new(help_text).style(theme::TEXT).block(block);
     f.render_widget(help, area);
 }
 

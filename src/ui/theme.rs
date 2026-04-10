@@ -29,6 +29,6 @@ pub const TITLE: Style = Style::new().fg(Color::Cyan);
 pub const FOLLOW_TITLE: Style = Style::new().fg(Color::Green);
 
 // Misc
-pub const SECTION_HEADER: Style = Style::new().add_modifier(Modifier::BOLD);
+pub const SECTION_HEADER: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
 pub const BRANCH: Style = Style::new().fg(Color::Blue);
-pub const HELP_BG: Style = Style::new().bg(Color::Black);
+pub const HELP_BG: Style = Style::new().fg(Color::White).bg(Color::Black);
