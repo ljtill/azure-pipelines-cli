@@ -133,6 +133,15 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                         name_style,
                     ),
                 ];
+
+                // Lease badge
+                let lease_count = app
+                    .retention_leases
+                    .lease_count_for_definition(definition.id);
+                if lease_count > 0 {
+                    spans.push(Span::styled(format!("◈ {} ", lease_count), theme::WARNING));
+                }
+
                 spans.extend(build_spans);
 
                 ListItem::new(Line::from(spans)).style(row_style)

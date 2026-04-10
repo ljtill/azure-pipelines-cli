@@ -14,6 +14,7 @@ pub enum AppMessage {
         definitions: Vec<PipelineDefinition>,
         recent_builds: Vec<Build>,
         pending_approvals: Vec<Approval>,
+        retention_leases: Vec<RetentionLease>,
     },
     BuildHistory {
         builds: Vec<Build>,
@@ -52,9 +53,6 @@ pub enum AppMessage {
     RefreshError {
         message: String,
         source: RefreshSource,
-    },
-    RetentionLeasesFetched {
-        leases: Vec<RetentionLease>,
     },
     RetentionLeasesDeleted {
         deleted: u32,

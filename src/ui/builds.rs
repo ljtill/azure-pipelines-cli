@@ -32,20 +32,21 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     ]));
     f.render_widget(header, chunks[0]);
 
-    // Column layout: icon(3) | status(12) | build_number(18) | retained(3) | branch(fill) | requestor(fill) | elapsed(15)
+    // Column layout: check(2) | icon(3) | status(12) | build_number(18) | retained(2) | branch(fill) | requestor(fill) | elapsed(15)
     let rects = Layout::horizontal([
+        Constraint::Length(2),  // check
         Constraint::Length(3),  // icon
         Constraint::Length(12), // status label
         Constraint::Length(18), // build number
-        Constraint::Length(3),  // retained indicator
+        Constraint::Length(2),  // retained indicator
         Constraint::Fill(2),    // branch
         Constraint::Fill(2),    // requestor
         Constraint::Length(15), // elapsed
     ])
     .split(area);
     let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
-    widths[4] = widths[4].min(40); // branch
-    widths[5] = widths[5].min(35); // requestor
+    widths[5] = widths[5].min(40); // branch
+    widths[6] = widths[6].min(35); // requestor
 
     let items: Vec<ListItem> = app
         .build_history
@@ -59,6 +60,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let time_info = build_elapsed(build);
             let branch = build.branch_display();
             let retained = app.retention_leases.retained_run_ids.contains(&build.id);
+            let selected = app.build_history.selected.contains(&build.id);
+            let check = if selected { "✓ " } else { "  " };
 
             let row_style = if i == app.build_history.nav.index() {
                 theme::SELECTED
@@ -67,38 +70,46 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             };
 
             ListItem::new(Line::from(vec![
+                Span::styled(
+                    check,
+                    if selected {
+                        theme::SUCCESS
+                    } else {
+                        Style::new()
+                    },
+                ),
                 Span::styled(format!(" {} ", icon), Style::new().fg(icon_color)),
                 Span::styled(
-                    format!("{:<width$}", label, width = widths[1]),
+                    format!("{:<width$}", label, width = widths[2]),
                     Style::new().fg(icon_color),
                 ),
                 Span::styled(
                     format!(
                         "#{:<width$}",
-                        truncate(&build.build_number, widths[2] - 1),
-                        width = widths[2] - 1
+                        truncate(&build.build_number, widths[3] - 1),
+                        width = widths[3] - 1
                     ),
                     theme::TEXT,
                 ),
-                Span::styled(if retained { "🔒 " } else { "   " }, theme::WARNING),
+                Span::styled(if retained { "◈ " } else { "  " }, theme::WARNING),
                 Span::styled(
                     format!(
                         "{:<width$} ",
-                        truncate(&branch, widths[4].saturating_sub(1)),
-                        width = widths[4].saturating_sub(1)
+                        truncate(&branch, widths[5].saturating_sub(1)),
+                        width = widths[5].saturating_sub(1)
                     ),
                     theme::BRANCH,
                 ),
                 Span::styled(
                     format!(
                         "{:<width$} ",
-                        truncate(build.requestor(), widths[5].saturating_sub(1)),
-                        width = widths[5].saturating_sub(1)
+                        truncate(build.requestor(), widths[6].saturating_sub(1)),
+                        width = widths[6].saturating_sub(1)
                     ),
                     theme::MUTED,
                 ),
                 Span::styled(
-                    format!("{:>width$}", time_info, width = widths[6]),
+                    format!("{:>width$}", time_info, width = widths[7]),
                     theme::MUTED,
                 ),
             ]))
@@ -106,11 +117,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items).block(
-        Block::new()
-            .title(format!(" Builds ({}) ", app.build_history.builds.len()))
-            .title_style(theme::TITLE),
-    );
+    let sel_count = app.build_history.selected.len();
+    let total = app.build_history.builds.len();
+    let title = if sel_count > 0 {
+        format!(" Builds ({}) — {} selected ", total, sel_count)
+    } else {
+        format!(" Builds ({}) ", total)
+    };
+    let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
 
     let mut state = ListState::default();
     state.select(Some(app.build_history.nav.index()));

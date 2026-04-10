@@ -227,17 +227,6 @@ pub fn handle_action(
                 |()| AppMessage::CheckUpdated,
             );
         }
-        Action::FetchRetentionLeases(definition_ids) => {
-            tracing::info!(count = definition_ids.len(), "fetching retention leases");
-            app.retention_leases.loading = true;
-            spawn_api(
-                client,
-                tx,
-                "Fetch leases",
-                move |c| async move { c.list_all_retention_leases(&definition_ids).await },
-                |leases| AppMessage::RetentionLeasesFetched { leases },
-            );
-        }
         Action::DeleteRetentionLeases(ids) => {
             tracing::info!(count = ids.len(), "deleting retention leases");
             spawn_api(
@@ -266,6 +255,7 @@ pub fn handle_message(
             definitions,
             recent_builds,
             pending_approvals,
+            retention_leases,
         } => {
             // Derive active builds from recent builds instead of a separate API call.
             let active_builds: Vec<models::Build> = recent_builds
@@ -401,8 +391,9 @@ pub fn handle_message(
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
 
-            // Invalidate cached retention lease data so it's re-fetched on next view.
-            app.retention_leases.invalidate();
+            // Update retention leases
+            app.retention_leases.leases = retention_leases;
+            app.retention_leases.rebuild_index();
         }
         AppMessage::BuildHistory { builds } => {
             tracing::info!(count = builds.len(), "build history loaded");
@@ -591,18 +582,8 @@ pub fn handle_message(
                 format!("Update available: v{version} — run 'pipelines update' to upgrade"),
             );
         }
-        AppMessage::RetentionLeasesFetched { leases } => {
-            tracing::info!(count = leases.len(), "retention leases fetched");
-            app.retention_leases.loading = false;
-            app.retention_leases.leases = leases;
-            app.retention_leases.rebuild_index();
-            app.retention_leases
-                .rebuild(&app.data.definitions, &app.search.query);
-            app.retention_leases.fetched_at = Some(Instant::now());
-        }
         AppMessage::RetentionLeasesDeleted { deleted, failed } => {
             tracing::info!(deleted, failed, "retention leases deleted");
-            app.retention_leases.selected.clear();
             if failed > 0 {
                 app.notifications
                     .error(format!("Deleted {deleted} lease(s), {failed} failed"));
@@ -610,16 +591,11 @@ pub fn handle_message(
                 app.notifications
                     .success(format!("Deleted {deleted} retention lease(s)"));
             }
-            // Re-fetch leases to update the view
-            let definition_ids: Vec<u32> = app.data.definitions.iter().map(|d| d.id).collect();
-            app.retention_leases.loading = true;
-            spawn_api(
-                client,
-                tx,
-                "Refresh leases",
-                move |c| async move { c.list_all_retention_leases(&definition_ids).await },
-                |leases| AppMessage::RetentionLeasesFetched { leases },
-            );
+            // Trigger a full data refresh to re-fetch leases
+            spawn_data_refresh(app, client, tx);
+            if app.view == View::BuildHistory {
+                spawn_build_history_refresh(app, client, tx);
+            }
         }
     }
 }
@@ -734,11 +710,23 @@ pub fn spawn_data_refresh(
 
             match (defs_result, recent_result) {
                 (Ok(definitions), Ok(recent_builds)) => {
+                    // Fetch retention leases in parallel across all definitions.
+                    // Done after definitions are known so we have the IDs.
+                    let def_ids: Vec<u32> = definitions.iter().map(|d| d.id).collect();
+                    let retention_leases = match client.list_all_retention_leases(&def_ids).await {
+                        Ok(leases) => leases,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "retention leases unavailable");
+                            Vec::new()
+                        }
+                    };
+
                     let _ = tx
                         .send(AppMessage::DataRefresh {
                             definitions,
                             recent_builds,
                             pending_approvals,
+                            retention_leases,
                         })
                         .await;
                 }

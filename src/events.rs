@@ -28,7 +28,6 @@ pub enum Action {
     ApproveCheck(String),
     RejectCheck(String),
     Reload,
-    FetchRetentionLeases(Vec<u32>),
     DeleteRetentionLeases(Vec<u32>),
 }
 
@@ -72,21 +71,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.open_settings();
             Action::None
         }
-        KeyCode::Char('r') => {
-            if app.view == View::RetentionLeases {
-                // Refresh retention leases data
-                app.retention_leases.invalidate();
-                let ids: Vec<u32> = app.data.definitions.iter().map(|d| d.id).collect();
-                Action::FetchRetentionLeases(ids)
-            } else {
-                Action::ForceRefresh
-            }
-        }
+        KeyCode::Char('r') => Action::ForceRefresh,
         KeyCode::Char('x')
             if app.view == View::Dashboard
                 || app.view == View::Pipelines
-                || app.view == View::ActiveRuns
-                || app.view == View::RetentionLeases =>
+                || app.view == View::ActiveRuns =>
         {
             app.notifications.clear();
             Action::None
@@ -95,11 +84,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.log_viewer.enter_follow_mode();
             Action::FollowLatest
         }
-        KeyCode::Char('/')
-            if app.view == View::Pipelines
-                || app.view == View::ActiveRuns
-                || app.view == View::RetentionLeases =>
-        {
+        KeyCode::Char('/') if app.view == View::Pipelines || app.view == View::ActiveRuns => {
             tracing::debug!(view = ?app.view, "entering search mode");
             app.search.mode = InputMode::Search;
             Action::None
@@ -119,16 +104,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
 
-        // Multi-select toggle in Retention Leases
-        KeyCode::Char(' ') if app.view == View::RetentionLeases => {
-            if let Some(lease) = app
-                .retention_leases
-                .filtered
-                .get(app.retention_leases.nav.index())
-            {
-                let id = lease.lease_id;
-                if !app.retention_leases.selected.remove(&id) {
-                    app.retention_leases.selected.insert(id);
+        // Multi-select toggle in Build History (for lease deletion)
+        KeyCode::Char(' ') if app.view == View::BuildHistory => {
+            if let Some(build) = app.build_history.builds.get(app.build_history.nav.index()) {
+                let id = build.id;
+                if !app.build_history.selected.remove(&id) {
+                    app.build_history.selected.insert(id);
                 }
             }
             Action::None
@@ -161,8 +142,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             handle_queue_request(app)
         }
 
-        // Delete retention lease(s) — batch if selected, single otherwise
-        KeyCode::Char('d') if app.view == View::RetentionLeases => handle_delete_lease_request(app),
+        // Delete retention leases for build(s) in Build History
+        KeyCode::Char('d') if app.view == View::BuildHistory => {
+            handle_delete_build_leases_request(app)
+        }
 
         // Tab switching
         KeyCode::Char('1') => {
@@ -193,16 +176,6 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 &app.search.query,
             );
             Action::None
-        }
-        KeyCode::Char('4') => {
-            tracing::info!(from = ?app.view, to = ?View::RetentionLeases, "view switch");
-            app.view = View::RetentionLeases;
-            if !app.retention_leases.has_data() && !app.retention_leases.loading {
-                let ids: Vec<u32> = app.data.definitions.iter().map(|d| d.id).collect();
-                Action::FetchRetentionLeases(ids)
-            } else {
-                Action::None
-            }
         }
 
         // Navigation
@@ -307,8 +280,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Right
             if app.view == View::Pipelines
                 || app.view == View::ActiveRuns
-                || app.view == View::BuildHistory
-                || app.view == View::RetentionLeases =>
+                || app.view == View::BuildHistory =>
         {
             handle_enter(app)
         }
@@ -330,7 +302,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 });
                 Action::None
             }
-            View::Pipelines | View::ActiveRuns | View::RetentionLeases => {
+            View::Pipelines | View::ActiveRuns => {
                 app.search.mode = InputMode::Normal;
                 app.search.query.clear();
                 app.view = View::Dashboard;
@@ -345,7 +317,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         // Esc — go back (same as q, except no-op on Dashboard)
         KeyCode::Esc => match app.view {
             View::Dashboard => Action::None,
-            View::Pipelines | View::ActiveRuns | View::RetentionLeases => {
+            View::Pipelines | View::ActiveRuns => {
                 app.search.mode = InputMode::Normal;
                 app.search.query.clear();
                 app.view = View::Dashboard;
@@ -392,7 +364,7 @@ fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
                 }
                 ConfirmAction::ApproveCheck { approval_id } => Action::ApproveCheck(approval_id),
                 ConfirmAction::RejectCheck { approval_id } => Action::RejectCheck(approval_id),
-                ConfirmAction::DeleteRetentionLeases { lease_ids } => {
+                ConfirmAction::DeleteBuildLeases { lease_ids } => {
                     Action::DeleteRetentionLeases(lease_ids)
                 }
                 ConfirmAction::Quit => Action::Quit,
@@ -561,11 +533,6 @@ fn handle_open_in_browser(app: &App) -> Action {
             .log_viewer
             .selected_build()
             .map(|b| app.endpoints_web_build(b.id)),
-        View::RetentionLeases => app
-            .retention_leases
-            .filtered
-            .get(app.retention_leases.nav.index())
-            .map(|l| app.endpoints_web_build(l.run_id)),
     };
 
     match url {
@@ -747,31 +714,51 @@ fn handle_reject_request(app: &mut App) -> Action {
     Action::None
 }
 
-fn handle_delete_lease_request(app: &mut App) -> Action {
-    // Batch delete: if items are selected, delete all of them
-    if !app.retention_leases.selected.is_empty() {
-        let count = app.retention_leases.selected.len();
-        let lease_ids: Vec<u32> = app.retention_leases.selected.iter().copied().collect();
+fn handle_delete_build_leases_request(app: &mut App) -> Action {
+    // Batch delete: if builds are selected, collect leases for all of them
+    if !app.build_history.selected.is_empty() {
+        let lease_ids: Vec<u32> = app
+            .build_history
+            .selected
+            .iter()
+            .flat_map(|&build_id| {
+                app.retention_leases
+                    .leases_for_run(build_id)
+                    .into_iter()
+                    .map(|l| l.lease_id)
+            })
+            .collect();
+        if lease_ids.is_empty() {
+            app.notifications
+                .error("Selected builds have no retention leases");
+            return Action::None;
+        }
+        let count = lease_ids.len();
         app.confirm_prompt = Some(ConfirmPrompt {
-            message: format!("Delete {} selected lease(s)?  [y/N]", count),
-            action: ConfirmAction::DeleteRetentionLeases { lease_ids },
+            message: format!("Delete {} lease(s) for selected builds?  [y/N]", count),
+            action: ConfirmAction::DeleteBuildLeases { lease_ids },
         });
         return Action::None;
     }
 
     // Single delete: cursor item
-    if let Some(lease) = app
-        .retention_leases
-        .filtered
-        .get(app.retention_leases.nav.index())
-    {
-        let lease_id = lease.lease_id;
-        let run_id = lease.run_id;
+    if let Some(build) = app.build_history.builds.get(app.build_history.nav.index()) {
+        let lease_ids: Vec<u32> = app
+            .retention_leases
+            .leases_for_run(build.id)
+            .iter()
+            .map(|l| l.lease_id)
+            .collect();
+        if lease_ids.is_empty() {
+            return Action::None;
+        }
+        let count = lease_ids.len();
         app.confirm_prompt = Some(ConfirmPrompt {
-            message: format!("Delete retention lease for run #{}?  [y/N]", run_id),
-            action: ConfirmAction::DeleteRetentionLeases {
-                lease_ids: vec![lease_id],
-            },
+            message: format!(
+                "Delete {} lease(s) for build #{}?  [y/N]",
+                count, build.build_number
+            ),
+            action: ConfirmAction::DeleteBuildLeases { lease_ids },
         });
     }
     Action::None
@@ -818,11 +805,6 @@ fn rebuild_search_results(app: &mut App) {
                 &app.search.query,
             );
             app.active_runs.nav.set_index(0);
-        }
-        View::RetentionLeases => {
-            app.retention_leases
-                .rebuild(&app.data.definitions, &app.search.query);
-            app.retention_leases.nav.set_index(0);
         }
         _ => {}
     }
@@ -917,30 +899,6 @@ fn handle_enter(app: &mut App) -> Action {
                     Action::None
                 }
                 _ => Action::None,
-            }
-        }
-        View::RetentionLeases => {
-            if let Some(lease) = app
-                .retention_leases
-                .filtered
-                .get(app.retention_leases.nav.index())
-            {
-                let def_id = lease.definition_id;
-                // Find the matching definition to populate build history.
-                if let Some(def) = app
-                    .data
-                    .definitions
-                    .iter()
-                    .find(|d| d.id == def_id)
-                    .cloned()
-                {
-                    app.navigate_to_build_history(def);
-                    Action::FetchBuildHistory(def_id)
-                } else {
-                    Action::None
-                }
-            } else {
-                Action::None
             }
         }
     }

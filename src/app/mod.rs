@@ -17,6 +17,8 @@ pub struct BuildHistoryState {
     pub selected_definition: Option<PipelineDefinition>,
     pub builds: Vec<Build>,
     pub nav: nav::ListNav,
+    /// Build IDs selected for batch lease deletion.
+    pub selected: HashSet<u32>,
     /// The view to return to when pressing Esc/back from Build History.
     pub return_to: Option<View>,
 }
@@ -62,16 +64,10 @@ impl ActiveRunsState {
     }
 }
 
-/// State for the Retention Leases view.
+/// Cached retention lease data, refreshed alongside the periodic data refresh.
 #[derive(Debug, Default)]
 pub struct RetentionLeasesState {
     pub leases: Vec<RetentionLease>,
-    pub filtered: Vec<RetentionLease>,
-    pub nav: nav::ListNav,
-    pub selected: HashSet<u32>,
-    pub loading: bool,
-    /// Set when lease data was last fetched, cleared on data refresh.
-    pub fetched_at: Option<Instant>,
     /// Build IDs (run IDs) that have at least one retention lease.
     pub retained_run_ids: HashSet<u32>,
 }
@@ -82,51 +78,17 @@ impl RetentionLeasesState {
         self.retained_run_ids = self.leases.iter().map(|l| l.run_id).collect();
     }
 
-    /// Rebuild the filtered list from the full lease list.
-    /// Matches search query against pipeline name (via definitions lookup) and owner.
-    pub fn rebuild(&mut self, definitions: &[PipelineDefinition], search_query: &str) {
-        if search_query.is_empty() {
-            self.filtered = self.leases.clone();
-        } else {
-            let q = search_query.to_lowercase();
-            self.filtered = self
-                .leases
-                .iter()
-                .filter(|l| {
-                    let pipeline_name = definitions
-                        .iter()
-                        .find(|d| d.id == l.definition_id)
-                        .map(|d| d.name.to_lowercase())
-                        .unwrap_or_default();
-                    pipeline_name.contains(&q) || l.owner_id.to_lowercase().contains(&q)
-                })
-                .cloned()
-                .collect();
-        }
-        self.nav.set_len(self.filtered.len());
-    }
-
     /// Return leases for a specific build/run ID.
     pub fn leases_for_run(&self, run_id: u32) -> Vec<&RetentionLease> {
         self.leases.iter().filter(|l| l.run_id == run_id).collect()
     }
 
-    /// Return leases for a specific pipeline definition.
-    pub fn leases_for_definition(&self, definition_id: u32) -> Vec<&RetentionLease> {
+    /// Return lease count for a specific pipeline definition.
+    pub fn lease_count_for_definition(&self, definition_id: u32) -> usize {
         self.leases
             .iter()
             .filter(|l| l.definition_id == definition_id)
-            .collect()
-    }
-
-    /// Invalidate cached data (e.g. after a data refresh).
-    pub fn invalidate(&mut self) {
-        self.fetched_at = None;
-    }
-
-    /// Whether we have cached data available.
-    pub fn has_data(&self) -> bool {
-        self.fetched_at.is_some()
+            .count()
     }
 }
 
@@ -210,7 +172,6 @@ pub enum View {
     ActiveRuns,
     BuildHistory,
     LogViewer,
-    RetentionLeases,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -249,7 +210,7 @@ pub enum ConfirmAction {
     RejectCheck {
         approval_id: String,
     },
-    DeleteRetentionLeases {
+    DeleteBuildLeases {
         lease_ids: Vec<u32>,
     },
     Quit,
@@ -437,11 +398,8 @@ impl App {
                 self.view = return_to;
                 self.build_history.selected_definition = None;
                 self.build_history.builds.clear();
+                self.build_history.selected.clear();
                 self.build_history.nav.reset();
-            }
-            View::RetentionLeases => {
-                tracing::info!(from = ?self.view, to = ?View::Dashboard, "navigating back");
-                self.view = View::Dashboard;
             }
             _ => {}
         }
@@ -456,6 +414,7 @@ impl App {
         self.build_history.return_to = Some(self.view);
         self.build_history.selected_definition = Some(def);
         self.build_history.builds.clear();
+        self.build_history.selected.clear();
         self.build_history.nav.reset();
         self.view = View::BuildHistory;
     }
@@ -475,7 +434,6 @@ impl App {
             View::ActiveRuns => &mut self.active_runs.nav,
             View::BuildHistory => &mut self.build_history.nav,
             View::LogViewer => self.log_viewer.nav_mut(),
-            View::RetentionLeases => &mut self.retention_leases.nav,
         }
     }
 

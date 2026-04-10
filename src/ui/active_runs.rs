@@ -28,14 +28,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
     }
 
-    // Column layout: check(2) | icon(4) | status(12) | name(fill) | build_number(18) | retained(3) | branch(fill) | requestor(fill) | elapsed(15)
+    // Column layout: check(2) | icon(4) | status(12) | name(fill) | build_number(18) | retained(2) | branch(fill) | requestor(fill) | elapsed(15)
     let rects = Layout::horizontal([
         Constraint::Length(2),  // check
         Constraint::Length(4),  // icon
         Constraint::Length(12), // status label
         Constraint::Fill(2),    // pipeline name
         Constraint::Length(18), // build number
-        Constraint::Length(3),  // retained indicator
+        Constraint::Length(2),  // retained indicator
         Constraint::Fill(2),    // branch
         Constraint::Fill(2),    // requestor
         Constraint::Length(15), // elapsed
@@ -101,7 +101,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     theme::MUTED,
                 ),
-                Span::styled(if retained { "🔒 " } else { "   " }, theme::WARNING),
+                Span::styled(if retained { "◈ " } else { "  " }, theme::WARNING),
                 Span::styled(
                     format!(
                         "{:<width$} ",
