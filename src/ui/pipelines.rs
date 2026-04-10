@@ -25,17 +25,16 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
     }
 
-    // Column layout: padding(1) | name(fill) | leases(6) | folder(fill)
+    // Column layout: padding(1) | name(fill) | folder(fill)
     let rects = Layout::horizontal([
         Constraint::Length(1), // leading padding
         Constraint::Fill(2),   // pipeline name
-        Constraint::Length(6), // lease badge
         Constraint::Fill(3),   // folder path
     ])
     .split(area);
     let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
     widths[1] = widths[1].min(50); // pipeline name
-    widths[3] = widths[3].min(80); // folder path
+    widths[2] = widths[2].min(80); // folder path
 
     let items: Vec<ListItem> = app
         .pipelines
@@ -44,12 +43,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, def)| {
             let folder = def.path.trim_start_matches('\\').replace('\\', " / ");
-            let lease_count = app.retention_leases.lease_count_for_definition(def.id);
-            let lease_badge = if lease_count > 0 {
-                format!("◈ {} ", lease_count)
-            } else {
-                String::new()
-            };
 
             let row_style = if i == app.pipelines.nav.index() {
                 theme::SELECTED
@@ -67,11 +60,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     theme::TEXT,
                 ),
-                Span::styled(
-                    format!("{:<width$}", lease_badge, width = widths[2]),
-                    theme::WARNING,
-                ),
-                Span::styled(truncate(&folder, widths[3]), theme::MUTED),
+                Span::styled(truncate(&folder, widths[2]), theme::MUTED),
             ]))
             .style(row_style)
         })
