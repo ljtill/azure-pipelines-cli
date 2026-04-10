@@ -256,7 +256,7 @@ pub fn handle_message(
             app.data.definitions = definitions;
 
             // Seed the map from each definition's latestBuild (full coverage),
-            // then overlay with recent_builds (may be fresher for active pipelines).
+            // then overlay with recent_builds — only if the recent build is newer.
             let mut map: BTreeMap<u32, models::Build> = BTreeMap::new();
             for def in &app.data.definitions {
                 if let Some(build) = &def.latest_build {
@@ -264,7 +264,16 @@ pub fn handle_message(
                 }
             }
             for build in &recent_builds {
-                map.insert(build.definition.id, build.clone());
+                match map.entry(build.definition.id) {
+                    std::collections::btree_map::Entry::Vacant(e) => {
+                        e.insert(build.clone());
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut e) => {
+                        if build.id > e.get().id {
+                            e.insert(build.clone());
+                        }
+                    }
+                }
             }
             app.data.latest_builds_by_def = map;
             app.data.recent_builds = recent_builds;
@@ -890,13 +899,64 @@ mod tests {
         }
         let recent = vec![newer_build];
         for b in &recent {
-            map.insert(b.definition.id, b.clone());
+            match map.entry(b.definition.id) {
+                std::collections::btree_map::Entry::Vacant(e) => {
+                    e.insert(b.clone());
+                }
+                std::collections::btree_map::Entry::Occupied(mut e) => {
+                    if b.id > e.get().id {
+                        e.insert(b.clone());
+                    }
+                }
+            }
         }
         app.data.latest_builds_by_def = map;
         app.data.recent_builds = recent;
 
         // recent_builds should win (overlay).
         assert_eq!(app.data.latest_builds_by_def[&50].id, 501);
+    }
+
+    #[test]
+    fn data_refresh_older_recent_build_does_not_overwrite_newer() {
+        let mut app = make_app();
+
+        // Definition has a newer build embedded.
+        let newer_build = make_build(502, BuildStatus::Completed, Some(BuildResult::Succeeded));
+        let mut def = make_definition(50, "Pipeline", "\\");
+        def.latest_build = Some(Box::new(newer_build));
+
+        // recent_builds has an older build for the same definition.
+        let mut older_build = make_build(499, BuildStatus::Completed, Some(BuildResult::Failed));
+        older_build.definition = BuildDefinitionRef {
+            id: 50,
+            name: "Pipeline".into(),
+        };
+
+        app.data.definitions = vec![def];
+        let mut map: BTreeMap<u32, Build> = BTreeMap::new();
+        for d in &app.data.definitions {
+            if let Some(build) = &d.latest_build {
+                map.insert(d.id, *build.clone());
+            }
+        }
+        let recent = vec![older_build];
+        for b in &recent {
+            match map.entry(b.definition.id) {
+                std::collections::btree_map::Entry::Vacant(e) => {
+                    e.insert(b.clone());
+                }
+                std::collections::btree_map::Entry::Occupied(mut e) => {
+                    if b.id > e.get().id {
+                        e.insert(b.clone());
+                    }
+                }
+            }
+        }
+        app.data.latest_builds_by_def = map;
+
+        // latestBuild (502) should win — older recent build (499) must not overwrite.
+        assert_eq!(app.data.latest_builds_by_def[&50].id, 502);
     }
 
     // -----------------------------------------------------------------------
