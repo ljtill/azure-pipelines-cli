@@ -1,0 +1,193 @@
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+
+use super::Action;
+use super::navigation;
+use crate::app::{App, TimelineRow};
+
+pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Char('f') => {
+            app.log_viewer.enter_follow_mode();
+            Action::FollowLatest
+        }
+        KeyCode::Left => {
+            let idx = app.log_viewer.nav().index();
+            match app.log_viewer.timeline_row_kind(idx) {
+                Some("stage") => {
+                    app.log_viewer.collapse_timeline_node(idx);
+                }
+                Some("job") => {
+                    if !app.log_viewer.collapse_timeline_node(idx)
+                        && let Some(parent_idx) = app.log_viewer.find_timeline_parent_index(idx)
+                    {
+                        app.log_viewer.nav_mut().set_index(parent_idx);
+                    }
+                }
+                Some("task") => {
+                    if let Some(parent_idx) = app.log_viewer.find_timeline_parent_index(idx) {
+                        app.log_viewer.nav_mut().set_index(parent_idx);
+                    }
+                }
+                _ => {}
+            }
+            Action::None
+        }
+        KeyCode::Right => {
+            let idx = app.log_viewer.nav().index();
+            match app.log_viewer.timeline_row_kind(idx) {
+                Some("stage") | Some("job") => {
+                    app.log_viewer.expand_timeline_node(idx);
+                }
+                Some("task") => {
+                    return handle_enter_log_viewer(app);
+                }
+                _ => {}
+            }
+            Action::None
+        }
+        KeyCode::Enter => handle_enter_log_viewer(app),
+        KeyCode::PageUp => {
+            app.log_viewer.scroll_up(20);
+            Action::None
+        }
+        KeyCode::PageDown => {
+            app.log_viewer.scroll_down(20);
+            Action::None
+        }
+        KeyCode::Char('c') => navigation::handle_cancel_request(app),
+        KeyCode::Char('R') => handle_retry_request(app),
+        KeyCode::Char('A') => handle_approve_request(app),
+        KeyCode::Char('D') => handle_reject_request(app),
+        KeyCode::Char('o') => navigation::handle_open_in_browser(app),
+        _ => Action::None,
+    }
+}
+
+fn handle_enter_log_viewer(app: &mut App) -> Action {
+    let idx = app.log_viewer.nav().index();
+    match app.log_viewer.timeline_row_kind(idx) {
+        Some("stage") | Some("job") => {
+            app.log_viewer.toggle_timeline_node(idx);
+            Action::None
+        }
+        Some("task") => {
+            app.log_viewer.enter_inspect_mode();
+            if let Some(log_id) = app.log_viewer.timeline_task_log_id(idx)
+                && let Some(build) = app.log_viewer.selected_build()
+            {
+                return Action::FetchBuildLog {
+                    build_id: build.id,
+                    log_id,
+                };
+            }
+            Action::None
+        }
+        _ => Action::None,
+    }
+}
+
+fn handle_retry_request(app: &mut App) -> Action {
+    let idx = app.log_viewer.nav().index();
+
+    // Find the stage to retry: if cursor is on a stage, use it directly.
+    // If on a job/task/checkpoint, walk up to the parent stage.
+    let stage_idx = match app.log_viewer.timeline_row_kind(idx) {
+        Some("stage") => Some(idx),
+        Some("job") => app.log_viewer.find_timeline_parent_index(idx),
+        Some("task") => app
+            .log_viewer
+            .find_timeline_parent_index(idx)
+            .and_then(|job_idx| app.log_viewer.find_timeline_parent_index(job_idx)),
+        Some("checkpoint") => {
+            if let Some(TimelineRow::Checkpoint {
+                parent_stage_id, ..
+            }) = app.log_viewer.timeline_rows().get(idx)
+            {
+                let psid = parent_stage_id.clone();
+                app.log_viewer
+                    .timeline_rows()
+                    .iter()
+                    .position(|r| matches!(r, TimelineRow::Stage { id, .. } if *id == psid))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let stage_idx = match stage_idx {
+        Some(i) => i,
+        None => return Action::None,
+    };
+
+    let stage_ref_name = match app.log_viewer.timeline_stage_ref_name(stage_idx) {
+        Some(name) => name,
+        None => return Action::None,
+    };
+    let build_id = match app.log_viewer.selected_build() {
+        Some(b) => b.id,
+        None => return Action::None,
+    };
+    let build_number = app
+        .log_viewer
+        .selected_build()
+        .map(|b| b.build_number.as_str())
+        .unwrap_or("?");
+    let stage_name = match app.log_viewer.timeline_rows().get(stage_idx) {
+        Some(TimelineRow::Stage { name, .. }) => name.clone(),
+        _ => stage_ref_name.clone(),
+    };
+
+    app.confirm_prompt = Some(crate::app::ConfirmPrompt {
+        message: format!(
+            "Retry stage \"{}\" in build #{}?  [y/N]",
+            stage_name, build_number
+        ),
+        action: crate::app::ConfirmAction::RetryStage {
+            build_id,
+            stage_ref_name,
+        },
+    });
+    Action::None
+}
+
+fn handle_approve_request(app: &mut App) -> Action {
+    let idx = app.log_viewer.nav().index();
+    if app.log_viewer.timeline_row_kind(idx) != Some("checkpoint") {
+        return Action::None;
+    }
+    let approval_id = match app.log_viewer.timeline_approval_id(idx) {
+        Some(id) => id,
+        None => return Action::None,
+    };
+    let name = match app.log_viewer.timeline_rows().get(idx) {
+        Some(crate::app::TimelineRow::Checkpoint { name, .. }) => name.clone(),
+        _ => "check".to_string(),
+    };
+    app.confirm_prompt = Some(crate::app::ConfirmPrompt {
+        message: format!("Approve \"{}\"?  [y/N]", name),
+        action: crate::app::ConfirmAction::ApproveCheck { approval_id },
+    });
+    Action::None
+}
+
+fn handle_reject_request(app: &mut App) -> Action {
+    let idx = app.log_viewer.nav().index();
+    if app.log_viewer.timeline_row_kind(idx) != Some("checkpoint") {
+        return Action::None;
+    }
+    let approval_id = match app.log_viewer.timeline_approval_id(idx) {
+        Some(id) => id,
+        None => return Action::None,
+    };
+    let name = match app.log_viewer.timeline_rows().get(idx) {
+        Some(crate::app::TimelineRow::Checkpoint { name, .. }) => name.clone(),
+        _ => "check".to_string(),
+    };
+    app.confirm_prompt = Some(crate::app::ConfirmPrompt {
+        message: format!("Reject \"{}\"?  [y/N]", name),
+        action: crate::app::ConfirmAction::RejectCheck { approval_id },
+    });
+    Action::None
+}
