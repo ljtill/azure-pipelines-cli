@@ -32,4 +32,3 @@ pub const FOLLOW_TITLE: Style = Style::new().fg(Color::Green);
 pub const SECTION_HEADER: Style = Style::new().add_modifier(Modifier::BOLD);
 pub const BRANCH: Style = Style::new().fg(Color::Blue);
 pub const HELP_BG: Style = Style::new().bg(Color::Black);
-pub const ROW_ALT: Style = Style::new().bg(Color::Rgb(28, 28, 28));

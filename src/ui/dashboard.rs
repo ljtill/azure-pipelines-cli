@@ -30,10 +30,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     widths[5] = widths[5].min(35); // branch
     widths[6] = widths[6].min(35); // requestor
 
-    // Track pipeline-row index separately for consistent zebra striping
-    // that resets at each folder header and skips folder headers entirely.
-    let mut pipeline_idx: usize = 0;
-
     let items: Vec<ListItem> = app
         .dashboard
         .rows
@@ -41,7 +37,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, row)| match row {
             DashboardRow::FolderHeader { path, collapsed } => {
-                pipeline_idx = 0;
                 let icon = if *collapsed { "▸" } else { "▾" };
                 ListItem::new(Line::from(vec![
                     Span::styled(format!(" {} ", icon), theme::ARROW),
@@ -59,12 +54,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             } => {
                 let row_style = if i == app.dashboard.nav.index() {
                     theme::SELECTED
-                } else if pipeline_idx % 2 == 1 {
-                    theme::ROW_ALT
                 } else {
                     Style::new()
                 };
-                pipeline_idx += 1;
 
                 let (icon, icon_color) = match latest_build {
                     Some(b) => status_icon(b.status, b.result),

@@ -46,8 +46,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
             let row_style = if i == app.pipelines.nav.index() {
                 theme::SELECTED
-            } else if i % 2 == 1 {
-                theme::ROW_ALT
             } else {
                 Style::new()
             };
