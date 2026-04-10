@@ -32,7 +32,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Fill(3),   // folder path
     ])
     .split(area);
-    let widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
+    let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
+    widths[1] = widths[1].min(50); // pipeline name
+    widths[2] = widths[2].min(80); // folder path
 
     let items: Vec<ListItem> = app
         .pipelines

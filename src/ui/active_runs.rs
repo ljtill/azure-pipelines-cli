@@ -38,7 +38,10 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(15), // elapsed
     ])
     .split(area);
-    let widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
+    let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
+    widths[3] = widths[3].min(40); // pipeline name
+    widths[5] = widths[5].min(35); // branch
+    widths[6] = widths[6].min(35); // requestor
 
     let items: Vec<ListItem> = app
         .active_runs

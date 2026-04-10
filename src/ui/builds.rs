@@ -42,7 +42,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(15), // elapsed
     ])
     .split(area);
-    let widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
+    let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
+    widths[3] = widths[3].min(40); // branch
+    widths[4] = widths[4].min(35); // requestor
 
     let items: Vec<ListItem> = app
         .build_history
