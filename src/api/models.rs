@@ -271,6 +271,22 @@ pub struct Approval {
     #[allow(dead_code)]
     #[serde(default)]
     pub steps: Vec<ApprovalStep>,
+    /// Pipeline/build reference — links this approval to a specific run.
+    pub pipeline: Option<ApprovalPipelineRef>,
+}
+
+/// Pipeline reference within an approval response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApprovalPipelineRef {
+    /// The build/run that triggered this approval.
+    pub owner: Option<ApprovalOwnerRef>,
+}
+
+/// Build/run owner reference within an approval's pipeline field.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApprovalOwnerRef {
+    /// The build/run ID.
+    pub id: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -282,6 +298,13 @@ pub struct ApprovalStep {
     pub status: Option<String>,
     #[allow(dead_code)]
     pub order: Option<i32>,
+}
+
+impl Approval {
+    /// Extract the build/run ID this approval is associated with.
+    pub fn build_id(&self) -> Option<u32> {
+        self.pipeline.as_ref()?.owner.as_ref().map(|o| o.id)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -877,7 +900,10 @@ mod tests {
                     "status": "pending",
                     "order": 1
                 }
-            ]
+            ],
+            "pipeline": {
+                "owner": { "id": 12345, "name": "20240615.1" }
+            }
         }"#;
         let approval: Approval = serde_json::from_str(json).unwrap();
         assert_eq!(approval.id, "approval-abc");
@@ -897,6 +923,18 @@ mod tests {
             "Alice"
         );
         assert_eq!(approval.steps[0].order, Some(1));
+        assert_eq!(approval.build_id(), Some(12345));
+    }
+
+    #[test]
+    fn deserialize_approval_without_pipeline() {
+        let json = r#"{
+            "id": "approval-no-pipeline",
+            "status": "pending",
+            "steps": []
+        }"#;
+        let approval: Approval = serde_json::from_str(json).unwrap();
+        assert_eq!(approval.build_id(), None);
     }
 
     #[test]

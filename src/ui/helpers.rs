@@ -44,6 +44,32 @@ pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'stati
     }
 }
 
+/// Like `status_icon`, but shows "awaiting approval" for in-progress builds
+/// that have a pending approval gate.
+pub fn effective_status_icon(
+    status: BuildStatus,
+    result: Option<BuildResult>,
+    has_pending_approval: bool,
+) -> (&'static str, Color) {
+    if has_pending_approval && status.is_in_progress() {
+        return ("◆", Color::Magenta);
+    }
+    status_icon(status, result)
+}
+
+/// Like `status_label`, but returns "Awaiting" for in-progress builds
+/// that have a pending approval gate.
+pub fn effective_status_label(
+    status: BuildStatus,
+    result: Option<BuildResult>,
+    has_pending_approval: bool,
+) -> &'static str {
+    if has_pending_approval && status.is_in_progress() {
+        return "Awaiting";
+    }
+    status_label(status, result)
+}
+
 /// Status icon for timeline records (stage/job/task) where state and result
 /// are separate optional fields.
 pub fn timeline_status_icon(

@@ -4,7 +4,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
-use super::helpers::{build_elapsed, status_icon, status_label, truncate};
+use super::helpers::{build_elapsed, effective_status_icon, effective_status_label, truncate};
 use super::theme;
 use crate::app::{App, DashboardRow};
 
@@ -59,11 +59,17 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 };
 
                 let (icon, icon_color) = match latest_build {
-                    Some(b) => status_icon(b.status, b.result),
+                    Some(b) => {
+                        let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
+                        effective_status_icon(b.status, b.result, awaiting)
+                    }
                     None => ("○", Color::DarkGray),
                 };
                 let label = match latest_build {
-                    Some(b) => status_label(b.status, b.result),
+                    Some(b) => {
+                        let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
+                        effective_status_label(b.status, b.result, awaiting)
+                    }
                     None => "",
                 };
 

@@ -4,7 +4,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 
-use super::helpers::{build_elapsed, status_icon, status_label, truncate};
+use super::helpers::{build_elapsed, effective_status_icon, effective_status_label, truncate};
 use super::theme;
 use crate::app::App;
 
@@ -52,8 +52,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, build)| {
-            let (icon, icon_color) = status_icon(build.status, build.result);
-            let label = status_label(build.status, build.result);
+            let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
+            let (icon, icon_color) = effective_status_icon(build.status, build.result, awaiting);
+            let label = effective_status_label(build.status, build.result, awaiting);
             let time_info = build_elapsed(build);
             let branch = build.branch_display();
 

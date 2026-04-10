@@ -278,6 +278,10 @@ pub fn handle_message(
             app.data.latest_builds_by_def = map;
             app.data.recent_builds = recent_builds;
             app.data.active_builds = active_builds;
+            app.data.pending_approval_build_ids = pending_approvals
+                .iter()
+                .filter_map(|a| a.build_id())
+                .collect();
             app.data.pending_approvals = pending_approvals;
 
             app.dashboard.rebuild(

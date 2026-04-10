@@ -8,7 +8,12 @@
       "createdOn": "2024-01-01T12:00:00Z",
       "steps": [
         {"assignedApprover": {"displayName": "Admin User"}, "status": "pending", "order": 1}
-      ]
+      ],
+      "pipeline": {
+        "owner": { "id": 12345, "name": "20240101.1" },
+        "id": "42",
+        "name": "Deploy Pipeline"
+      }
     }
   ]
 }

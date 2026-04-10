@@ -121,6 +121,8 @@ pub struct CoreData {
     pub active_builds: Vec<Build>,
     pub pending_approvals: Vec<Approval>,
     pub latest_builds_by_def: BTreeMap<u32, Build>,
+    /// Build IDs that have at least one pending approval gate.
+    pub pending_approval_build_ids: HashSet<u32>,
 }
 
 /// Filter configuration from config.toml.

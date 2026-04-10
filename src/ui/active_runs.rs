@@ -4,7 +4,9 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
-use super::helpers::{build_elapsed, draw_search_bar, status_icon, status_label, truncate};
+use super::helpers::{
+    build_elapsed, draw_search_bar, effective_status_icon, effective_status_label, truncate,
+};
 use super::theme;
 use crate::app::{App, InputMode};
 
@@ -52,8 +54,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let elapsed = build_elapsed(build);
             let selected = app.active_runs.selected.contains(&build.id);
             let check = if selected { "✓ " } else { "  " };
-            let (icon, icon_color) = status_icon(build.status, build.result);
-            let label = status_label(build.status, build.result);
+            let (icon, icon_color) = {
+                let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
+                effective_status_icon(build.status, build.result, awaiting)
+            };
+            let label = {
+                let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
+                effective_status_label(build.status, build.result, awaiting)
+            };
 
             let row_style = if i == app.active_runs.nav.index() {
                 theme::SELECTED
