@@ -12,7 +12,8 @@ use crate::api::models::Build;
 use crate::app::nav::ListNav;
 use crate::app::{App, InputMode};
 use crate::ui::helpers::{
-    build_elapsed, draw_search_bar, effective_status_icon, effective_status_label, truncate,
+    build_elapsed, effective_status_icon, effective_status_label, row_style, split_with_search_bar,
+    truncate,
 };
 use crate::ui::theme;
 
@@ -59,18 +60,8 @@ impl ActiveRuns {
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.view == crate::app::View::ActiveRuns
             && (app.search.mode == InputMode::Search || !app.search.query.is_empty());
-
-        let chunks = if show_search {
-            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(area)
-        } else {
-            Layout::vertical([Constraint::Min(0)]).split(area)
-        };
-
-        let list_area = if show_search { chunks[1] } else { chunks[0] };
-
-        if show_search {
-            draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
-        }
+        let list_area =
+            split_with_search_bar(f, area, &app.search.query, app.search.mode, show_search);
 
         let rects = Layout::horizontal([
             Constraint::Length(2),
@@ -98,20 +89,10 @@ impl ActiveRuns {
                 let selected = self.selected.contains(&build.id);
                 let retained = app.retention_leases.retained_run_ids.contains(&build.id);
                 let check = if selected { "✓ " } else { "  " };
-                let (icon, icon_color) = {
-                    let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
-                    effective_status_icon(build.status, build.result, awaiting)
-                };
-                let label = {
-                    let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
-                    effective_status_label(build.status, build.result, awaiting)
-                };
-
-                let row_style = if i == self.nav.index() {
-                    theme::SELECTED
-                } else {
-                    Style::new()
-                };
+                let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
+                let (icon, icon_color) =
+                    effective_status_icon(build.status, build.result, awaiting);
+                let label = effective_status_label(build.status, build.result, awaiting);
 
                 ListItem::new(Line::from(vec![
                     Span::styled(
@@ -165,7 +146,7 @@ impl ActiveRuns {
                         theme::WARNING,
                     ),
                 ]))
-                .style(row_style)
+                .style(row_style(i == self.nav.index()))
             })
             .collect();
 

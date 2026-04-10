@@ -1,6 +1,6 @@
 use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::style::Color;
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
@@ -177,6 +177,50 @@ pub fn truncate(s: &str, max_len: usize) -> String {
     let mut result = s[..end].to_string();
     result.push('…');
     result
+}
+
+/// Center a popup overlay within the given area using percentage-based sizing.
+pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Percentage(percent_y),
+        Constraint::Percentage((100 - percent_y) / 2),
+    ])
+    .split(r);
+
+    Layout::horizontal([
+        Constraint::Percentage((100 - percent_x) / 2),
+        Constraint::Percentage(percent_x),
+        Constraint::Percentage((100 - percent_x) / 2),
+    ])
+    .split(popup_layout[1])[1]
+}
+
+/// Return SELECTED style if the row is at the nav cursor, otherwise default.
+pub fn row_style(is_selected: bool) -> Style {
+    if is_selected {
+        theme::SELECTED
+    } else {
+        Style::new()
+    }
+}
+
+/// Split an area with an optional search bar at the top. Returns the list area.
+/// Renders the search bar if visible.
+pub fn split_with_search_bar(
+    f: &mut Frame,
+    area: Rect,
+    query: &str,
+    input_mode: InputMode,
+    show_search: bool,
+) -> Rect {
+    if show_search {
+        let chunks = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(area);
+        draw_search_bar(f, chunks[0], query, input_mode);
+        chunks[1]
+    } else {
+        Layout::vertical([Constraint::Min(0)]).split(area)[0]
+    }
 }
 
 #[cfg(test)]

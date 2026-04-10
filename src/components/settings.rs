@@ -1,11 +1,12 @@
 use anyhow::Result;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 
 use super::Component;
 use crate::app::settings::{FieldKind, SettingsState};
+use crate::ui::helpers::centered_rect;
 use crate::ui::theme;
 
 /// Settings overlay component — renders the config editor overlay.
@@ -104,20 +105,4 @@ fn format_field_value(kind: FieldKind, value: &str) -> String {
         FieldKind::Cycle => value.to_string(),
         _ => value.to_string(),
     }
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::vertical([
-        Constraint::Percentage((100 - percent_y) / 2),
-        Constraint::Percentage(percent_y),
-        Constraint::Percentage((100 - percent_y) / 2),
-    ])
-    .split(r);
-
-    Layout::horizontal([
-        Constraint::Percentage((100 - percent_x) / 2),
-        Constraint::Percentage(percent_x),
-        Constraint::Percentage((100 - percent_x) / 2),
-    ])
-    .split(popup_layout[1])[1]
 }

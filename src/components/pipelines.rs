@@ -1,7 +1,6 @@
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
@@ -9,7 +8,7 @@ use super::Component;
 use crate::api::models::PipelineDefinition;
 use crate::app::nav::ListNav;
 use crate::app::{App, InputMode};
-use crate::ui::helpers::{draw_search_bar, truncate};
+use crate::ui::helpers::{row_style, split_with_search_bar, truncate};
 use crate::ui::theme;
 
 /// Pipelines flat-list component — renders all pipeline definitions with search.
@@ -56,24 +55,14 @@ impl Pipelines {
     /// Render the pipelines view using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
-
-        let chunks = if show_search {
-            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(area)
-        } else {
-            Layout::vertical([Constraint::Min(0)]).split(area)
-        };
-
-        let list_area = if show_search { chunks[1] } else { chunks[0] };
-
-        if show_search {
-            draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
-        }
+        let list_area =
+            split_with_search_bar(f, area, &app.search.query, app.search.mode, show_search);
 
         // Column layout: padding(1) | name(fill) | folder(fill)
         let rects = Layout::horizontal([
-            Constraint::Length(1), // leading padding
-            Constraint::Fill(2),   // pipeline name
-            Constraint::Fill(3),   // folder path
+            Constraint::Length(1),
+            Constraint::Fill(2),
+            Constraint::Fill(3),
         ])
         .split(area);
         let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
@@ -87,12 +76,6 @@ impl Pipelines {
             .map(|(i, def)| {
                 let folder = def.path.trim_start_matches('\\').replace('\\', " / ");
 
-                let row_style = if i == self.nav.index() {
-                    theme::SELECTED
-                } else {
-                    Style::new()
-                };
-
                 ListItem::new(Line::from(vec![
                     Span::raw(" "),
                     Span::styled(
@@ -105,7 +88,7 @@ impl Pipelines {
                     ),
                     Span::styled(truncate(&folder, widths[2]), theme::MUTED),
                 ]))
-                .style(row_style)
+                .style(row_style(i == self.nav.index()))
             })
             .collect();
 
