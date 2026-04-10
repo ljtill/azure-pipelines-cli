@@ -56,7 +56,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let title = Paragraph::new(Line::from(vec![
-        Span::styled(" pipelines", theme::BRAND),
+        Span::styled(" Azure Pipelines", theme::BRAND),
         Span::styled("  ●  ", theme::MUTED),
         Span::styled(&app.org_project_label, theme::TEXT),
         Span::styled(refresh_text, theme::MUTED),
