@@ -1,6 +1,4 @@
 pub mod helpers;
-pub mod logs;
-pub mod settings;
 pub mod setup;
 pub mod theme;
 
@@ -28,7 +26,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         crate::app::View::BuildHistory => {
             app.build_history_component.draw_with_app(f, app, chunks[1])
         }
-        crate::app::View::LogViewer => logs::draw(f, app, chunks[1]),
+        crate::app::View::LogViewer => {
+            crate::components::log_viewer::draw_log_viewer(f, app, chunks[1])
+        }
     }
 
     draw_footer(f, app, chunks[2]);
@@ -39,7 +39,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     if app.show_settings {
         if let Some(ref s) = app.settings {
-            settings::draw(f, s);
+            app.settings_component.draw_with_state(f, s);
         }
     }
 }
@@ -63,9 +63,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         crate::app::View::Pipelines => app.pipelines_component.footer_hints(),
         crate::app::View::ActiveRuns => app.active_runs_component.footer_hints(),
         crate::app::View::BuildHistory => app.build_history_component.footer_hints(),
-        crate::app::View::LogViewer => {
-            "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  q/Esc back"
-        }
+        crate::app::View::LogViewer => app.log_viewer_component.footer_hints(),
     };
 
     let footer = Paragraph::new(Line::from(vec![Span::styled(hints, theme::MUTED)]));

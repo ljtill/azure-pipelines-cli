@@ -276,6 +276,8 @@ pub struct App {
     pub pipelines_component: crate::components::pipelines::Pipelines,
     pub active_runs_component: crate::components::active_runs::ActiveRuns,
     pub build_history_component: crate::components::build_history::BuildHistory,
+    pub log_viewer_component: crate::components::log_viewer::LogViewer,
+    pub settings_component: crate::components::settings::Settings,
 
     // Status
     pub last_refresh: Option<DateTime<Utc>>,
@@ -347,6 +349,8 @@ impl App {
             pipelines_component: crate::components::pipelines::Pipelines,
             active_runs_component: crate::components::active_runs::ActiveRuns,
             build_history_component: crate::components::build_history::BuildHistory,
+            log_viewer_component: crate::components::log_viewer::LogViewer,
+            settings_component: crate::components::settings::Settings,
 
             last_refresh: None,
             notifications: Notifications::new(10),

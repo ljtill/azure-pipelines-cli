@@ -8,7 +8,9 @@ pub mod build_history;
 pub mod dashboard;
 pub mod header;
 pub mod help;
+pub mod log_viewer;
 pub mod pipelines;
+pub mod settings;
 
 /// A self-contained UI component following the
 /// [ratatui component architecture](https://ratatui.rs/concepts/application-patterns/component-architecture/).

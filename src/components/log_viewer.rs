@@ -1,16 +1,22 @@
+use anyhow::Result;
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
 
-use super::helpers::{checkpoint_status_icon, timeline_status_icon};
-use super::theme;
+use super::Component;
 use crate::app::{App, TimelineRow};
+use crate::ui::helpers::{checkpoint_status_icon, timeline_status_icon};
+use crate::ui::theme;
 
-pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
-    use ratatui::layout::{Constraint, Layout};
+/// Log Viewer component — renders timeline tree + log output for a selected build.
+pub struct LogViewer;
 
+/// Draw the log viewer. This is a free function rather than a method on `LogViewer`
+/// because it needs `&mut App` (for `set_layout_areas` mouse hit-testing state)
+/// while the component is itself a field of `App`.
+pub fn draw_log_viewer(f: &mut Frame, app: &mut App, area: Rect) {
     let build_label = app
         .log_viewer
         .selected_build()
@@ -23,7 +29,6 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     ])
     .split(area);
 
-    // Build info header
     let header = Paragraph::new(Line::from(vec![
         Span::styled(" ← ", theme::MUTED),
         Span::styled(&build_label, theme::BRAND),
@@ -31,18 +36,24 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     ]));
     f.render_widget(header, chunks[0]);
 
-    // Horizontal split: tree (left) + log (right)
-    let body = Layout::horizontal([
-        Constraint::Percentage(35), // tree panel
-        Constraint::Percentage(65), // log panel
-    ])
-    .split(chunks[1]);
+    let body = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
+        .split(chunks[1]);
 
-    // Store layout areas for mouse hit-testing in the event handler.
+    // Store layout areas for mouse hit-testing.
     app.log_viewer.set_layout_areas(body[0], body[1]);
 
     draw_tree(f, app, body[0]);
     draw_log(f, app, body[1]);
+}
+
+impl Component for LogViewer {
+    fn draw(&self, _frame: &mut Frame, _area: Rect) -> Result<()> {
+        Ok(())
+    }
+
+    fn footer_hints(&self) -> &str {
+        "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  q/Esc back"
+    }
 }
 
 fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
@@ -169,7 +180,6 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             app.log_viewer.followed_task_name()
         )
     } else if !app.log_viewer.is_following() {
-        // Show the name of the pinned task
         if let Some(TimelineRow::Task { name, .. }) = app
             .log_viewer
             .timeline_rows()
@@ -205,9 +215,6 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         } else {
             app.log_viewer.log_scroll_offset().min(max_scroll)
         };
-        // Note: ratatui's scroll() accepts u16, so manual scrolling is capped at
-        // ~65k lines. Auto-scroll (follow mode) bypasses this by computing max_scroll
-        // from the full u32 line count. For extremely long logs, use follow mode.
         let scroll_offset = scroll_offset_u32.min(u16::MAX as u32) as u16;
 
         let title_style = if app.log_viewer.is_following() {
