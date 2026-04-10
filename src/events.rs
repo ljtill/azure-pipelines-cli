@@ -253,6 +253,21 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
 
+        // Left arrow on Build History — go back to parent view
+        KeyCode::Left if app.view == View::BuildHistory => {
+            app.go_back();
+            Action::None
+        }
+
+        // Right arrow on flat-list views — drill in (same as Enter)
+        KeyCode::Right
+            if app.view == View::Pipelines
+                || app.view == View::ActiveRuns
+                || app.view == View::BuildHistory =>
+        {
+            handle_enter(app)
+        }
+
         KeyCode::Home => {
             app.current_nav_mut().home();
             Action::None
@@ -270,6 +285,21 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 });
                 Action::None
             }
+            View::Pipelines | View::ActiveRuns => {
+                app.search.mode = InputMode::Normal;
+                app.search.query.clear();
+                app.view = View::Dashboard;
+                Action::None
+            }
+            _ => {
+                app.go_back();
+                Action::None
+            }
+        },
+
+        // Esc — go back (same as q, except no-op on Dashboard)
+        KeyCode::Esc => match app.view {
+            View::Dashboard => Action::None,
             View::Pipelines | View::ActiveRuns => {
                 app.search.mode = InputMode::Normal;
                 app.search.query.clear();
@@ -815,5 +845,162 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) -> Action {
             Action::None
         }
         _ => Action::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::*;
+    use crate::test_helpers::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    // --- Right arrow drill-in on flat-list views ---
+
+    #[test]
+    fn right_arrow_on_pipelines_drills_into_build_history() {
+        let mut app = make_app();
+        app.view = View::Pipelines;
+        assert!(!app.pipelines.filtered.is_empty());
+
+        let action = handle_key(&mut app, key(KeyCode::Right));
+        assert_eq!(app.view, View::BuildHistory);
+        assert!(matches!(action, Action::FetchBuildHistory(_)));
+    }
+
+    #[test]
+    fn right_arrow_on_active_runs_drills_into_log_viewer() {
+        let mut app = make_app();
+        app.view = View::ActiveRuns;
+        let build = make_build(200, BuildStatus::InProgress, None);
+        app.data.active_builds = vec![build];
+        app.active_runs.rebuild(
+            &app.data.active_builds,
+            &app.filters.definition_ids,
+            &app.search.query,
+        );
+
+        let action = handle_key(&mut app, key(KeyCode::Right));
+        assert_eq!(app.view, View::LogViewer);
+        assert!(matches!(action, Action::FetchTimeline(_)));
+    }
+
+    #[test]
+    fn right_arrow_on_build_history_drills_into_log_viewer() {
+        let mut app = make_app();
+        let def = make_definition(1, "P", "\\");
+        app.navigate_to_build_history(def);
+        app.build_history.builds = vec![make_build(
+            300,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        )];
+        app.build_history.nav.set_len(1);
+
+        let action = handle_key(&mut app, key(KeyCode::Right));
+        assert_eq!(app.view, View::LogViewer);
+        assert!(matches!(action, Action::FetchTimeline(_)));
+    }
+
+    // --- Left arrow go-back on Build History ---
+
+    #[test]
+    fn left_arrow_on_build_history_goes_back() {
+        let mut app = make_app();
+        app.view = View::Pipelines;
+        let def = make_definition(1, "P", "\\");
+        app.navigate_to_build_history(def);
+        assert_eq!(app.view, View::BuildHistory);
+
+        handle_key(&mut app, key(KeyCode::Left));
+        assert_eq!(app.view, View::Pipelines);
+    }
+
+    // --- Esc on drill-in views goes back ---
+
+    #[test]
+    fn esc_on_build_history_goes_back() {
+        let mut app = make_app();
+        app.view = View::Dashboard;
+        let def = make_definition(1, "P", "\\");
+        app.navigate_to_build_history(def);
+        assert_eq!(app.view, View::BuildHistory);
+
+        handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn esc_on_log_viewer_goes_back() {
+        let mut app = make_app();
+        let def = make_definition(1, "P", "\\");
+        app.navigate_to_build_history(def);
+        let build = make_build(400, BuildStatus::Completed, Some(BuildResult::Succeeded));
+        app.navigate_to_log_viewer(build);
+        assert_eq!(app.view, View::LogViewer);
+
+        handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.view, View::BuildHistory);
+    }
+
+    // --- Esc on top-level peer views ---
+
+    #[test]
+    fn esc_on_pipelines_goes_to_dashboard() {
+        let mut app = make_app();
+        app.view = View::Pipelines;
+
+        handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn esc_on_active_runs_goes_to_dashboard() {
+        let mut app = make_app();
+        app.view = View::ActiveRuns;
+
+        handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn esc_on_dashboard_is_noop() {
+        let mut app = make_app();
+        app.view = View::Dashboard;
+
+        let action = handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.view, View::Dashboard);
+        assert!(matches!(action, Action::None));
+    }
+
+    // --- Left arrow is no-op on top-level peer views ---
+
+    #[test]
+    fn left_arrow_on_pipelines_is_noop() {
+        let mut app = make_app();
+        app.view = View::Pipelines;
+
+        let action = handle_key(&mut app, key(KeyCode::Left));
+        assert_eq!(app.view, View::Pipelines);
+        assert!(matches!(action, Action::None));
+    }
+
+    #[test]
+    fn left_arrow_on_active_runs_is_noop() {
+        let mut app = make_app();
+        app.view = View::ActiveRuns;
+
+        let action = handle_key(&mut app, key(KeyCode::Left));
+        assert_eq!(app.view, View::ActiveRuns);
+        assert!(matches!(action, Action::None));
     }
 }
