@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -6,12 +8,31 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 
 use super::Component;
-use crate::app::App;
+use crate::api::models::{Build, PipelineDefinition};
+use crate::app::nav::ListNav;
+use crate::app::{App, View};
 use crate::ui::helpers::{build_elapsed, effective_status_icon, effective_status_label, truncate};
 use crate::ui::theme;
 
 /// Build History component — renders builds for a selected pipeline definition.
-pub struct BuildHistory;
+#[derive(Debug, Default)]
+pub struct BuildHistory {
+    pub selected_definition: Option<PipelineDefinition>,
+    pub builds: Vec<Build>,
+    pub nav: ListNav,
+    /// Build IDs selected for batch lease deletion.
+    pub selected: HashSet<u32>,
+    /// The view to return to when pressing Esc/back from Build History.
+    pub return_to: Option<View>,
+    /// Whether more builds may be available beyond what's loaded.
+    pub has_more: bool,
+    /// Whether a "load more" request is currently in flight.
+    pub loading_more: bool,
+    /// ADO continuation token for fetching the next page.
+    pub continuation_token: Option<String>,
+    /// Stashed nav index to restore after a refresh (e.g. post-lease-deletion).
+    pub pending_nav_index: Option<usize>,
+}
 
 impl BuildHistory {
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
@@ -21,8 +42,7 @@ impl BuildHistory {
         ])
         .split(area);
 
-        let def_name = app
-            .build_history
+        let def_name = self
             .selected_definition
             .as_ref()
             .map(|d| d.name.as_str())
@@ -50,8 +70,7 @@ impl BuildHistory {
         widths[5] = widths[5].min(40);
         widths[6] = widths[6].min(35);
 
-        let mut items: Vec<ListItem> = app
-            .build_history
+        let mut items: Vec<ListItem> = self
             .builds
             .iter()
             .enumerate()
@@ -63,10 +82,10 @@ impl BuildHistory {
                 let time_info = build_elapsed(build);
                 let branch = build.branch_display();
                 let retained = app.retention_leases.retained_run_ids.contains(&build.id);
-                let selected = app.build_history.selected.contains(&build.id);
+                let selected = self.selected.contains(&build.id);
                 let check = if selected { "✓ " } else { "  " };
 
-                let row_style = if i == app.build_history.nav.index() {
+                let row_style = if i == self.nav.index() {
                     theme::SELECTED
                 } else {
                     Style::new()
@@ -120,20 +139,20 @@ impl BuildHistory {
             })
             .collect();
 
-        if app.build_history.loading_more {
+        if self.loading_more {
             items.push(ListItem::new(Line::from(vec![Span::styled(
                 "   ⟳ Loading more...",
                 theme::MUTED,
             )])));
-        } else if app.build_history.has_more {
+        } else if self.has_more {
             items.push(ListItem::new(Line::from(vec![Span::styled(
                 "   ▾ ↓ for more",
                 theme::MUTED,
             )])));
         }
 
-        let sel_count = app.build_history.selected.len();
-        let total = app.build_history.builds.len();
+        let sel_count = self.selected.len();
+        let total = self.builds.len();
         let title = if sel_count > 0 {
             format!(" Builds ({}) — {} selected ", total, sel_count)
         } else {
@@ -142,7 +161,7 @@ impl BuildHistory {
         let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
 
         let mut state = ListState::default();
-        state.select(Some(app.build_history.nav.index()));
+        state.select(Some(self.nav.index()));
         f.render_stateful_widget(list, chunks[1], &mut state);
     }
 }

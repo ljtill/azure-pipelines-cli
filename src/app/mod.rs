@@ -10,26 +10,6 @@ pub use crate::components::dashboard::DashboardRow;
 pub use log_viewer::{LogViewerState, TimelineRow};
 pub use nav::ListNav;
 
-/// State for the Build History drill-in view.
-#[derive(Debug, Default)]
-pub struct BuildHistoryState {
-    pub selected_definition: Option<PipelineDefinition>,
-    pub builds: Vec<Build>,
-    pub nav: nav::ListNav,
-    /// Build IDs selected for batch lease deletion.
-    pub selected: HashSet<u32>,
-    /// The view to return to when pressing Esc/back from Build History.
-    pub return_to: Option<View>,
-    /// Whether more builds may be available beyond what's loaded.
-    pub has_more: bool,
-    /// Whether a "load more" request is currently in flight.
-    pub loading_more: bool,
-    /// ADO continuation token for fetching the next page.
-    pub continuation_token: Option<String>,
-    /// Stashed nav index to restore after a refresh (e.g. post-lease-deletion).
-    pub pending_nav_index: Option<usize>,
-}
-
 /// Cached retention lease data, refreshed alongside the periodic data refresh.
 #[derive(Debug, Default)]
 pub struct RetentionLeasesState {
@@ -167,7 +147,7 @@ pub struct App {
     pub dashboard: crate::components::dashboard::Dashboard,
 
     // Build history (for selected pipeline)
-    pub build_history: BuildHistoryState,
+    pub build_history: crate::components::build_history::BuildHistory,
 
     // Log viewer state (grouped)
     pub log_viewer: LogViewerState,
@@ -190,7 +170,6 @@ pub struct App {
     // Components
     pub header: crate::components::header::Header,
     pub help: crate::components::help::Help,
-    pub build_history_component: crate::components::build_history::BuildHistory,
     pub log_viewer_component: crate::components::log_viewer::LogViewer,
     pub settings_component: crate::components::settings::Settings,
 
@@ -240,7 +219,7 @@ impl App {
 
             dashboard: crate::components::dashboard::Dashboard::default(),
 
-            build_history: BuildHistoryState::default(),
+            build_history: crate::components::build_history::BuildHistory::default(),
 
             log_viewer: LogViewerState::default(),
 
@@ -256,7 +235,6 @@ impl App {
 
             header: crate::components::header::Header,
             help: crate::components::help::Help,
-            build_history_component: crate::components::build_history::BuildHistory,
             log_viewer_component: crate::components::log_viewer::LogViewer,
             settings_component: crate::components::settings::Settings,
 
