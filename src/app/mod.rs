@@ -66,7 +66,9 @@ impl ActiveRunsState {
 #[derive(Debug, Default)]
 pub struct RetentionLeasesState {
     pub leases: Vec<RetentionLease>,
+    pub filtered: Vec<RetentionLease>,
     pub nav: nav::ListNav,
+    pub selected: HashSet<u32>,
     pub loading: bool,
     /// Set when lease data was last fetched, cleared on data refresh.
     pub fetched_at: Option<Instant>,
@@ -78,6 +80,30 @@ impl RetentionLeasesState {
     /// Update the `retained_run_ids` index from the current lease list.
     pub fn rebuild_index(&mut self) {
         self.retained_run_ids = self.leases.iter().map(|l| l.run_id).collect();
+    }
+
+    /// Rebuild the filtered list from the full lease list.
+    /// Matches search query against pipeline name (via definitions lookup) and owner.
+    pub fn rebuild(&mut self, definitions: &[PipelineDefinition], search_query: &str) {
+        if search_query.is_empty() {
+            self.filtered = self.leases.clone();
+        } else {
+            let q = search_query.to_lowercase();
+            self.filtered = self
+                .leases
+                .iter()
+                .filter(|l| {
+                    let pipeline_name = definitions
+                        .iter()
+                        .find(|d| d.id == l.definition_id)
+                        .map(|d| d.name.to_lowercase())
+                        .unwrap_or_default();
+                    pipeline_name.contains(&q) || l.owner_id.to_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect();
+        }
+        self.nav.set_len(self.filtered.len());
     }
 
     /// Return leases for a specific build/run ID.

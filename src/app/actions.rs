@@ -597,12 +597,12 @@ pub fn handle_message(
             app.retention_leases.leases = leases;
             app.retention_leases.rebuild_index();
             app.retention_leases
-                .nav
-                .set_len(app.retention_leases.leases.len());
+                .rebuild(&app.data.definitions, &app.search.query);
             app.retention_leases.fetched_at = Some(Instant::now());
         }
         AppMessage::RetentionLeasesDeleted { deleted, failed } => {
             tracing::info!(deleted, failed, "retention leases deleted");
+            app.retention_leases.selected.clear();
             if failed > 0 {
                 app.notifications
                     .error(format!("Deleted {deleted} lease(s), {failed} failed"));

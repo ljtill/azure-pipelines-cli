@@ -95,7 +95,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.log_viewer.enter_follow_mode();
             Action::FollowLatest
         }
-        KeyCode::Char('/') if app.view == View::Pipelines || app.view == View::ActiveRuns => {
+        KeyCode::Char('/')
+            if app.view == View::Pipelines
+                || app.view == View::ActiveRuns
+                || app.view == View::RetentionLeases =>
+        {
             tracing::debug!(view = ?app.view, "entering search mode");
             app.search.mode = InputMode::Search;
             Action::None
@@ -110,6 +114,21 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 let id = build.id;
                 if !app.active_runs.selected.remove(&id) {
                     app.active_runs.selected.insert(id);
+                }
+            }
+            Action::None
+        }
+
+        // Multi-select toggle in Retention Leases
+        KeyCode::Char(' ') if app.view == View::RetentionLeases => {
+            if let Some(lease) = app
+                .retention_leases
+                .filtered
+                .get(app.retention_leases.nav.index())
+            {
+                let id = lease.lease_id;
+                if !app.retention_leases.selected.remove(&id) {
+                    app.retention_leases.selected.insert(id);
                 }
             }
             Action::None
@@ -142,12 +161,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             handle_queue_request(app)
         }
 
-        // Delete retention lease(s)
+        // Delete retention lease(s) — batch if selected, single otherwise
         KeyCode::Char('d') if app.view == View::RetentionLeases => handle_delete_lease_request(app),
-        // Delete all leases for the definition at cursor
-        KeyCode::Char('D') if app.view == View::RetentionLeases => {
-            handle_delete_definition_leases_request(app)
-        }
 
         // Tab switching
         KeyCode::Char('1') => {
@@ -548,7 +563,7 @@ fn handle_open_in_browser(app: &App) -> Action {
             .map(|b| app.endpoints_web_build(b.id)),
         View::RetentionLeases => app
             .retention_leases
-            .leases
+            .filtered
             .get(app.retention_leases.nav.index())
             .map(|l| app.endpoints_web_build(l.run_id)),
     };
@@ -733,9 +748,21 @@ fn handle_reject_request(app: &mut App) -> Action {
 }
 
 fn handle_delete_lease_request(app: &mut App) -> Action {
+    // Batch delete: if items are selected, delete all of them
+    if !app.retention_leases.selected.is_empty() {
+        let count = app.retention_leases.selected.len();
+        let lease_ids: Vec<u32> = app.retention_leases.selected.iter().copied().collect();
+        app.confirm_prompt = Some(ConfirmPrompt {
+            message: format!("Delete {} selected lease(s)?  [y/N]", count),
+            action: ConfirmAction::DeleteRetentionLeases { lease_ids },
+        });
+        return Action::None;
+    }
+
+    // Single delete: cursor item
     if let Some(lease) = app
         .retention_leases
-        .leases
+        .filtered
         .get(app.retention_leases.nav.index())
     {
         let lease_id = lease.lease_id;
@@ -745,41 +772,6 @@ fn handle_delete_lease_request(app: &mut App) -> Action {
             action: ConfirmAction::DeleteRetentionLeases {
                 lease_ids: vec![lease_id],
             },
-        });
-    }
-    Action::None
-}
-
-fn handle_delete_definition_leases_request(app: &mut App) -> Action {
-    if let Some(lease) = app
-        .retention_leases
-        .leases
-        .get(app.retention_leases.nav.index())
-    {
-        let def_id = lease.definition_id;
-        let lease_ids: Vec<u32> = app
-            .retention_leases
-            .leases_for_definition(def_id)
-            .iter()
-            .map(|l| l.lease_id)
-            .collect();
-        if lease_ids.is_empty() {
-            return Action::None;
-        }
-        let def_name = app
-            .data
-            .definitions
-            .iter()
-            .find(|d| d.id == def_id)
-            .map(|d| d.name.as_str())
-            .unwrap_or("unknown");
-        app.confirm_prompt = Some(ConfirmPrompt {
-            message: format!(
-                "Delete {} lease(s) for \"{}\"?  [y/N]",
-                lease_ids.len(),
-                def_name
-            ),
-            action: ConfirmAction::DeleteRetentionLeases { lease_ids },
         });
     }
     Action::None
@@ -826,6 +818,11 @@ fn rebuild_search_results(app: &mut App) {
                 &app.search.query,
             );
             app.active_runs.nav.set_index(0);
+        }
+        View::RetentionLeases => {
+            app.retention_leases
+                .rebuild(&app.data.definitions, &app.search.query);
+            app.retention_leases.nav.set_index(0);
         }
         _ => {}
     }
@@ -925,7 +922,7 @@ fn handle_enter(app: &mut App) -> Action {
         View::RetentionLeases => {
             if let Some(lease) = app
                 .retention_leases
-                .leases
+                .filtered
                 .get(app.retention_leases.nav.index())
             {
                 let def_id = lease.definition_id;

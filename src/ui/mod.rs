@@ -80,7 +80,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  q/Esc back"
         }
         crate::app::View::RetentionLeases => {
-            "↑↓ navigate  →/Enter drill-in  d delete  D delete all (def)  o open  1/2/3/4 tabs  r refresh  ? help  q/Esc back"
+            "↑↓ navigate  Space select  d delete  →/Enter drill-in  / filter  o open  1/2/3/4 tabs  r refresh  ? help  q/Esc back"
         }
     };
 
