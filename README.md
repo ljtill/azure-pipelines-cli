@@ -53,7 +53,9 @@ cargo install --path .
 
 ## Configuration
 
-Create `~/.config/pipelines/config.toml`:
+On first launch, an interactive setup wizard creates `~/.config/pipelines/config.toml` with your Azure DevOps organization and project. All other settings can be adjusted in-app with `,` (settings).
+
+For advanced customization, edit the config file directly:
 
 ```toml
 [azure_devops]
@@ -64,33 +66,29 @@ project = "your-project"
 refresh_interval_secs = 15   # main data refresh (default: 15)
 log_refresh_interval_secs = 5  # log viewer refresh (default: 5)
 
-# Optional: filter which pipelines are shown
-# Note: folder filters apply to Dashboard and Pipelines views.
-# Active Runs can only filter by definition ID (builds don't carry folder paths).
 [filters]
 folders = ["\\Infra", "\\Deploy"]  # only show these folder paths (prefix match)
 definition_ids = [42, 99]          # only show these pipeline definition IDs
 
-# Optional: control update checks
-[update]
-check_for_updates = true  # set to false to disable background update checks
-
-# Optional: build state-change notifications
 [notifications]
-enabled = true  # show inline alerts when builds start, succeed, or fail
+enabled = true  # inline alerts when builds start, succeed, or fail (default: true)
 
-# Optional: logging
+[update]
+check_for_updates = true  # background update checks (default: true)
+
 [logging]
-level = "info"             # default log level (RUST_LOG env var overrides)
+level = "info"             # default log level; RUST_LOG env var overrides
 # log_directory = "/custom/path"  # defaults to ~/.local/state/pipelines
 # max_log_files = 5        # daily log files to retain (default: 5)
 ```
 
+> **Note:** folder filters apply to Dashboard and Pipelines views. Active Runs can only filter by definition ID (builds don't carry folder paths).
+
 ### Logging
 
-Logs are written to daily rolling files under `~/.local/state/pipelines/` (configurable via `[logging].log_directory`). Up to 5 daily files are retained by default (`max_log_files`).
+Logs are written to daily rolling files under `~/.local/state/pipelines/`. Up to 5 daily files are retained by default.
 
-Set the `RUST_LOG` environment variable to override the configured log level:
+Set `RUST_LOG` to override the configured log level:
 
 ```bash
 RUST_LOG=debug pipelines
