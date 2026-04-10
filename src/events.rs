@@ -28,7 +28,7 @@ pub enum Action {
     ApproveCheck(String),
     RejectCheck(String),
     Reload,
-    FetchRetentionLeases,
+    FetchRetentionLeases(Vec<u32>),
     DeleteRetentionLeases(Vec<u32>),
 }
 
@@ -76,7 +76,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             if app.view == View::RetentionLeases {
                 // Refresh retention leases data
                 app.retention_leases.invalidate();
-                Action::FetchRetentionLeases
+                let ids: Vec<u32> = app.data.definitions.iter().map(|d| d.id).collect();
+                Action::FetchRetentionLeases(ids)
             } else {
                 Action::ForceRefresh
             }
@@ -182,7 +183,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             tracing::info!(from = ?app.view, to = ?View::RetentionLeases, "view switch");
             app.view = View::RetentionLeases;
             if !app.retention_leases.has_data() && !app.retention_leases.loading {
-                Action::FetchRetentionLeases
+                let ids: Vec<u32> = app.data.definitions.iter().map(|d| d.id).collect();
+                Action::FetchRetentionLeases(ids)
             } else {
                 Action::None
             }

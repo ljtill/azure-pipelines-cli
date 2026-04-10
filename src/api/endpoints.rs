@@ -129,13 +129,6 @@ impl Endpoints {
         )
     }
 
-    pub fn retention_leases(&self) -> String {
-        format!(
-            "{}/build/retention/leases?api-version={API_VERSION}",
-            self.base_url
-        )
-    }
-
     pub fn retention_leases_for_definition(&self, definition_id: u32) -> String {
         format!(
             "{}/build/retention/leases?definitionId={definition_id}&api-version={API_VERSION}",
@@ -242,14 +235,6 @@ mod tests {
         assert_eq!(
             ep().approvals_update(),
             format!("{BASE}/pipelines/approvals?api-version=7.1")
-        );
-    }
-
-    #[test]
-    fn retention_leases_url() {
-        assert_eq!(
-            ep().retention_leases(),
-            format!("{BASE}/build/retention/leases?api-version=7.1")
         );
     }
 

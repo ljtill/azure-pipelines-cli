@@ -227,14 +227,14 @@ pub fn handle_action(
                 |()| AppMessage::CheckUpdated,
             );
         }
-        Action::FetchRetentionLeases => {
-            tracing::info!("fetching retention leases");
+        Action::FetchRetentionLeases(definition_ids) => {
+            tracing::info!(count = definition_ids.len(), "fetching retention leases");
             app.retention_leases.loading = true;
             spawn_api(
                 client,
                 tx,
                 "Fetch leases",
-                |c| async move { c.list_retention_leases(None).await },
+                move |c| async move { c.list_all_retention_leases(&definition_ids).await },
                 |leases| AppMessage::RetentionLeasesFetched { leases },
             );
         }
@@ -611,12 +611,13 @@ pub fn handle_message(
                     .success(format!("Deleted {deleted} retention lease(s)"));
             }
             // Re-fetch leases to update the view
+            let definition_ids: Vec<u32> = app.data.definitions.iter().map(|d| d.id).collect();
             app.retention_leases.loading = true;
             spawn_api(
                 client,
                 tx,
                 "Refresh leases",
-                |c| async move { c.list_retention_leases(None).await },
+                move |c| async move { c.list_all_retention_leases(&definition_ids).await },
                 |leases| AppMessage::RetentionLeasesFetched { leases },
             );
         }
