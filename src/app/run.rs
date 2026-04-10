@@ -89,7 +89,7 @@ pub async fn run(
         }
 
         // Draw
-        terminal.draw(|f| ui::draw(f, &app))?;
+        terminal.draw(|f| ui::draw(f, &mut app))?;
 
         // Async event stream: no dropped keypresses since EventStream only
         // consumes from crossterm's buffer when the future completes.

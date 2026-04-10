@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use ratatui::layout::Rect;
+
 use crate::api::models::{Build, BuildTimeline};
 
 use crate::app::View;
@@ -23,6 +25,9 @@ pub struct LogViewerState {
     pub(super) followed_log_id: Option<u32>,
     pub(super) log_entries_nav: ListNav,
     pub(super) log_scroll_offset: u32,
+    /// Cached layout areas from the last render, used for mouse hit-testing.
+    pub(super) tree_area: Option<Rect>,
+    pub(super) log_area: Option<Rect>,
     /// The view to return to when pressing Esc from LogViewer.
     pub(super) return_to_view: View,
 }
@@ -44,6 +49,8 @@ impl Default for LogViewerState {
             followed_log_id: None,
             log_entries_nav: ListNav::default(),
             log_scroll_offset: 0,
+            tree_area: None,
+            log_area: None,
             return_to_view: View::BuildHistory,
         }
     }
@@ -122,6 +129,14 @@ impl LogViewerState {
     pub fn nav_mut(&mut self) -> &mut ListNav {
         &mut self.log_entries_nav
     }
+
+    pub fn tree_area(&self) -> Option<Rect> {
+        self.tree_area
+    }
+
+    pub fn log_area(&self) -> Option<Rect> {
+        self.log_area
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +178,11 @@ impl LogViewerState {
 
     pub fn scroll_down(&mut self, amount: u32) {
         self.log_scroll_offset = self.log_scroll_offset.saturating_add(amount);
+    }
+
+    pub fn set_layout_areas(&mut self, tree: Rect, log: Rect) {
+        self.tree_area = Some(tree);
+        self.log_area = Some(log);
     }
 
     #[allow(dead_code)]

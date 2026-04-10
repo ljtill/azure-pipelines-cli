@@ -15,7 +15,7 @@ use ratatui::Frame;
 
 use crate::app::App;
 
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &mut App) {
     use ratatui::layout::{Constraint, Layout};
 
     let chunks = Layout::vertical([

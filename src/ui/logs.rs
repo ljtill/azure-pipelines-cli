@@ -8,7 +8,7 @@ use super::helpers::{checkpoint_status_icon, timeline_status_icon};
 use super::theme;
 use crate::app::{App, TimelineRow};
 
-pub fn draw(f: &mut Frame, app: &App, area: Rect) {
+pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     use ratatui::layout::{Constraint, Layout};
 
     let build_label = app
@@ -37,6 +37,9 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Percentage(65), // log panel
     ])
     .split(chunks[1]);
+
+    // Store layout areas for mouse hit-testing in the event handler.
+    app.log_viewer.set_layout_areas(body[0], body[1]);
 
     draw_tree(f, app, body[0]);
     draw_log(f, app, body[1]);
