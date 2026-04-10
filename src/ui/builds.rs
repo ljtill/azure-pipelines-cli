@@ -4,7 +4,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
-use super::helpers::{build_elapsed, status_icon, truncate};
+use super::helpers::{Column, build_elapsed, compute_columns, status_icon, status_label, truncate};
 use super::theme;
 use crate::app::App;
 
@@ -32,8 +32,24 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     ]));
     f.render_widget(header, chunks[0]);
 
-    // Fixed overhead: icon(3) + build_number(16) + requestor(21) + elapsed(10) = 50
-    let branch_width = (area.width as usize).saturating_sub(51).clamp(10, 50);
+    // Column layout: icon(3) | status(12) | build_number(16) | branch(flex) | requestor(flex) | elapsed(12)
+    let col_spec = [
+        Column::Fixed(3),  // icon
+        Column::Fixed(12), // status label
+        Column::Fixed(16), // build number
+        Column::Flex {
+            weight: 3,
+            min: 10,
+            max: 50,
+        }, // branch
+        Column::Flex {
+            weight: 2,
+            min: 10,
+            max: 30,
+        }, // requestor
+        Column::Fixed(16), // elapsed
+    ];
+    let widths = compute_columns(&col_spec, area.width as usize);
 
     let items: Vec<ListItem> = app
         .build_history
@@ -42,21 +58,40 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, build)| {
             let (icon, icon_color) = status_icon(build.status, build.result);
+            let label = status_label(build.status, build.result);
             let time_info = build_elapsed(build);
             let branch = build.branch_display();
 
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", icon), Style::default().fg(icon_color)),
-                Span::styled(format!("#{:<14} ", build.build_number), theme::TEXT),
+                Span::styled(
+                    format!("{:<width$}", label, width = widths[1]),
+                    Style::default().fg(icon_color),
+                ),
+                Span::styled(
+                    format!(
+                        "#{:<width$}",
+                        truncate(&build.build_number, widths[2] - 1),
+                        width = widths[2] - 1
+                    ),
+                    theme::TEXT,
+                ),
                 Span::styled(
                     format!(
                         "{:<width$} ",
-                        truncate(&branch, branch_width),
-                        width = branch_width
+                        truncate(&branch, widths[3].saturating_sub(1)),
+                        width = widths[3].saturating_sub(1)
                     ),
                     theme::BRANCH,
                 ),
-                Span::styled(format!("{:<20} ", build.requestor()), theme::MUTED),
+                Span::styled(
+                    format!(
+                        "{:<width$} ",
+                        truncate(build.requestor(), widths[4].saturating_sub(1)),
+                        width = widths[4].saturating_sub(1)
+                    ),
+                    theme::MUTED,
+                ),
                 Span::styled(time_info, theme::MUTED),
             ]))
             .style(if i == app.build_history.nav.index() {

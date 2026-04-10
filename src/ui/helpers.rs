@@ -8,6 +8,73 @@ use super::theme;
 use crate::api::models::{Build, BuildResult, BuildStatus, TaskState};
 use crate::app::InputMode;
 
+/// Short human-readable label for a build's combined status and result.
+pub fn status_label(status: BuildStatus, result: Option<BuildResult>) -> &'static str {
+    if status.is_in_progress() {
+        return "Running";
+    }
+    if status == BuildStatus::Cancelling {
+        return "Cancelling";
+    }
+    if status == BuildStatus::NotStarted {
+        return "Queued";
+    }
+    match result {
+        Some(BuildResult::Succeeded) => "Succeeded",
+        Some(BuildResult::Failed) => "Failed",
+        Some(BuildResult::PartiallySucceeded) => "Partial",
+        Some(BuildResult::Canceled) => "Canceled",
+        Some(BuildResult::Skipped) => "Skipped",
+        _ => "",
+    }
+}
+
+/// Column sizing specification for list views.
+#[derive(Debug, Clone, Copy)]
+pub enum Column {
+    /// Fixed-width column.
+    Fixed(usize),
+    /// Flexible column that shares remaining space proportionally.
+    Flex {
+        weight: usize,
+        min: usize,
+        max: usize,
+    },
+}
+
+/// Compute concrete column widths from a layout specification and available width.
+pub fn compute_columns(cols: &[Column], available: usize) -> Vec<usize> {
+    let fixed_total: usize = cols
+        .iter()
+        .map(|c| match c {
+            Column::Fixed(w) => *w,
+            _ => 0,
+        })
+        .sum();
+
+    let remaining = available.saturating_sub(fixed_total);
+    let total_weight: usize = cols
+        .iter()
+        .map(|c| match c {
+            Column::Flex { weight, .. } => *weight,
+            _ => 0,
+        })
+        .sum();
+
+    cols.iter()
+        .map(|c| match c {
+            Column::Fixed(w) => *w,
+            Column::Flex { weight, min, max } => {
+                if total_weight == 0 {
+                    *min
+                } else {
+                    (remaining * weight / total_weight).clamp(*min, *max)
+                }
+            }
+        })
+        .collect()
+}
+
 /// Shared status → (icon, color) mapping for build status and result.
 pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'static str, Color) {
     if status.is_in_progress() {
@@ -66,7 +133,16 @@ pub fn build_elapsed(build: &Build) -> String {
     if build.status.is_in_progress() {
         if let Some(start) = build.start_time {
             let elapsed = Utc::now().signed_duration_since(start);
-            return format!("running {}m", elapsed.num_minutes());
+            let mins = elapsed.num_minutes();
+            if mins < 60 {
+                return format!("running {}m", mins);
+            }
+            let hours = elapsed.num_hours();
+            if hours < 24 {
+                return format!("running {}h{}m", hours, mins % 60);
+            }
+            let days = elapsed.num_days();
+            return format!("running {}d{}h", days, hours % 24);
         }
         return "queued".to_string();
     }
@@ -261,6 +337,32 @@ mod tests {
     }
 
     #[test]
+    fn build_elapsed_running_hours() {
+        use chrono::{TimeDelta, Utc};
+        let build = make_build(
+            BuildStatus::InProgress,
+            None,
+            Some(Utc::now() - TimeDelta::minutes(185)),
+            None,
+        );
+        let result = build_elapsed(&build);
+        assert_eq!(result, "running 3h5m");
+    }
+
+    #[test]
+    fn build_elapsed_running_days() {
+        use chrono::{TimeDelta, Utc};
+        let build = make_build(
+            BuildStatus::InProgress,
+            None,
+            Some(Utc::now() - TimeDelta::hours(50)),
+            None,
+        );
+        let result = build_elapsed(&build);
+        assert_eq!(result, "running 2d2h");
+    }
+
+    #[test]
     fn build_elapsed_queued() {
         let build = make_build(BuildStatus::InProgress, None, None, None);
         assert_eq!(build_elapsed(&build), "queued");
@@ -330,5 +432,148 @@ mod tests {
         let (icon, color) = checkpoint_status_icon(None, None);
         assert_eq!(icon, "⏸");
         assert_eq!(color, Color::Magenta);
+    }
+
+    // --- status_label tests ---
+
+    #[test]
+    fn status_label_running() {
+        assert_eq!(status_label(BuildStatus::InProgress, None), "Running");
+    }
+
+    #[test]
+    fn status_label_running_overrides_result() {
+        assert_eq!(
+            status_label(BuildStatus::InProgress, Some(BuildResult::Failed)),
+            "Running"
+        );
+    }
+
+    #[test]
+    fn status_label_succeeded() {
+        assert_eq!(
+            status_label(BuildStatus::Completed, Some(BuildResult::Succeeded)),
+            "Succeeded"
+        );
+    }
+
+    #[test]
+    fn status_label_failed() {
+        assert_eq!(
+            status_label(BuildStatus::Completed, Some(BuildResult::Failed)),
+            "Failed"
+        );
+    }
+
+    #[test]
+    fn status_label_canceled() {
+        assert_eq!(
+            status_label(BuildStatus::Completed, Some(BuildResult::Canceled)),
+            "Canceled"
+        );
+    }
+
+    #[test]
+    fn status_label_partial() {
+        assert_eq!(
+            status_label(
+                BuildStatus::Completed,
+                Some(BuildResult::PartiallySucceeded)
+            ),
+            "Partial"
+        );
+    }
+
+    #[test]
+    fn status_label_cancelling() {
+        assert_eq!(status_label(BuildStatus::Cancelling, None), "Cancelling");
+    }
+
+    #[test]
+    fn status_label_queued() {
+        assert_eq!(status_label(BuildStatus::NotStarted, None), "Queued");
+    }
+
+    #[test]
+    fn status_label_unknown() {
+        assert_eq!(status_label(BuildStatus::Completed, None), "");
+    }
+
+    // --- compute_columns tests ---
+
+    #[test]
+    fn compute_columns_all_fixed() {
+        let cols = vec![Column::Fixed(10), Column::Fixed(20), Column::Fixed(5)];
+        let widths = compute_columns(&cols, 100);
+        assert_eq!(widths, vec![10, 20, 5]);
+    }
+
+    #[test]
+    fn compute_columns_flex_distributes_remaining() {
+        let cols = vec![
+            Column::Fixed(10),
+            Column::Flex {
+                weight: 1,
+                min: 5,
+                max: 100,
+            },
+            Column::Flex {
+                weight: 1,
+                min: 5,
+                max: 100,
+            },
+        ];
+        let widths = compute_columns(&cols, 50);
+        // 50 - 10 = 40 remaining, split equally = 20 each
+        assert_eq!(widths, vec![10, 20, 20]);
+    }
+
+    #[test]
+    fn compute_columns_flex_respects_min() {
+        let cols = vec![
+            Column::Fixed(90),
+            Column::Flex {
+                weight: 1,
+                min: 10,
+                max: 50,
+            },
+        ];
+        let widths = compute_columns(&cols, 95);
+        // 95 - 90 = 5 remaining, but min is 10
+        assert_eq!(widths, vec![90, 10]);
+    }
+
+    #[test]
+    fn compute_columns_flex_respects_max() {
+        let cols = vec![
+            Column::Fixed(10),
+            Column::Flex {
+                weight: 1,
+                min: 5,
+                max: 30,
+            },
+        ];
+        let widths = compute_columns(&cols, 200);
+        // 200 - 10 = 190 remaining, but max is 30
+        assert_eq!(widths, vec![10, 30]);
+    }
+
+    #[test]
+    fn compute_columns_weighted_flex() {
+        let cols = vec![
+            Column::Flex {
+                weight: 3,
+                min: 0,
+                max: 100,
+            },
+            Column::Flex {
+                weight: 1,
+                min: 0,
+                max: 100,
+            },
+        ];
+        let widths = compute_columns(&cols, 80);
+        // 3:1 ratio of 80 = 60, 20
+        assert_eq!(widths, vec![60, 20]);
     }
 }

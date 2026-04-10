@@ -4,7 +4,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
-use super::helpers::draw_search_bar;
+use super::helpers::{Column, compute_columns, draw_search_bar, truncate};
 use super::theme;
 use crate::app::{App, InputMode};
 
@@ -25,6 +25,22 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
     }
 
+    // Column layout: padding(1) | name(flex) | folder(flex)
+    let col_spec = [
+        Column::Fixed(1), // leading padding
+        Column::Flex {
+            weight: 2,
+            min: 15,
+            max: 50,
+        }, // pipeline name
+        Column::Flex {
+            weight: 3,
+            min: 10,
+            max: 80,
+        }, // folder path
+    ];
+    let widths = compute_columns(&col_spec, area.width as usize);
+
     let items: Vec<ListItem> = app
         .pipelines
         .filtered
@@ -34,8 +50,16 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let folder = def.path.trim_start_matches('\\').replace('\\', " / ");
 
             ListItem::new(Line::from(vec![
-                Span::styled(format!(" {:<42} ", def.name), theme::TEXT),
-                Span::styled(folder, theme::MUTED),
+                Span::raw(" "),
+                Span::styled(
+                    format!(
+                        "{:<width$} ",
+                        truncate(&def.name, widths[1]),
+                        width = widths[1]
+                    ),
+                    theme::TEXT,
+                ),
+                Span::styled(truncate(&folder, widths[2]).to_string(), theme::MUTED),
             ]))
             .style(if i == app.pipelines.nav.index() {
                 theme::SELECTED

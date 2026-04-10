@@ -4,7 +4,9 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
-use super::helpers::{build_elapsed, draw_search_bar, truncate};
+use super::helpers::{
+    Column, build_elapsed, compute_columns, draw_search_bar, status_icon, status_label, truncate,
+};
 use super::theme;
 use crate::app::{App, InputMode};
 
@@ -26,8 +28,30 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
     }
 
-    // Fixed overhead: check(2) + icon(4) + build_number(16) + branch(27) + requestor(21) + elapsed(10) = 80
-    let name_width = (area.width as usize).saturating_sub(81).clamp(15, 60);
+    // Column layout: check(2) | icon(4) | status(12) | name(flex) | build_number(16) | branch(flex) | requestor(flex) | elapsed(12)
+    let col_spec = [
+        Column::Fixed(2),  // check
+        Column::Fixed(4),  // icon
+        Column::Fixed(12), // status label
+        Column::Flex {
+            weight: 3,
+            min: 10,
+            max: 40,
+        }, // pipeline name
+        Column::Fixed(16), // build number
+        Column::Flex {
+            weight: 2,
+            min: 10,
+            max: 30,
+        }, // branch
+        Column::Flex {
+            weight: 2,
+            min: 10,
+            max: 30,
+        }, // requestor
+        Column::Fixed(16), // elapsed
+    ];
+    let widths = compute_columns(&col_spec, area.width as usize);
 
     let items: Vec<ListItem> = app
         .active_runs
@@ -38,6 +62,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let elapsed = build_elapsed(build);
             let selected = app.active_runs.selected.contains(&build.id);
             let check = if selected { "✓ " } else { "  " };
+            let (icon, icon_color) = status_icon(build.status, build.result);
+            let label = status_label(build.status, build.result);
 
             ListItem::new(Line::from(vec![
                 Span::styled(
@@ -48,18 +74,43 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                         Style::default()
                     },
                 ),
-                Span::styled(" ⏳ ", theme::WARNING),
+                Span::styled(format!(" {} ", icon), Style::default().fg(icon_color)),
+                Span::styled(
+                    format!("{:<width$}", label, width = widths[2]),
+                    Style::default().fg(icon_color),
+                ),
                 Span::styled(
                     format!(
                         "{:<width$} ",
-                        truncate(&build.definition.name, name_width),
-                        width = name_width
+                        truncate(&build.definition.name, widths[3].saturating_sub(1)),
+                        width = widths[3].saturating_sub(1)
                     ),
                     theme::TEXT,
                 ),
-                Span::styled(format!("#{:<14} ", build.build_number), theme::MUTED),
-                Span::styled(format!("{:<26} ", build.branch_display()), theme::BRANCH),
-                Span::styled(format!("{:<20} ", build.requestor()), theme::MUTED),
+                Span::styled(
+                    format!(
+                        "#{:<width$}",
+                        truncate(&build.build_number, widths[4] - 1),
+                        width = widths[4] - 1
+                    ),
+                    theme::MUTED,
+                ),
+                Span::styled(
+                    format!(
+                        "{:<width$} ",
+                        truncate(&build.branch_display(), widths[5].saturating_sub(1)),
+                        width = widths[5].saturating_sub(1)
+                    ),
+                    theme::BRANCH,
+                ),
+                Span::styled(
+                    format!(
+                        "{:<width$} ",
+                        truncate(build.requestor(), widths[6].saturating_sub(1)),
+                        width = widths[6].saturating_sub(1)
+                    ),
+                    theme::MUTED,
+                ),
                 Span::styled(elapsed, theme::WARNING),
             ]))
             .style(if i == app.active_runs.nav.index() {
