@@ -231,17 +231,25 @@ folders = []
 
     #[test]
     fn default_config_path_with_xdg_override() {
+        #[cfg(unix)]
         let test_dir = "/test/custom/xdg";
+        #[cfg(windows)]
+        let test_dir = "C:\\test\\custom\\xdg";
+
         let path = default_config_path_from(Some(PathBuf::from(test_dir)), None).unwrap();
-        assert_eq!(
-            path,
-            PathBuf::from("/test/custom/xdg/pipelines/config.toml")
-        );
+        let expected = PathBuf::from(test_dir)
+            .join("pipelines")
+            .join("config.toml");
+        assert_eq!(path, expected);
     }
 
     #[test]
     fn default_config_path_falls_back_to_home() {
+        #[cfg(unix)]
         let home = PathBuf::from("/test/home");
+        #[cfg(windows)]
+        let home = PathBuf::from("C:\\test\\home");
+
         let path = default_config_path_from(None, Some(home.clone())).unwrap();
         assert_eq!(
             path,

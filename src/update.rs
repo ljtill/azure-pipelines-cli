@@ -507,7 +507,8 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-wind
     #[test]
     fn symlink_path_is_under_bin() {
         let path = symlink_path().unwrap();
-        let path_str = path.to_string_lossy();
-        assert!(path_str.contains(".local/bin/pipelines"));
+        assert!(
+            path.ends_with(".local/bin/pipelines") || path.ends_with(".local/bin/pipelines.exe")
+        );
     }
 }
