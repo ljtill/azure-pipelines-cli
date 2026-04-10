@@ -151,10 +151,16 @@ pub fn spawn_data_refresh(
 }
 
 /// Re-fetch the build history for the currently selected pipeline definition.
+///
+/// When `top` is `Some(n)`, request up to `n` builds in a single page instead
+/// of the default `TOP_DEFINITION_BUILDS` (20). This is used after in-place
+/// refreshes (e.g. lease deletion) so the response covers all previously loaded
+/// builds and the scroll position can be restored.
 pub(super) fn spawn_build_history_refresh(
     app: &App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
+    top: Option<u32>,
 ) {
     if let Some(def) = &app.build_history.selected_definition {
         let client = client.clone();
@@ -163,7 +169,11 @@ pub(super) fn spawn_build_history_refresh(
         let span = tracing::debug_span!("build_history_refresh", definition_id = def_id);
         tokio::spawn(
             async move {
-                match client.list_builds_for_definition(def_id).await {
+                let result = match top {
+                    Some(n) => client.list_builds_for_definition_top(def_id, n).await,
+                    None => client.list_builds_for_definition(def_id).await,
+                };
+                match result {
                     Ok((builds, continuation_token)) => {
                         let _ = tx
                             .send(AppMessage::BuildHistory {

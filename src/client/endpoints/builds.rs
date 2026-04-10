@@ -15,6 +15,13 @@ impl Endpoints {
         )
     }
 
+    pub fn builds_for_definition_with_top(&self, definition_id: u32, top: u32) -> String {
+        format!(
+            "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={top}&queryOrder=queueTimeDescending",
+            self.base_url
+        )
+    }
+
     pub fn build(&self, build_id: u32) -> String {
         format!(
             "{}/build/builds/{build_id}?api-version={API_VERSION}",
@@ -75,6 +82,16 @@ mod tests {
             ep().builds_for_definition(42),
             format!(
                 "{BASE}/build/builds?definitions=42&api-version=7.1&$top=20&queryOrder=queueTimeDescending"
+            )
+        );
+    }
+
+    #[test]
+    fn builds_for_definition_with_top_url() {
+        assert_eq!(
+            ep().builds_for_definition_with_top(42, 50),
+            format!(
+                "{BASE}/build/builds?definitions=42&api-version=7.1&$top=50&queryOrder=queueTimeDescending"
             )
         );
     }

@@ -32,7 +32,7 @@ pub fn handle_action(
                 *last_data_fetch = Instant::now();
             }
             if app.view == View::BuildHistory {
-                spawn_build_history_refresh(app, client, tx);
+                spawn_build_history_refresh(app, client, tx, None);
             }
         }
         Action::FetchBuildHistory(def_id) => {

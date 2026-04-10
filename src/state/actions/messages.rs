@@ -320,7 +320,7 @@ pub fn handle_message(
             app.notifications.success("Build cancelled");
             spawn_data_refresh(app, client, tx);
             if app.view == View::BuildHistory {
-                spawn_build_history_refresh(app, client, tx);
+                spawn_build_history_refresh(app, client, tx, None);
             }
             if let Some(build) = app.log_viewer.selected_build() {
                 spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
@@ -331,7 +331,7 @@ pub fn handle_message(
             app.active_runs.selected.clear();
             spawn_data_refresh(app, client, tx);
             if app.view == View::BuildHistory {
-                spawn_build_history_refresh(app, client, tx);
+                spawn_build_history_refresh(app, client, tx, None);
             }
             if failed > 0 {
                 app.notifications
@@ -388,7 +388,11 @@ pub fn handle_message(
             // Trigger a full data refresh to re-fetch leases
             spawn_data_refresh(app, client, tx);
             if app.view == View::BuildHistory {
-                spawn_build_history_refresh(app, client, tx);
+                // Request enough builds to cover everything already loaded so
+                // the scroll position can be restored after the refresh.
+                let top = (app.build_history.builds.len() as u32)
+                    .max(crate::client::endpoints::TOP_DEFINITION_BUILDS);
+                spawn_build_history_refresh(app, client, tx, Some(top));
             }
         }
     }

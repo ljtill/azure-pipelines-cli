@@ -21,6 +21,23 @@ impl super::AdoClient {
         Ok((resp.value, continuation))
     }
 
+    pub async fn list_builds_for_definition_top(
+        &self,
+        definition_id: u32,
+        top: u32,
+    ) -> Result<(Vec<Build>, Option<String>)> {
+        tracing::debug!(
+            definition_id,
+            top,
+            "listing builds for definition (custom top)"
+        );
+        let url = self
+            .endpoints
+            .builds_for_definition_with_top(definition_id, top);
+        let (resp, continuation): (BuildListResponse, _) = self.get_with_continuation(&url).await?;
+        Ok((resp.value, continuation))
+    }
+
     pub async fn list_builds_for_definition_continued(
         &self,
         definition_id: u32,
