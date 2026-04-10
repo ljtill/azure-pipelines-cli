@@ -55,16 +55,6 @@ cargo install --path .
 
 On first launch, an interactive setup wizard creates `~/.config/pipelines/config.toml` with your Azure DevOps organization and project. All settings can be adjusted in-app with `,` (settings).
 
-### Logging
-
-Logs are written to daily rolling files under `~/.local/state/pipelines/`. Up to 5 daily files are retained by default.
-
-Set `RUST_LOG` to override the configured log level:
-
-```bash
-RUST_LOG=debug pipelines
-```
-
 ## Usage
 
 ```bash
