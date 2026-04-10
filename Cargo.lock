@@ -155,7 +155,6 @@ dependencies = [
  "crossterm",
  "dirs",
  "futures",
- "percent-encoding",
  "ratatui",
  "reqwest 0.12.28",
  "serde",

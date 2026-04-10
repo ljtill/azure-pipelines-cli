@@ -1,19 +1,36 @@
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
-
 const API_VERSION: &str = "7.1";
 const TOP_BUILDS: u32 = 100;
 const TOP_DEFINITION_BUILDS: u32 = 20;
 
-/// Characters that must be percent-encoded in URL path segments.
-const PATH_SEGMENT_ENCODE: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'#')
-    .add(b'?')
-    .add(b'/')
-    .add(b'&')
-    .add(b'=')
-    .add(b'+')
-    .add(b'%');
+/// Percent-encode a string for use in a URL path segment.
+///
+/// Encodes control characters (0x00–0x1F, 0x7F) and the characters ` #?/&=+%`
+/// as `%XX` hex pairs. All other UTF-8 bytes pass through unchanged.
+fn encode_path_segment(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for &b in input.as_bytes() {
+        if b <= 0x1F
+            || b == 0x7F
+            || b == b' '
+            || b == b'#'
+            || b == b'?'
+            || b == b'/'
+            || b == b'&'
+            || b == b'='
+            || b == b'+'
+            || b == b'%'
+        {
+            out.push('%');
+            // Write uppercase hex pair
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            out.push(HEX[(b >> 4) as usize] as char);
+            out.push(HEX[(b & 0x0F) as usize] as char);
+        } else {
+            out.push(b as char);
+        }
+    }
+    out
+}
 
 #[derive(Clone)]
 pub struct Endpoints {
@@ -23,8 +40,8 @@ pub struct Endpoints {
 
 impl Endpoints {
     pub fn new(organization: &str, project: &str) -> Self {
-        let org = utf8_percent_encode(organization, PATH_SEGMENT_ENCODE).to_string();
-        let proj = utf8_percent_encode(project, PATH_SEGMENT_ENCODE).to_string();
+        let org = encode_path_segment(organization);
+        let proj = encode_path_segment(project);
         Self {
             base_url: format!("https://dev.azure.com/{}/{}/_apis", org, proj),
             web_base_url: format!("https://dev.azure.com/{}/{}", org, proj),
