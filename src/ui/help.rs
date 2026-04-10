@@ -40,6 +40,7 @@ pub fn draw(f: &mut Frame) {
         Line::from("  o              Open in browser"),
         Line::from("  r              Force data refresh"),
         Line::from("  x              Dismiss notification"),
+        Line::from("  ,              Open settings"),
         Line::from("  ?              Toggle this help"),
         Line::from("  q              Quit (root views) / Go back (child views)"),
         Line::from(""),

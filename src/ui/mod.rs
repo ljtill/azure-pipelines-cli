@@ -6,6 +6,7 @@ pub mod help;
 pub mod helpers;
 pub mod logs;
 pub mod pipelines;
+pub mod settings;
 pub mod setup;
 pub mod theme;
 
@@ -38,6 +39,12 @@ pub fn draw(f: &mut Frame, app: &App) {
     if app.show_help {
         help::draw(f);
     }
+
+    if app.show_settings {
+        if let Some(ref s) = app.settings {
+            settings::draw(f, s);
+        }
+    }
 }
 
 fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
@@ -56,16 +63,16 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
     let hints = match app.view {
         crate::app::View::Dashboard => {
-            "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Q queue  o open  1/2/3 tabs  r refresh  ? help  q quit"
+            "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Q queue  o open  1/2/3 tabs  r refresh  , settings  ? help  q quit"
         }
         crate::app::View::Pipelines => {
-            "↑↓ navigate  Enter drill-in  Q queue  o open  / search  1/2/3 tabs  r refresh  ? help  q quit"
+            "↑↓ navigate  Enter drill-in  Q queue  o open  / search  1/2/3 tabs  r refresh  , settings  ? help  q quit"
         }
         crate::app::View::ActiveRuns => {
-            "↑↓ navigate  Space select  c cancel  / filter  Enter view logs  o open  1/2/3 tabs  r refresh  ? help  q quit"
+            "↑↓ navigate  Space select  c cancel  / filter  Enter view logs  o open  1/2/3 tabs  r refresh  , settings  ? help  q quit"
         }
         crate::app::View::BuildHistory => {
-            "↑↓ navigate  Enter view logs  c cancel  Q queue  o open  Esc/q back  r refresh  ? help"
+            "↑↓ navigate  Enter view logs  c cancel  Q queue  o open  Esc/q back  r refresh  , settings  ? help"
         }
         crate::app::View::LogViewer => {
             "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  Esc/q back"

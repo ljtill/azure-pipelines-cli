@@ -378,6 +378,49 @@ impl App {
     pub fn endpoints_web_definition(&self, definition_id: u32) -> String {
         self.endpoints.web_definition(definition_id)
     }
+
+    /// Build a snapshot `Config` reflecting the current runtime state.
+    /// Used to populate the settings overlay.
+    pub fn current_config(&self) -> crate::config::Config {
+        crate::config::Config {
+            azure_devops: crate::config::AzureDevOpsConfig {
+                organization: self
+                    .org_project_label
+                    .split(" / ")
+                    .next()
+                    .unwrap_or("")
+                    .to_string(),
+                project: self
+                    .org_project_label
+                    .split(" / ")
+                    .nth(1)
+                    .unwrap_or("")
+                    .to_string(),
+            },
+            filters: crate::config::FiltersConfig {
+                folders: self.filters.folders.clone(),
+                definition_ids: self.filters.definition_ids.clone(),
+            },
+            update: crate::config::UpdateConfig::default(),
+            logging: crate::config::LoggingConfig::default(),
+            notifications: crate::config::NotificationsConfig {
+                enabled: self.notifications_enabled,
+            },
+            display: crate::config::DisplayConfig::default(),
+        }
+    }
+
+    /// Open the settings overlay, populated from the on-disk config.
+    pub fn open_settings(&mut self) {
+        // Load the current config from disk to get the true persisted state
+        let config = crate::config::Config::load(Some(&self.config_path))
+            .unwrap_or_else(|_| self.current_config());
+        self.settings = Some(settings::SettingsState::from_config(
+            &config,
+            self.config_path.clone(),
+        ));
+        self.show_settings = true;
+    }
 }
 
 #[cfg(test)]

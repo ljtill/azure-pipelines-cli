@@ -66,6 +66,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.show_help = true;
             Action::None
         }
+        KeyCode::Char(',') => {
+            app.open_settings();
+            Action::None
+        }
         KeyCode::Char('r') => Action::ForceRefresh,
         KeyCode::Char('x')
             if app.view == View::Dashboard
@@ -302,6 +306,109 @@ fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
         }
         _ => Action::None,
     }
+}
+
+fn handle_settings_key(app: &mut App, key: KeyEvent) -> Action {
+    let Some(settings) = app.settings.as_mut() else {
+        return Action::None;
+    };
+
+    if settings.editing {
+        // In field-edit mode
+        match key.code {
+            KeyCode::Esc => {
+                settings.cancel_edit();
+            }
+            KeyCode::Enter => {
+                settings.stop_edit();
+            }
+            KeyCode::Backspace => {
+                settings.backspace();
+            }
+            KeyCode::Delete => {
+                settings.delete();
+            }
+            KeyCode::Left => {
+                settings.move_cursor_left();
+            }
+            KeyCode::Right => {
+                settings.move_cursor_right();
+            }
+            KeyCode::Char(c) => {
+                settings.insert_char(c);
+            }
+            _ => {}
+        }
+        return Action::None;
+    }
+
+    // Normal settings navigation
+    match key.code {
+        KeyCode::Esc => {
+            app.show_settings = false;
+            app.settings = None;
+        }
+        KeyCode::Up => {
+            settings.move_up();
+        }
+        KeyCode::Down => {
+            settings.move_down();
+        }
+        KeyCode::Enter | KeyCode::Char(' ') => {
+            settings.start_edit();
+        }
+        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            return handle_settings_save(app);
+        }
+        KeyCode::Char('s') => {
+            return handle_settings_save(app);
+        }
+        _ => {}
+    }
+    Action::None
+}
+
+fn handle_settings_save(app: &mut App) -> Action {
+    if let Some(settings) = app.settings.as_ref() {
+        match settings.save() {
+            Ok(config) => {
+                // Apply runtime-relevant changes
+                app.filters.folders = config.filters.folders;
+                app.filters.definition_ids = config.filters.definition_ids.clone();
+                app.notifications_enabled = config.notifications.enabled;
+
+                // Rebuild filtered views with new filters
+                app.dashboard.rebuild(
+                    &app.data.definitions,
+                    &app.data.latest_builds_by_def,
+                    &app.filters.folders,
+                    &app.filters.definition_ids,
+                );
+                app.pipelines.rebuild(
+                    &app.data.definitions,
+                    &app.filters.folders,
+                    &app.filters.definition_ids,
+                    &app.search.query,
+                );
+                app.active_runs.rebuild(
+                    &app.data.active_builds,
+                    &app.filters.definition_ids,
+                    &app.search.query,
+                );
+
+                app.notifications.success("Settings saved");
+                tracing::info!("settings saved to disk");
+            }
+            Err(e) => {
+                app.notifications
+                    .error(format!("Failed to save settings: {e}"));
+                tracing::error!(%e, "failed to save settings");
+            }
+        }
+    }
+    app.show_settings = false;
+    app.settings = None;
+    Action::None
 }
 
 fn handle_open_in_browser(app: &App) -> Action {
