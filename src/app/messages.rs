@@ -1,4 +1,4 @@
-use crate::api::models::{Approval, Build, BuildTimeline, PipelineDefinition};
+use crate::api::models::{Approval, Build, BuildTimeline, PipelineDefinition, RetentionLease};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefreshSource {
@@ -52,5 +52,12 @@ pub enum AppMessage {
     RefreshError {
         message: String,
         source: RefreshSource,
+    },
+    RetentionLeasesFetched {
+        leases: Vec<RetentionLease>,
+    },
+    RetentionLeasesDeleted {
+        deleted: u32,
+        failed: u32,
     },
 }

@@ -62,6 +62,48 @@ impl ActiveRunsState {
     }
 }
 
+/// State for the Retention Leases view.
+#[derive(Debug, Default)]
+pub struct RetentionLeasesState {
+    pub leases: Vec<RetentionLease>,
+    pub nav: nav::ListNav,
+    pub loading: bool,
+    /// Set when lease data was last fetched, cleared on data refresh.
+    pub fetched_at: Option<Instant>,
+    /// Build IDs (run IDs) that have at least one retention lease.
+    pub retained_run_ids: HashSet<u32>,
+}
+
+impl RetentionLeasesState {
+    /// Update the `retained_run_ids` index from the current lease list.
+    pub fn rebuild_index(&mut self) {
+        self.retained_run_ids = self.leases.iter().map(|l| l.run_id).collect();
+    }
+
+    /// Return leases for a specific build/run ID.
+    pub fn leases_for_run(&self, run_id: u32) -> Vec<&RetentionLease> {
+        self.leases.iter().filter(|l| l.run_id == run_id).collect()
+    }
+
+    /// Return leases for a specific pipeline definition.
+    pub fn leases_for_definition(&self, definition_id: u32) -> Vec<&RetentionLease> {
+        self.leases
+            .iter()
+            .filter(|l| l.definition_id == definition_id)
+            .collect()
+    }
+
+    /// Invalidate cached data (e.g. after a data refresh).
+    pub fn invalidate(&mut self) {
+        self.fetched_at = None;
+    }
+
+    /// Whether we have cached data available.
+    pub fn has_data(&self) -> bool {
+        self.fetched_at.is_some()
+    }
+}
+
 /// State for the Pipelines flat-list view.
 #[derive(Debug, Default)]
 pub struct PipelinesState {
@@ -110,7 +152,9 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 
 use crate::api::endpoints::Endpoints;
-use crate::api::models::{Approval, Build, BuildResult, BuildStatus, PipelineDefinition};
+use crate::api::models::{
+    Approval, Build, BuildResult, BuildStatus, PipelineDefinition, RetentionLease,
+};
 
 use notifications::Notifications;
 
@@ -140,6 +184,7 @@ pub enum View {
     ActiveRuns,
     BuildHistory,
     LogViewer,
+    RetentionLeases,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -177,6 +222,9 @@ pub enum ConfirmAction {
     },
     RejectCheck {
         approval_id: String,
+    },
+    DeleteRetentionLeases {
+        lease_ids: Vec<u32>,
     },
     Quit,
 }
@@ -221,6 +269,9 @@ pub struct App {
 
     // Pipelines view
     pub pipelines: PipelinesState,
+
+    // Retention Leases view
+    pub retention_leases: RetentionLeasesState,
 
     // Settings overlay
     pub settings: Option<settings::SettingsState>,
@@ -284,6 +335,8 @@ impl App {
             active_runs: ActiveRunsState::default(),
 
             pipelines: PipelinesState::default(),
+
+            retention_leases: RetentionLeasesState::default(),
 
             settings: None,
 
@@ -360,6 +413,10 @@ impl App {
                 self.build_history.builds.clear();
                 self.build_history.nav.reset();
             }
+            View::RetentionLeases => {
+                tracing::info!(from = ?self.view, to = ?View::Dashboard, "navigating back");
+                self.view = View::Dashboard;
+            }
             _ => {}
         }
     }
@@ -392,6 +449,7 @@ impl App {
             View::ActiveRuns => &mut self.active_runs.nav,
             View::BuildHistory => &mut self.build_history.nav,
             View::LogViewer => self.log_viewer.nav_mut(),
+            View::RetentionLeases => &mut self.retention_leases.nav,
         }
     }
 

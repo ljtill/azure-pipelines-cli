@@ -179,6 +179,29 @@ impl AdoClient {
         Ok(body)
     }
 
+    async fn delete(&self, url: &str) -> Result<()> {
+        let token = self.auth.token().await?;
+        let display_url = url_without_query(url);
+        let start = Instant::now();
+        tracing::debug!(method = "DELETE", url = display_url, "api request");
+        let resp = self
+            .http
+            .delete(url)
+            .bearer_auth(&token)
+            .send()
+            .await?
+            .error_for_status()?;
+        let status = resp.status().as_u16();
+        tracing::debug!(
+            method = "DELETE",
+            url = display_url,
+            status,
+            elapsed_ms = start.elapsed().as_millis() as u64,
+            "api response"
+        );
+        Ok(())
+    }
+
     // --- Read operations ---
 
     pub async fn list_definitions(&self) -> Result<Vec<PipelineDefinition>> {
@@ -281,6 +304,38 @@ impl AdoClient {
             "approval updated"
         );
         Ok(())
+    }
+
+    // --- Retention Leases ---
+
+    pub async fn list_retention_leases(
+        &self,
+        definition_id: Option<u32>,
+    ) -> Result<Vec<RetentionLease>> {
+        match definition_id {
+            Some(id) => {
+                tracing::debug!(
+                    definition_id = id,
+                    "listing retention leases for definition"
+                );
+                let url = self.endpoints.retention_leases_for_definition(id);
+                self.get_all_pages(&url).await
+            }
+            None => {
+                tracing::debug!("listing all retention leases");
+                let url = self.endpoints.retention_leases();
+                self.get_all_pages(&url).await
+            }
+        }
+    }
+
+    pub async fn delete_retention_leases(&self, ids: &[u32]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        tracing::info!(count = ids.len(), "deleting retention leases");
+        let url = self.endpoints.retention_leases_delete(ids);
+        self.delete(&url).await
     }
 }
 

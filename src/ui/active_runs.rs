@@ -28,13 +28,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         draw_search_bar(f, chunks[0], &app.search.query, app.search.mode);
     }
 
-    // Column layout: check(2) | icon(4) | status(12) | name(fill) | build_number(18) | branch(fill) | requestor(fill) | elapsed(15)
+    // Column layout: check(2) | icon(4) | status(12) | name(fill) | build_number(18) | retained(3) | branch(fill) | requestor(fill) | elapsed(15)
     let rects = Layout::horizontal([
         Constraint::Length(2),  // check
         Constraint::Length(4),  // icon
         Constraint::Length(12), // status label
         Constraint::Fill(2),    // pipeline name
         Constraint::Length(18), // build number
+        Constraint::Length(3),  // retained indicator
         Constraint::Fill(2),    // branch
         Constraint::Fill(2),    // requestor
         Constraint::Length(15), // elapsed
@@ -42,8 +43,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     .split(area);
     let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
     widths[3] = widths[3].min(40); // pipeline name
-    widths[5] = widths[5].min(35); // branch
-    widths[6] = widths[6].min(35); // requestor
+    widths[6] = widths[6].min(35); // branch
+    widths[7] = widths[7].min(35); // requestor
 
     let items: Vec<ListItem> = app
         .active_runs
@@ -53,6 +54,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .map(|(i, build)| {
             let elapsed = build_elapsed(build);
             let selected = app.active_runs.selected.contains(&build.id);
+            let retained = app.retention_leases.retained_run_ids.contains(&build.id);
             let check = if selected { "✓ " } else { "  " };
             let (icon, icon_color) = {
                 let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
@@ -99,24 +101,25 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     theme::MUTED,
                 ),
+                Span::styled(if retained { "🔒 " } else { "   " }, theme::WARNING),
                 Span::styled(
                     format!(
                         "{:<width$} ",
-                        truncate(&build.branch_display(), widths[5].saturating_sub(1)),
-                        width = widths[5].saturating_sub(1)
+                        truncate(&build.branch_display(), widths[6].saturating_sub(1)),
+                        width = widths[6].saturating_sub(1)
                     ),
                     theme::BRANCH,
                 ),
                 Span::styled(
                     format!(
                         "{:<width$} ",
-                        truncate(build.requestor(), widths[6].saturating_sub(1)),
-                        width = widths[6].saturating_sub(1)
+                        truncate(build.requestor(), widths[7].saturating_sub(1)),
+                        width = widths[7].saturating_sub(1)
                     ),
                     theme::MUTED,
                 ),
                 Span::styled(
-                    format!("{:>width$}", elapsed, width = widths[7]),
+                    format!("{:>width$}", elapsed, width = widths[8]),
                     theme::WARNING,
                 ),
             ]))

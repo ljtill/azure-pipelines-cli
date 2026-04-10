@@ -32,19 +32,20 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     ]));
     f.render_widget(header, chunks[0]);
 
-    // Column layout: icon(3) | status(12) | build_number(18) | branch(fill) | requestor(fill) | elapsed(15)
+    // Column layout: icon(3) | status(12) | build_number(18) | retained(3) | branch(fill) | requestor(fill) | elapsed(15)
     let rects = Layout::horizontal([
         Constraint::Length(3),  // icon
         Constraint::Length(12), // status label
         Constraint::Length(18), // build number
+        Constraint::Length(3),  // retained indicator
         Constraint::Fill(2),    // branch
         Constraint::Fill(2),    // requestor
         Constraint::Length(15), // elapsed
     ])
     .split(area);
     let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
-    widths[3] = widths[3].min(40); // branch
-    widths[4] = widths[4].min(35); // requestor
+    widths[4] = widths[4].min(40); // branch
+    widths[5] = widths[5].min(35); // requestor
 
     let items: Vec<ListItem> = app
         .build_history
@@ -57,6 +58,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let label = effective_status_label(build.status, build.result, awaiting);
             let time_info = build_elapsed(build);
             let branch = build.branch_display();
+            let retained = app.retention_leases.retained_run_ids.contains(&build.id);
 
             let row_style = if i == app.build_history.nav.index() {
                 theme::SELECTED
@@ -78,24 +80,25 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     theme::TEXT,
                 ),
+                Span::styled(if retained { "🔒 " } else { "   " }, theme::WARNING),
                 Span::styled(
                     format!(
                         "{:<width$} ",
-                        truncate(&branch, widths[3].saturating_sub(1)),
-                        width = widths[3].saturating_sub(1)
+                        truncate(&branch, widths[4].saturating_sub(1)),
+                        width = widths[4].saturating_sub(1)
                     ),
                     theme::BRANCH,
                 ),
                 Span::styled(
                     format!(
                         "{:<width$} ",
-                        truncate(build.requestor(), widths[4].saturating_sub(1)),
-                        width = widths[4].saturating_sub(1)
+                        truncate(build.requestor(), widths[5].saturating_sub(1)),
+                        width = widths[5].saturating_sub(1)
                     ),
                     theme::MUTED,
                 ),
                 Span::styled(
-                    format!("{:>width$}", time_info, width = widths[5]),
+                    format!("{:>width$}", time_info, width = widths[6]),
                     theme::MUTED,
                 ),
             ]))

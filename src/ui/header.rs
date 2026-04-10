@@ -66,16 +66,23 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(title, chunks[0]);
 
     // Tab bar
-    let tab_titles = vec!["[1] Dashboard", "[2] Pipelines", "[3] Active Runs"];
+    let tab_titles = vec![
+        "[1] Dashboard",
+        "[2] Pipelines",
+        "[3] Active Runs",
+        "[4] Leases",
+    ];
     let selected = match app.view {
         View::Dashboard => 0,
         View::Pipelines => 1,
         View::ActiveRuns => 2,
+        View::RetentionLeases => 3,
         View::BuildHistory | View::LogViewer => {
             // Highlight whichever tab we drilled in from
             match app.build_history.return_to {
                 Some(View::Pipelines) => 1,
                 Some(View::ActiveRuns) => 2,
+                Some(View::RetentionLeases) => 3,
                 _ => 0,
             }
         }

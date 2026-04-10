@@ -227,6 +227,30 @@ pub fn handle_action(
                 |()| AppMessage::CheckUpdated,
             );
         }
+        Action::FetchRetentionLeases => {
+            tracing::info!("fetching retention leases");
+            app.retention_leases.loading = true;
+            spawn_api(
+                client,
+                tx,
+                "Fetch leases",
+                |c| async move { c.list_retention_leases(None).await },
+                |leases| AppMessage::RetentionLeasesFetched { leases },
+            );
+        }
+        Action::DeleteRetentionLeases(ids) => {
+            tracing::info!(count = ids.len(), "deleting retention leases");
+            spawn_api(
+                client,
+                tx,
+                "Delete leases",
+                move |c| async move {
+                    let count = ids.len() as u32;
+                    c.delete_retention_leases(&ids).await.map(|()| count)
+                },
+                |deleted| AppMessage::RetentionLeasesDeleted { deleted, failed: 0 },
+            );
+        }
         Action::None => {}
     }
 }
@@ -376,6 +400,9 @@ pub fn handle_message(
             );
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
+
+            // Invalidate cached retention lease data so it's re-fetched on next view.
+            app.retention_leases.invalidate();
         }
         AppMessage::BuildHistory { builds } => {
             tracing::info!(count = builds.len(), "build history loaded");
@@ -562,6 +589,35 @@ pub fn handle_message(
             app.notifications.push_persistent(
                 crate::app::notifications::NotificationLevel::Info,
                 format!("Update available: v{version} — run 'pipelines update' to upgrade"),
+            );
+        }
+        AppMessage::RetentionLeasesFetched { leases } => {
+            tracing::info!(count = leases.len(), "retention leases fetched");
+            app.retention_leases.loading = false;
+            app.retention_leases.leases = leases;
+            app.retention_leases.rebuild_index();
+            app.retention_leases
+                .nav
+                .set_len(app.retention_leases.leases.len());
+            app.retention_leases.fetched_at = Some(Instant::now());
+        }
+        AppMessage::RetentionLeasesDeleted { deleted, failed } => {
+            tracing::info!(deleted, failed, "retention leases deleted");
+            if failed > 0 {
+                app.notifications
+                    .error(format!("Deleted {deleted} lease(s), {failed} failed"));
+            } else {
+                app.notifications
+                    .success(format!("Deleted {deleted} retention lease(s)"));
+            }
+            // Re-fetch leases to update the view
+            app.retention_leases.loading = true;
+            spawn_api(
+                client,
+                tx,
+                "Refresh leases",
+                |c| async move { c.list_retention_leases(None).await },
+                |leases| AppMessage::RetentionLeasesFetched { leases },
             );
         }
     }
