@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::time::Duration;
 
 use anyhow::Result;
 use tokio::sync::mpsc;
@@ -71,21 +70,14 @@ pub(super) fn spawn_api<F, Fut, T>(
     );
 }
 
-pub(super) fn refresh_backoff(failures: u32, base_secs: u64, max_secs: u64) -> Duration {
-    let shift = failures.saturating_sub(1).min(6);
-    let multiplier = 1u64 << shift;
-    Duration::from_secs(base_secs.saturating_mul(multiplier).min(max_secs))
-}
-
 pub fn spawn_data_refresh(
     app: &mut App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
 ) -> bool {
-    if app.data_refresh_in_flight {
+    if !app.data_refresh.start() {
         return false;
     }
-    app.data_refresh_in_flight = true;
 
     let client = client.clone();
     let tx = tx.clone();
@@ -260,14 +252,14 @@ pub fn spawn_timeline_fetch(
 }
 
 pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) -> bool {
-    if app.log_refresh_in_flight {
+    if !app.log_refresh.start() {
         return false;
     }
     let generation = app.log_viewer.generation();
     let Some(build) = app.log_viewer.selected_build() else {
+        app.log_refresh.succeed(); // wasn't really in-flight
         return false;
     };
-    app.log_refresh_in_flight = true;
     let build_id = build.id;
     let should_refresh_timeline = build.status.is_in_progress();
     let log_id_to_refresh = if app.log_viewer.is_following() {

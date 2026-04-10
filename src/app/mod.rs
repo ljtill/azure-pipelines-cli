@@ -141,7 +141,7 @@ impl PipelinesState {
 }
 
 use std::collections::{BTreeMap, HashSet};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 
@@ -283,12 +283,8 @@ pub struct App {
     pub last_refresh: Option<DateTime<Utc>>,
     pub notifications: Notifications,
     pub loading: bool,
-    pub data_refresh_in_flight: bool,
-    pub data_refresh_failures: u32,
-    pub data_refresh_backoff_until: Option<Instant>,
-    pub log_refresh_in_flight: bool,
-    pub log_refresh_failures: u32,
-    pub log_refresh_backoff_until: Option<Instant>,
+    pub data_refresh: crate::shared::refresh::RefreshState,
+    pub log_refresh: crate::shared::refresh::RefreshState,
 
     // Refresh timing
     pub refresh_interval: Duration,
@@ -355,12 +351,8 @@ impl App {
             last_refresh: None,
             notifications: Notifications::new(10),
             loading: false,
-            data_refresh_in_flight: false,
-            data_refresh_failures: 0,
-            data_refresh_backoff_until: None,
-            log_refresh_in_flight: false,
-            log_refresh_failures: 0,
-            log_refresh_backoff_until: None,
+            data_refresh: crate::shared::refresh::RefreshState::default(),
+            log_refresh: crate::shared::refresh::RefreshState::default(),
 
             refresh_interval: Duration::from_secs(config.display.refresh_interval_secs),
             log_refresh_interval: Duration::from_secs(config.display.log_refresh_interval_secs),

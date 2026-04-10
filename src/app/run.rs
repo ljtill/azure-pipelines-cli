@@ -63,19 +63,13 @@ pub async fn run(
         }
 
         // Spawn periodic background refreshes
-        let should_refresh_data = !app.data_refresh_in_flight
-            && app
-                .data_refresh_backoff_until
-                .map(|until| Instant::now() >= until)
-                .unwrap_or(true)
+        let should_refresh_data = !app.data_refresh.in_flight
+            && app.data_refresh.backoff_elapsed()
             && last_data_fetch.elapsed() >= app.refresh_interval;
         let should_refresh_logs = app.view == View::LogViewer
             && app.log_viewer.selected_build().is_some()
-            && !app.log_refresh_in_flight
-            && app
-                .log_refresh_backoff_until
-                .map(|until| Instant::now() >= until)
-                .unwrap_or(true)
+            && !app.log_refresh.in_flight
+            && app.log_refresh.backoff_elapsed()
             && last_log_fetch
                 .map(|t| t.elapsed() >= app.log_refresh_interval)
                 .unwrap_or(true);

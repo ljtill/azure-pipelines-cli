@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::time::Instant;
 
 use tokio::sync::mpsc;
 
@@ -12,8 +11,7 @@ use super::super::log_viewer::TimelineRow;
 use super::super::messages::{AppMessage, RefreshSource};
 use super::super::notifications::NotificationLevel;
 use super::spawn::{
-    refresh_backoff, spawn_build_history_refresh, spawn_data_refresh, spawn_log_fetch,
-    spawn_timeline_fetch,
+    spawn_build_history_refresh, spawn_data_refresh, spawn_log_fetch, spawn_timeline_fetch,
 };
 
 pub fn handle_message(
@@ -43,9 +41,7 @@ pub fn handle_message(
                 approvals = pending_approvals.len(),
                 "data refresh received"
             );
-            app.data_refresh_in_flight = false;
-            app.data_refresh_failures = 0;
-            app.data_refresh_backoff_until = None;
+            app.data_refresh.succeed();
             app.data.definitions = definitions;
 
             // Seed the map from each definition's latestBuild (full coverage),
@@ -298,14 +294,10 @@ pub fn handle_message(
         }
         AppMessage::LogRefreshFinished { had_failure } => {
             tracing::debug!(had_failure, "log refresh finished");
-            app.log_refresh_in_flight = false;
             if had_failure {
-                app.log_refresh_failures = app.log_refresh_failures.saturating_add(1);
-                let backoff = refresh_backoff(app.log_refresh_failures, 5, 60);
-                app.log_refresh_backoff_until = Some(Instant::now() + backoff);
+                app.log_refresh.fail(5, 60);
             } else {
-                app.log_refresh_failures = 0;
-                app.log_refresh_backoff_until = None;
+                app.log_refresh.succeed();
             }
         }
         AppMessage::Error(msg) => {
@@ -315,10 +307,7 @@ pub fn handle_message(
         AppMessage::RefreshError { message, source } => {
             tracing::warn!(error = %message, ?source, "refresh error");
             if source == RefreshSource::Data {
-                app.data_refresh_in_flight = false;
-                app.data_refresh_failures = app.data_refresh_failures.saturating_add(1);
-                let backoff = refresh_backoff(app.data_refresh_failures, 30, 300);
-                app.data_refresh_backoff_until = Some(Instant::now() + backoff);
+                app.data_refresh.fail(30, 300);
             }
             app.notifications.error_dedup(message);
         }
