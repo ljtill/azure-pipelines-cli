@@ -1,9 +1,5 @@
-pub mod active_runs;
-pub mod builds;
-pub mod dashboard;
 pub mod helpers;
 pub mod logs;
-pub mod pipelines;
 pub mod settings;
 pub mod setup;
 pub mod theme;
@@ -26,10 +22,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     app.header.draw_with_app(f, app, chunks[0]);
 
     match app.view {
-        crate::app::View::Dashboard => dashboard::draw(f, app, chunks[1]),
-        crate::app::View::Pipelines => pipelines::draw(f, app, chunks[1]),
-        crate::app::View::ActiveRuns => active_runs::draw(f, app, chunks[1]),
-        crate::app::View::BuildHistory => builds::draw(f, app, chunks[1]),
+        crate::app::View::Dashboard => app.dashboard_component.draw_with_app(f, app, chunks[1]),
+        crate::app::View::Pipelines => app.pipelines_component.draw_with_app(f, app, chunks[1]),
+        crate::app::View::ActiveRuns => app.active_runs_component.draw_with_app(f, app, chunks[1]),
+        crate::app::View::BuildHistory => {
+            app.build_history_component.draw_with_app(f, app, chunks[1])
+        }
         crate::app::View::LogViewer => logs::draw(f, app, chunks[1]),
     }
 
@@ -61,18 +59,10 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     }
 
     let hints = match app.view {
-        crate::app::View::Dashboard => {
-            "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Q queue  o open  1/2/3 tabs  r refresh  , settings  ? help  q quit"
-        }
-        crate::app::View::Pipelines => {
-            "↑↓ navigate  →/Enter drill-in  Q queue  o open  / search  1/2/3 tabs  r refresh  , settings  ? help  q/Esc back"
-        }
-        crate::app::View::ActiveRuns => {
-            "↑↓ navigate  Space select  c cancel  / filter  →/Enter view logs  o open  1/2/3 tabs  r refresh  , settings  ? help  q/Esc back"
-        }
-        crate::app::View::BuildHistory => {
-            "↑↓ navigate  →/Enter view logs  ←/q/Esc back  Space select  d delete leases  c cancel  Q queue  o open  r refresh  ? help"
-        }
+        crate::app::View::Dashboard => app.dashboard_component.footer_hints(),
+        crate::app::View::Pipelines => app.pipelines_component.footer_hints(),
+        crate::app::View::ActiveRuns => app.active_runs_component.footer_hints(),
+        crate::app::View::BuildHistory => app.build_history_component.footer_hints(),
         crate::app::View::LogViewer => {
             "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  q/Esc back"
         }

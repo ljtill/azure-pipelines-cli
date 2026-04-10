@@ -272,6 +272,10 @@ pub struct App {
     // Components
     pub header: crate::components::header::Header,
     pub help: crate::components::help::Help,
+    pub dashboard_component: crate::components::dashboard::Dashboard,
+    pub pipelines_component: crate::components::pipelines::Pipelines,
+    pub active_runs_component: crate::components::active_runs::ActiveRuns,
+    pub build_history_component: crate::components::build_history::BuildHistory,
 
     // Status
     pub last_refresh: Option<DateTime<Utc>>,
@@ -339,6 +343,10 @@ impl App {
 
             header: crate::components::header::Header,
             help: crate::components::help::Help,
+            dashboard_component: crate::components::dashboard::Dashboard,
+            pipelines_component: crate::components::pipelines::Pipelines,
+            active_runs_component: crate::components::active_runs::ActiveRuns,
+            build_history_component: crate::components::build_history::BuildHistory,
 
             last_refresh: None,
             notifications: Notifications::new(10),

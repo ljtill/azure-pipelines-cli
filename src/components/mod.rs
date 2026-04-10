@@ -3,8 +3,12 @@ use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
+pub mod active_runs;
+pub mod build_history;
+pub mod dashboard;
 pub mod header;
 pub mod help;
+pub mod pipelines;
 
 /// A self-contained UI component following the
 /// [ratatui component architecture](https://ratatui.rs/concepts/application-patterns/component-architecture/).
