@@ -109,7 +109,7 @@ use std::time::Instant;
 use chrono::{DateTime, Utc};
 
 use crate::api::endpoints::Endpoints;
-use crate::api::models::{Approval, Build, PipelineDefinition};
+use crate::api::models::{Approval, Build, BuildResult, BuildStatus, PipelineDefinition};
 
 use notifications::Notifications;
 
@@ -228,6 +228,12 @@ pub struct App {
     pub log_refresh_in_flight: bool,
     pub log_refresh_failures: u32,
     pub log_refresh_backoff_until: Option<Instant>,
+
+    // State-change notifications
+    pub notifications_enabled: bool,
+    /// Previous snapshot of (build_id, status, result) per definition,
+    /// used to detect state changes between data refreshes.
+    pub prev_latest_builds: BTreeMap<u32, (u32, BuildStatus, Option<BuildResult>)>,
 }
 
 impl App {
@@ -267,6 +273,9 @@ impl App {
             log_refresh_in_flight: false,
             log_refresh_failures: 0,
             log_refresh_backoff_until: None,
+
+            notifications_enabled: config.notifications.enabled,
+            prev_latest_builds: BTreeMap::new(),
         }
     }
 

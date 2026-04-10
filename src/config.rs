@@ -12,6 +12,8 @@ pub struct Config {
     pub update: UpdateConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub notifications: NotificationsConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +71,24 @@ impl Default for LoggingConfig {
 
 fn default_log_level() -> String {
     "info".to_string()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NotificationsConfig {
+    #[serde(default = "default_notifications_enabled")]
+    pub enabled: bool,
+}
+
+impl Default for NotificationsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_notifications_enabled(),
+        }
+    }
+}
+
+fn default_notifications_enabled() -> bool {
+    true
 }
 
 impl Config {
@@ -201,6 +221,8 @@ project = "myproject"
         assert!(config.update.check_for_updates);
         // Logging defaults
         assert_eq!(config.logging.level, "info");
+        // Notifications defaults
+        assert!(config.notifications.enabled);
     }
 
     #[test]
@@ -310,5 +332,30 @@ level = "debug"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.logging.level, "debug");
+    }
+
+    #[test]
+    fn parse_config_notifications_defaults_to_enabled() {
+        let toml = r#"
+[azure_devops]
+organization = "org"
+project = "proj"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.notifications.enabled);
+    }
+
+    #[test]
+    fn parse_config_with_notifications_disabled() {
+        let toml = r#"
+[azure_devops]
+organization = "org"
+project = "proj"
+
+[notifications]
+enabled = false
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(!config.notifications.enabled);
     }
 }
