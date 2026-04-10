@@ -8,7 +8,7 @@ use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
 use crate::api::client::AdoClient;
-use crate::config::{Config, LOG_REFRESH_INTERVAL_SECS, REFRESH_INTERVAL_SECS};
+use crate::config::Config;
 use crate::events::{handle_key, handle_mouse};
 use crate::ui;
 
@@ -20,14 +20,16 @@ pub async fn run(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     client: AdoClient,
     config: &Config,
+    config_path: std::path::PathBuf,
 ) -> Result<()> {
     let mut app = App::new(
         &config.azure_devops.organization,
         &config.azure_devops.project,
         config,
+        config_path,
     );
-    let refresh_interval = Duration::from_secs(REFRESH_INTERVAL_SECS);
-    let log_refresh_interval = Duration::from_secs(LOG_REFRESH_INTERVAL_SECS);
+    let refresh_interval = Duration::from_secs(config.display.refresh_interval_secs);
+    let log_refresh_interval = Duration::from_secs(config.display.log_refresh_interval_secs);
     let mut last_data_fetch = Instant::now() - refresh_interval; // trigger immediate fetch
     let mut last_log_fetch: Option<Instant> = None;
 
@@ -45,7 +47,10 @@ pub async fn run(
         });
     }
 
-    tracing::info!(refresh_secs = REFRESH_INTERVAL_SECS, "event loop starting");
+    tracing::info!(
+        refresh_secs = config.display.refresh_interval_secs,
+        "event loop starting"
+    );
 
     loop {
         if !app.running {

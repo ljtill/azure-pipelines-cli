@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use azure_pipelines_cli::api::models::*;
 use azure_pipelines_cli::app::{App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, View};
 use azure_pipelines_cli::events::{Action, handle_key};
@@ -17,7 +19,7 @@ fn ctrl_c() -> KeyEvent {
 }
 
 fn test_app() -> App {
-    App::new("o", "p", &make_config())
+    App::new("o", "p", &make_config(), PathBuf::from("/tmp/test.toml"))
 }
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub azure_devops: AzureDevOpsConfig,
     #[serde(default)]
@@ -14,19 +14,17 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub notifications: NotificationsConfig,
+    #[serde(default)]
+    pub display: DisplayConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct AzureDevOpsConfig {
     pub organization: String,
     pub project: String,
 }
 
-/// Built-in refresh intervals (not user-configurable).
-pub const REFRESH_INTERVAL_SECS: u64 = 15;
-pub const LOG_REFRESH_INTERVAL_SECS: u64 = 5;
-
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct FiltersConfig {
     /// Only show definitions under these folder paths (e.g. `["\\Infra", "\\Deploy"]`).
     /// Empty means show all folders.
@@ -37,7 +35,7 @@ pub struct FiltersConfig {
     pub definition_ids: Vec<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct UpdateConfig {
     #[serde(default = "default_check_for_updates")]
     pub check_for_updates: bool,
@@ -55,7 +53,7 @@ fn default_check_for_updates() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
@@ -73,7 +71,7 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct NotificationsConfig {
     #[serde(default = "default_notifications_enabled")]
     pub enabled: bool,
@@ -89,6 +87,31 @@ impl Default for NotificationsConfig {
 
 fn default_notifications_enabled() -> bool {
     true
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DisplayConfig {
+    #[serde(default = "default_refresh_interval_secs")]
+    pub refresh_interval_secs: u64,
+    #[serde(default = "default_log_refresh_interval_secs")]
+    pub log_refresh_interval_secs: u64,
+}
+
+impl Default for DisplayConfig {
+    fn default() -> Self {
+        Self {
+            refresh_interval_secs: default_refresh_interval_secs(),
+            log_refresh_interval_secs: default_log_refresh_interval_secs(),
+        }
+    }
+}
+
+fn default_refresh_interval_secs() -> u64 {
+    15
+}
+
+fn default_log_refresh_interval_secs() -> u64 {
+    5
 }
 
 impl Config {
@@ -148,6 +171,23 @@ impl Config {
         table.insert("azure_devops".to_string(), toml::Value::Table(ado));
         let contents = toml::to_string_pretty(&toml::Value::Table(table))
             .context("Failed to serialize config")?;
+
+        std::fs::write(path, &contents)
+            .with_context(|| format!("Failed to write config to {}", path.display()))?;
+
+        Ok(())
+    }
+
+    /// Serialize the full config and write it to the given path.
+    pub fn save(&self, path: &PathBuf) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create config directory {}", parent.display())
+            })?;
+        }
+
+        let contents =
+            toml::to_string_pretty(self).context("Failed to serialize config for save")?;
 
         std::fs::write(path, &contents)
             .with_context(|| format!("Failed to write config to {}", path.display()))?;
@@ -223,6 +263,9 @@ project = "myproject"
         assert_eq!(config.logging.level, "info");
         // Notifications defaults
         assert!(config.notifications.enabled);
+        // Display defaults
+        assert_eq!(config.display.refresh_interval_secs, 15);
+        assert_eq!(config.display.log_refresh_interval_secs, 5);
     }
 
     #[test]
@@ -357,5 +400,88 @@ enabled = false
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert!(!config.notifications.enabled);
+    }
+
+    #[test]
+    fn parse_config_with_display_section() {
+        let toml = r#"
+[azure_devops]
+organization = "org"
+project = "proj"
+
+[display]
+refresh_interval_secs = 30
+log_refresh_interval_secs = 10
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.display.refresh_interval_secs, 30);
+        assert_eq!(config.display.log_refresh_interval_secs, 10);
+    }
+
+    #[test]
+    fn config_round_trip() {
+        let toml_input = r#"
+[azure_devops]
+organization = "myorg"
+project = "myproject"
+
+[filters]
+folders = ["\\Infra", "\\Deploy"]
+definition_ids = [42, 99]
+
+[update]
+check_for_updates = false
+
+[logging]
+level = "debug"
+
+[notifications]
+enabled = false
+
+[display]
+refresh_interval_secs = 30
+log_refresh_interval_secs = 10
+"#;
+        let config: Config = toml::from_str(toml_input).unwrap();
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        let config2: Config = toml::from_str(&serialized).unwrap();
+
+        assert_eq!(config2.azure_devops.organization, "myorg");
+        assert_eq!(config2.azure_devops.project, "myproject");
+        assert_eq!(config2.filters.folders, vec!["\\Infra", "\\Deploy"]);
+        assert_eq!(config2.filters.definition_ids, vec![42, 99]);
+        assert!(!config2.update.check_for_updates);
+        assert_eq!(config2.logging.level, "debug");
+        assert!(!config2.notifications.enabled);
+        assert_eq!(config2.display.refresh_interval_secs, 30);
+        assert_eq!(config2.display.log_refresh_interval_secs, 10);
+    }
+
+    #[test]
+    fn config_save_and_reload() {
+        let dir = std::env::temp_dir().join("pipelines-test-save-config");
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("config.toml");
+
+        let config: Config = toml::from_str(
+            r#"
+[azure_devops]
+organization = "save-org"
+project = "save-proj"
+
+[display]
+refresh_interval_secs = 60
+log_refresh_interval_secs = 20
+"#,
+        )
+        .unwrap();
+
+        config.save(&path).unwrap();
+        let reloaded = Config::load(Some(&path)).unwrap();
+        assert_eq!(reloaded.azure_devops.organization, "save-org");
+        assert_eq!(reloaded.display.refresh_interval_secs, 60);
+        assert_eq!(reloaded.display.log_refresh_interval_secs, 20);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

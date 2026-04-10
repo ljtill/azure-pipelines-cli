@@ -189,11 +189,13 @@ impl DashboardState {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
     use super::*;
     use crate::api::models::*;
     use crate::app::App;
     use crate::test_helpers::*;
-    use std::collections::BTreeMap;
 
     // --- folder_key / folder_display ---
 
@@ -282,7 +284,7 @@ mod tests {
 
     #[test]
     fn rebuild_filtered_pipelines_with_search() {
-        let mut app = App::new("o", "p", &make_config());
+        let mut app = App::new("o", "p", &make_config(), PathBuf::from("/tmp/test.toml"));
         app.data.definitions = vec![
             make_definition(1, "CI Pipeline", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
@@ -300,7 +302,7 @@ mod tests {
 
     #[test]
     fn rebuild_filtered_pipelines_empty_search_shows_all() {
-        let mut app = App::new("o", "p", &make_config());
+        let mut app = App::new("o", "p", &make_config(), PathBuf::from("/tmp/test.toml"));
         app.data.definitions = vec![
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
@@ -346,7 +348,7 @@ mod tests {
         let mut cfg = make_config();
         cfg.filters.folders = vec!["\\Infra".to_string()];
         // No definition_ids filter — only folder filter is active.
-        let mut app = App::new("o", "p", &cfg);
+        let mut app = App::new("o", "p", &cfg, PathBuf::from("/tmp/test.toml"));
 
         let mut build = make_build(1, BuildStatus::InProgress, None);
         build.definition.id = 99; // not in any ID allowlist
@@ -368,7 +370,7 @@ mod tests {
 
     #[test]
     fn rebuild_filtered_active_builds_applies_search() {
-        let mut app = App::new("o", "p", &make_config());
+        let mut app = App::new("o", "p", &make_config(), PathBuf::from("/tmp/test.toml"));
         let mut b1 = make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b1.definition.name = "CI".to_string();
         b1.status = BuildStatus::InProgress;

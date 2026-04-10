@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
 
     tracing::info!("api client connected");
 
-    app::run::run(&mut terminal, client, &config).await
+    app::run::run(&mut terminal, client, &config, config_path).await
 }
 
 async fn run_update() -> Result<()> {

@@ -277,18 +277,37 @@ pub fn handle_message(
                 }
             }
 
-            // Detect completed-build state changes and emit in-app notifications.
+            // Detect build state changes and emit in-app notifications.
+            // Fires when:
+            //   - A build transitions to InProgress (started)
+            //   - A build transitions to Completed (succeeded/failed/canceled)
+            // Skipped on first load (prev is empty) to avoid a startup storm.
             if app.notifications_enabled && !app.prev_latest_builds.is_empty() {
                 for (def_id, build) in &map {
-                    if build.status != models::BuildStatus::Completed {
+                    let prev = app.prev_latest_builds.get(def_id);
+                    let (prev_id, prev_status) = match prev {
+                        Some(&(id, status, _)) => (Some(id), Some(status)),
+                        None => (None, None),
+                    };
+
+                    let id_changed = prev_id != Some(build.id);
+                    let status_changed = prev_status != Some(build.status);
+
+                    // Only notify on meaningful transitions
+                    if !id_changed && !status_changed {
                         continue;
                     }
-                    let prev = app.prev_latest_builds.get(def_id);
-                    let is_new = match prev {
-                        None => true,
-                        Some(&(prev_id, _, _)) => build.id != prev_id,
-                    };
-                    if is_new {
+
+                    if build.status == models::BuildStatus::InProgress {
+                        let msg =
+                            format!("{} #{} started", build.definition.name, build.build_number);
+                        tracing::info!(
+                            definition = build.definition.name,
+                            build_id = build.id,
+                            "pipeline started"
+                        );
+                        app.notifications.push(NotificationLevel::Info, msg);
+                    } else if build.status == models::BuildStatus::Completed {
                         let result_label = match build.result {
                             Some(models::BuildResult::Succeeded) => "succeeded",
                             Some(models::BuildResult::PartiallySucceeded) => "partially succeeded",
@@ -300,7 +319,6 @@ pub fn handle_message(
                             "{} #{} {}",
                             build.definition.name, build.build_number, result_label
                         );
-
                         let level = match build.result {
                             Some(models::BuildResult::Succeeded) => NotificationLevel::Success,
                             Some(models::BuildResult::Failed)
@@ -311,7 +329,7 @@ pub fn handle_message(
                             definition = build.definition.name,
                             build_id = build.id,
                             result = result_label,
-                            "pipeline state change"
+                            "pipeline completed"
                         );
                         app.notifications.push(level, msg);
                     }
@@ -1279,19 +1297,29 @@ mod tests {
     // -----------------------------------------------------------------------
 
     /// Helper: simulate the DataRefresh notification-diff logic for a given
-    /// app and new latest_builds_by_def map.
+    /// app and new latest_builds_by_def map. Mirrors the logic in handle_message.
     fn simulate_notification_diff(app: &mut crate::app::App, map: &BTreeMap<u32, Build>) {
+        use crate::app::notifications::NotificationLevel;
+
         if app.notifications_enabled && !app.prev_latest_builds.is_empty() {
             for (def_id, build) in map {
-                if build.status != BuildStatus::Completed {
+                let prev = app.prev_latest_builds.get(def_id);
+                let (prev_id, prev_status) = match prev {
+                    Some(&(id, status, _)) => (Some(id), Some(status)),
+                    None => (None, None),
+                };
+
+                let id_changed = prev_id != Some(build.id);
+                let status_changed = prev_status != Some(build.status);
+
+                if !id_changed && !status_changed {
                     continue;
                 }
-                let prev = app.prev_latest_builds.get(def_id);
-                let is_new = match prev {
-                    None => true,
-                    Some(&(prev_id, _, _)) => build.id != prev_id,
-                };
-                if is_new {
+
+                if build.status == BuildStatus::InProgress {
+                    let msg = format!("{} #{} started", build.definition.name, build.build_number);
+                    app.notifications.push(NotificationLevel::Info, msg);
+                } else if build.status == BuildStatus::Completed {
                     let result_label = match build.result {
                         Some(BuildResult::Succeeded) => "succeeded",
                         Some(BuildResult::Failed) => "failed",
@@ -1299,13 +1327,11 @@ mod tests {
                         _ => "completed",
                     };
                     let level = match build.result {
-                        Some(BuildResult::Succeeded) => {
-                            crate::app::notifications::NotificationLevel::Success
-                        }
+                        Some(BuildResult::Succeeded) => NotificationLevel::Success,
                         Some(BuildResult::Failed) | Some(BuildResult::Canceled) => {
-                            crate::app::notifications::NotificationLevel::Error
+                            NotificationLevel::Error
                         }
-                        _ => crate::app::notifications::NotificationLevel::Info,
+                        _ => NotificationLevel::Info,
                     };
                     let msg = format!(
                         "{} #{} {}",
@@ -1343,12 +1369,12 @@ mod tests {
     }
 
     #[test]
-    fn notification_on_build_completion() {
+    fn notification_on_build_started() {
         let mut app = make_app();
         app.notifications_enabled = true;
 
-        // First refresh: in-progress build
-        let mut b1 = make_build(100, BuildStatus::InProgress, None);
+        // First refresh: completed build (seed)
+        let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b1.definition = BuildDefinitionRef {
             id: 1,
             name: "CI Pipeline".into(),
@@ -1356,10 +1382,10 @@ mod tests {
         let mut map1 = BTreeMap::new();
         map1.insert(1u32, b1);
         simulate_notification_diff(&mut app, &map1);
-        assert!(app.notifications.clone_current().is_none());
+        assert!(app.notifications.clone_current().is_none()); // first load
 
-        // Second refresh: same build now completed
-        let mut b2 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
+        // Second refresh: new build started
+        let mut b2 = make_build(101, BuildStatus::InProgress, None);
         b2.definition = BuildDefinitionRef {
             id: 1,
             name: "CI Pipeline".into(),
@@ -1368,35 +1394,72 @@ mod tests {
         map2.insert(1u32, b2);
         simulate_notification_diff(&mut app, &map2);
 
-        // Build ID is the same but status changed — however our diff keys on
-        // build_id change, so same build_id won't fire. Let's test with a new
-        // build instead.
-        app.notifications.clear();
-        app.prev_latest_builds.clear();
+        let n = app.notifications.clone_current().unwrap();
+        assert_eq!(n.message, "CI Pipeline #101 started");
+        assert_eq!(n.level, crate::app::notifications::NotificationLevel::Info);
+    }
 
-        // Seed with build 100 in-progress
-        let mut b3 = make_build(100, BuildStatus::InProgress, None);
-        b3.definition = BuildDefinitionRef {
-            id: 1,
-            name: "CI Pipeline".into(),
-        };
-        let mut map3 = BTreeMap::new();
-        map3.insert(1u32, b3);
-        simulate_notification_diff(&mut app, &map3);
+    #[test]
+    fn notification_on_same_build_completing() {
+        let mut app = make_app();
+        app.notifications_enabled = true;
 
-        // New build 101 completed
-        let mut b4 = make_build(101, BuildStatus::Completed, Some(BuildResult::Failed));
-        b4.definition = BuildDefinitionRef {
+        // First refresh: in-progress build (seed)
+        let mut b1 = make_build(100, BuildStatus::InProgress, None);
+        b1.definition = BuildDefinitionRef {
             id: 1,
-            name: "CI Pipeline".into(),
+            name: "Deploy".into(),
         };
-        let mut map4 = BTreeMap::new();
-        map4.insert(1u32, b4);
-        simulate_notification_diff(&mut app, &map4);
+        let mut map1 = BTreeMap::new();
+        map1.insert(1u32, b1);
+        simulate_notification_diff(&mut app, &map1);
+
+        // Second refresh: same build ID now completed
+        let mut b2 = make_build(100, BuildStatus::Completed, Some(BuildResult::Failed));
+        b2.definition = BuildDefinitionRef {
+            id: 1,
+            name: "Deploy".into(),
+        };
+        let mut map2 = BTreeMap::new();
+        map2.insert(1u32, b2);
+        simulate_notification_diff(&mut app, &map2);
 
         let n = app.notifications.clone_current().unwrap();
-        assert_eq!(n.message, "CI Pipeline #101 failed");
+        assert_eq!(n.message, "Deploy #100 failed");
         assert_eq!(n.level, crate::app::notifications::NotificationLevel::Error);
+    }
+
+    #[test]
+    fn notification_on_new_build_completing() {
+        let mut app = make_app();
+        app.notifications_enabled = true;
+
+        // Seed with build 100 in-progress
+        let mut b1 = make_build(100, BuildStatus::InProgress, None);
+        b1.definition = BuildDefinitionRef {
+            id: 1,
+            name: "CI Pipeline".into(),
+        };
+        let mut map1 = BTreeMap::new();
+        map1.insert(1u32, b1);
+        simulate_notification_diff(&mut app, &map1);
+
+        // New build 101 completed (different build ID)
+        let mut b2 = make_build(101, BuildStatus::Completed, Some(BuildResult::Succeeded));
+        b2.definition = BuildDefinitionRef {
+            id: 1,
+            name: "CI Pipeline".into(),
+        };
+        let mut map2 = BTreeMap::new();
+        map2.insert(1u32, b2);
+        simulate_notification_diff(&mut app, &map2);
+
+        let n = app.notifications.clone_current().unwrap();
+        assert_eq!(n.message, "CI Pipeline #101 succeeded");
+        assert_eq!(
+            n.level,
+            crate::app::notifications::NotificationLevel::Success
+        );
     }
 
     #[test]
@@ -1417,8 +1480,7 @@ mod tests {
         // Same build again
         simulate_notification_diff(&mut app, &map);
 
-        // No notification should have been emitted (first load is skipped,
-        // second has same build_id).
+        // No notification (first load skipped, second has same build_id + status).
         assert!(app.notifications.clone_current().is_none());
     }
 

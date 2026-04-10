@@ -49,6 +49,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         return Action::None;
     }
 
+    // Settings overlay — route keys to dedicated handler
+    if app.show_settings {
+        return handle_settings_key(app, key);
+    }
+
     match key.code {
         KeyCode::Char('q') => match app.view {
             View::Dashboard | View::Pipelines | View::ActiveRuns => Action::Quit,

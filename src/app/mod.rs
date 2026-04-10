@@ -5,6 +5,7 @@ mod messages;
 pub mod nav;
 pub mod notifications;
 pub mod run;
+pub mod settings;
 
 pub use dashboard::{DashboardRow, DashboardState};
 pub use log_viewer::{LogViewerState, TimelineRow};
@@ -191,8 +192,10 @@ pub struct App {
     pub search: SearchState,
     pub running: bool,
     pub show_help: bool,
+    pub show_settings: bool,
     pub org_project_label: String,
     endpoints: Endpoints,
+    pub config_path: std::path::PathBuf,
 
     // Filters
     pub filters: FilterConfig,
@@ -218,6 +221,9 @@ pub struct App {
     // Pipelines view
     pub pipelines: PipelinesState,
 
+    // Settings overlay
+    pub settings: Option<settings::SettingsState>,
+
     // Status
     pub last_refresh: Option<DateTime<Utc>>,
     pub notifications: Notifications,
@@ -237,14 +243,21 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(organization: &str, project: &str, config: &crate::config::Config) -> Self {
+    pub fn new(
+        organization: &str,
+        project: &str,
+        config: &crate::config::Config,
+        config_path: std::path::PathBuf,
+    ) -> Self {
         Self {
             view: View::Dashboard,
             search: SearchState::default(),
             running: true,
             show_help: false,
+            show_settings: false,
             org_project_label: format!("{} / {}", organization, project),
             endpoints: Endpoints::new(organization, project),
+            config_path,
             filters: FilterConfig {
                 folders: config.filters.folders.clone(),
                 definition_ids: config.filters.definition_ids.clone(),
@@ -264,6 +277,8 @@ impl App {
 
             pipelines: PipelinesState::default(),
 
+            settings: None,
+
             last_refresh: None,
             notifications: Notifications::new(10),
             loading: false,
@@ -280,6 +295,11 @@ impl App {
     }
 
     pub fn go_back(&mut self) {
+        if self.show_settings {
+            self.show_settings = false;
+            self.settings = None;
+            return;
+        }
         if self.show_help {
             self.show_help = false;
             return;
@@ -362,13 +382,20 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::api::models::*;
     use crate::test_helpers::*;
 
     #[test]
     fn new_app_starts_on_dashboard() {
-        let app = App::new("org", "proj", &make_config());
+        let app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
         assert_eq!(app.view, View::Dashboard);
         assert!(app.running);
         assert!(!app.show_help);
@@ -377,7 +404,12 @@ mod tests {
 
     #[test]
     fn navigate_to_build_history_sets_state() {
-        let mut app = App::new("org", "proj", &make_config());
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
         let def = make_definition(1, "My Pipeline", "\\");
         app.navigate_to_build_history(def.clone());
         assert_eq!(app.view, View::BuildHistory);
@@ -390,7 +422,12 @@ mod tests {
 
     #[test]
     fn navigate_to_log_viewer_sets_state() {
-        let mut app = App::new("org", "proj", &make_config());
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
         let build = make_build(42, BuildStatus::Completed, Some(BuildResult::Succeeded));
         let gen_before = app.log_viewer.generation();
         app.navigate_to_log_viewer(build);
@@ -402,7 +439,12 @@ mod tests {
 
     #[test]
     fn go_back_from_log_viewer() {
-        let mut app = App::new("org", "proj", &make_config());
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
         let def = make_definition(1, "P", "\\");
         app.navigate_to_build_history(def);
         let build = make_build(42, BuildStatus::Completed, Some(BuildResult::Succeeded));
@@ -418,7 +460,12 @@ mod tests {
 
     #[test]
     fn go_back_from_build_history() {
-        let mut app = App::new("org", "proj", &make_config());
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
         app.view = View::Pipelines;
         let def = make_definition(1, "P", "\\");
         app.navigate_to_build_history(def);
@@ -429,7 +476,12 @@ mod tests {
 
     #[test]
     fn go_back_dismisses_help() {
-        let mut app = App::new("org", "proj", &make_config());
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
         app.show_help = true;
         app.go_back();
         assert!(!app.show_help);
@@ -438,7 +490,12 @@ mod tests {
 
     #[test]
     fn go_back_exits_search_mode() {
-        let mut app = App::new("org", "proj", &make_config());
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
         app.search.mode = InputMode::Search;
         app.search.query = "test".to_string();
         app.go_back();
@@ -448,7 +505,12 @@ mod tests {
 
     #[test]
     fn current_nav_mut_returns_correct_nav_for_each_view() {
-        let mut app = App::new("org", "proj", &make_config());
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
 
         app.view = View::Dashboard;
         app.current_nav_mut().set_len(5);
@@ -466,7 +528,12 @@ mod tests {
 
     #[test]
     fn web_url_helpers() {
-        let app = App::new("myorg", "myproj", &make_config());
+        let app = App::new(
+            "myorg",
+            "myproj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
         assert_eq!(
             app.endpoints_web_build(42),
             "https://dev.azure.com/myorg/myproj/_build/results?buildId=42"

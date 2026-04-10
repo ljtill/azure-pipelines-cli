@@ -1,7 +1,10 @@
+use std::path::PathBuf;
+
 use crate::api::models::*;
 use crate::app::App;
 use crate::config::{
-    AzureDevOpsConfig, Config, FiltersConfig, LoggingConfig, NotificationsConfig, UpdateConfig,
+    AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
+    UpdateConfig,
 };
 
 pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
@@ -169,6 +172,7 @@ pub fn make_config() -> Config {
         update: UpdateConfig::default(),
         logging: LoggingConfig::default(),
         notifications: NotificationsConfig::default(),
+        display: DisplayConfig::default(),
     }
 }
 
@@ -178,6 +182,7 @@ pub fn make_app() -> App {
         &config.azure_devops.organization,
         &config.azure_devops.project,
         &config,
+        PathBuf::from("/tmp/test-config.toml"),
     );
 
     // 3 definitions across two folders
