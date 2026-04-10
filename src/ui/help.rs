@@ -48,8 +48,7 @@ pub fn draw(f: &mut Frame) {
 
     let block = Block::bordered()
         .title(" Help — Keybindings ")
-        .title_style(theme::BRAND)
-        .style(theme::HELP_BG);
+        .title_style(theme::BRAND);
 
     let help = Paragraph::new(help_text).style(theme::TEXT).block(block);
     f.render_widget(help, area);

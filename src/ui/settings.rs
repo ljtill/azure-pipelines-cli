@@ -17,8 +17,7 @@ pub fn draw(f: &mut Frame, settings: &SettingsState) {
     let block = Block::bordered()
         .title(" Settings ")
         .title_style(theme::BRAND)
-        .border_type(BorderType::Rounded)
-        .style(theme::HELP_BG);
+        .border_type(BorderType::Rounded);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
