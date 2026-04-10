@@ -16,21 +16,26 @@ use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_lo
 use super::messages::AppMessage;
 use super::{App, View};
 
+/// Outcome of the run loop — tells the caller whether to quit or reload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunResult {
+    Quit,
+    Reload,
+}
+
 pub async fn run(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     client: AdoClient,
     config: &Config,
     config_path: std::path::PathBuf,
-) -> Result<()> {
+) -> Result<RunResult> {
     let mut app = App::new(
         &config.azure_devops.organization,
         &config.azure_devops.project,
         config,
         config_path,
     );
-    let refresh_interval = Duration::from_secs(config.display.refresh_interval_secs);
-    let log_refresh_interval = Duration::from_secs(config.display.log_refresh_interval_secs);
-    let mut last_data_fetch = Instant::now() - refresh_interval; // trigger immediate fetch
+    let mut last_data_fetch = Instant::now() - app.refresh_interval; // trigger immediate fetch
     let mut last_log_fetch: Option<Instant> = None;
 
     let (tx, mut rx) = mpsc::channel::<AppMessage>(64);
@@ -63,7 +68,7 @@ pub async fn run(
                 .data_refresh_backoff_until
                 .map(|until| Instant::now() >= until)
                 .unwrap_or(true)
-            && last_data_fetch.elapsed() >= refresh_interval;
+            && last_data_fetch.elapsed() >= app.refresh_interval;
         let should_refresh_logs = app.view == View::LogViewer
             && app.log_viewer.selected_build().is_some()
             && !app.log_refresh_in_flight
@@ -72,7 +77,7 @@ pub async fn run(
                 .map(|until| Instant::now() >= until)
                 .unwrap_or(true)
             && last_log_fetch
-                .map(|t| t.elapsed() >= log_refresh_interval)
+                .map(|t| t.elapsed() >= app.log_refresh_interval)
                 .unwrap_or(true);
 
         if should_refresh_data && spawn_data_refresh(&mut app, &client, &tx) {
@@ -115,5 +120,9 @@ pub async fn run(
 
     tracing::info!("app shutting down");
 
-    Ok(())
+    if app.reload_requested {
+        Ok(RunResult::Reload)
+    } else {
+        Ok(RunResult::Quit)
+    }
 }

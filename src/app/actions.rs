@@ -95,6 +95,7 @@ pub fn handle_action(
     }
     match action {
         Action::Quit => app.running = false,
+        Action::Reload => app.running = false,
         Action::ForceRefresh => {
             if spawn_data_refresh(app, client, tx) {
                 *last_data_fetch = Instant::now();

@@ -105,7 +105,7 @@ impl PipelinesState {
 }
 
 use std::collections::{BTreeMap, HashSet};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 
@@ -236,6 +236,13 @@ pub struct App {
     pub log_refresh_failures: u32,
     pub log_refresh_backoff_until: Option<Instant>,
 
+    // Refresh timing
+    pub refresh_interval: Duration,
+    pub log_refresh_interval: Duration,
+
+    // Reload flag (triggers full restart of the run loop)
+    pub reload_requested: bool,
+
     // State-change notifications
     pub notifications_enabled: bool,
     /// Previous snapshot of (build_id, status, result) per definition,
@@ -289,6 +296,11 @@ impl App {
             log_refresh_in_flight: false,
             log_refresh_failures: 0,
             log_refresh_backoff_until: None,
+
+            refresh_interval: Duration::from_secs(config.display.refresh_interval_secs),
+            log_refresh_interval: Duration::from_secs(config.display.log_refresh_interval_secs),
+
+            reload_requested: false,
 
             notifications_enabled: config.notifications.enabled,
             prev_latest_builds: BTreeMap::new(),

@@ -80,7 +80,7 @@ async fn main() -> Result<()> {
     execute!(std::io::stdout(), EnableMouseCapture)?;
     let _guard = MouseGuard;
 
-    let config = match early_config {
+    let mut config = match early_config {
         Some(c) => {
             tracing::info!(
                 org = c.azure_devops.organization,
@@ -108,15 +108,27 @@ async fn main() -> Result<()> {
         }
     };
 
-    let client = AdoClient::new(
-        &config.azure_devops.organization,
-        &config.azure_devops.project,
-    )
-    .await?;
+    loop {
+        let client = AdoClient::new(
+            &config.azure_devops.organization,
+            &config.azure_devops.project,
+        )
+        .await?;
 
-    tracing::info!("api client connected");
+        tracing::info!("api client connected");
 
-    app::run::run(&mut terminal, client, &config, config_path).await
+        let result = app::run::run(&mut terminal, client, &config, config_path.clone()).await?;
+
+        match result {
+            app::run::RunResult::Quit => break,
+            app::run::RunResult::Reload => {
+                tracing::info!("reloading application");
+                config = Config::load(Some(&config_path))?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn run_update() -> Result<()> {

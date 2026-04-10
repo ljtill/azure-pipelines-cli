@@ -61,7 +61,7 @@ fn key_3_switches_to_active_runs() {
 fn esc_shows_quit_prompt_on_dashboard() {
     let mut app = test_app();
     assert_eq!(app.view, View::Dashboard);
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    let action = handle_key(&mut app, key(KeyCode::Esc));
     assert!(matches!(
         app.confirm_prompt.as_ref().unwrap().action,
         ConfirmAction::Quit
@@ -73,7 +73,7 @@ fn esc_shows_quit_prompt_on_dashboard() {
 fn esc_navigates_to_dashboard_from_pipelines() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    let action = handle_key(&mut app, key(KeyCode::Esc));
     assert_eq!(app.view, View::Dashboard);
     assert!(matches!(action, Action::None));
 }
@@ -82,7 +82,7 @@ fn esc_navigates_to_dashboard_from_pipelines() {
 fn esc_navigates_to_dashboard_from_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    let action = handle_key(&mut app, key(KeyCode::Esc));
     assert_eq!(app.view, View::Dashboard);
     assert!(matches!(action, Action::None));
 }
@@ -92,7 +92,7 @@ fn esc_goes_back_from_build_history_to_dashboard() {
     let mut app = test_app();
     app.view = View::BuildHistory;
     app.build_history.return_to = Some(View::Dashboard);
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    let action = handle_key(&mut app, key(KeyCode::Esc));
     assert_eq!(app.view, View::Dashboard);
     assert!(matches!(action, Action::None));
 }
@@ -104,7 +104,7 @@ fn esc_goes_back_from_log_viewer() {
     app.navigate_to_log_viewer(build);
     assert_eq!(app.view, View::LogViewer);
 
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    let action = handle_key(&mut app, key(KeyCode::Esc));
     assert_ne!(app.view, View::LogViewer);
     assert!(matches!(action, Action::None));
 }
@@ -563,7 +563,26 @@ fn esc_goes_back_from_build_history() {
     app.view = View::BuildHistory;
     app.build_history.return_to = Some(View::Pipelines);
 
-    let action = handle_key(&mut app, key(KeyCode::Char('q')));
+    let action = handle_key(&mut app, key(KeyCode::Esc));
     assert_eq!(app.view, View::Pipelines);
+    assert!(matches!(action, Action::None));
+}
+
+// ---------------------------------------------------------------------------
+// Reload on connection change
+// ---------------------------------------------------------------------------
+
+#[test]
+fn settings_save_no_reload_when_connection_unchanged() {
+    let mut app = test_app();
+    app.open_settings();
+    assert!(app.show_settings);
+
+    // Save without changing org/project — should not reload
+    let action = handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    );
+    assert!(!app.reload_requested);
     assert!(matches!(action, Action::None));
 }

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::app::{App, ConfirmAction, ConfirmPrompt, InputMode, TimelineRow, View};
@@ -25,6 +27,7 @@ pub enum Action {
     QueuePipeline(u32),
     ApproveCheck(String),
     RejectCheck(String),
+    Reload,
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
@@ -259,7 +262,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
 
-        KeyCode::Char('q') => match app.view {
+        KeyCode::Esc => match app.view {
             View::Dashboard => {
                 app.confirm_prompt = Some(ConfirmPrompt {
                     message: "Quit? (y/n)".into(),
@@ -361,7 +364,7 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) -> Action {
 
     // Normal settings navigation
     match key.code {
-        KeyCode::Char('q') => {
+        KeyCode::Esc => {
             app.show_settings = false;
             app.settings = None;
         }
@@ -389,10 +392,22 @@ fn handle_settings_save(app: &mut App) -> Action {
     if let Some(settings) = app.settings.as_ref() {
         match settings.save() {
             Ok(config) => {
+                // Detect connection change (org/project)
+                let new_label = format!(
+                    "{} / {}",
+                    config.azure_devops.organization, config.azure_devops.project
+                );
+                let needs_reload = new_label != app.org_project_label;
+
                 // Apply runtime-relevant changes
                 app.filters.folders = config.filters.folders;
                 app.filters.definition_ids = config.filters.definition_ids.clone();
                 app.notifications_enabled = config.notifications.enabled;
+
+                // Apply display settings live
+                app.refresh_interval = Duration::from_secs(config.display.refresh_interval_secs);
+                app.log_refresh_interval =
+                    Duration::from_secs(config.display.log_refresh_interval_secs);
 
                 // Rebuild filtered views with new filters
                 app.dashboard.rebuild(
@@ -412,6 +427,16 @@ fn handle_settings_save(app: &mut App) -> Action {
                     &app.filters.definition_ids,
                     &app.search.query,
                 );
+
+                app.show_settings = false;
+                app.settings = None;
+
+                if needs_reload {
+                    app.notifications.success("Settings saved — reloading…");
+                    tracing::info!("settings saved, connection changed — reloading");
+                    app.reload_requested = true;
+                    return Action::Reload;
+                }
 
                 app.notifications.success("Settings saved");
                 tracing::info!("settings saved to disk");

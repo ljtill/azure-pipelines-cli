@@ -60,14 +60,14 @@ impl SettingsState {
                 section: "Connection",
                 kind: FieldKind::Text,
                 value: config.azure_devops.organization.clone(),
-                hint: "restart required",
+                hint: "reload on save",
             },
             SettingsField {
                 label: "Project",
                 section: "Connection",
                 kind: FieldKind::Text,
                 value: config.azure_devops.project.clone(),
-                hint: "restart required",
+                hint: "reload on save",
             },
             // Filters
             SettingsField {
