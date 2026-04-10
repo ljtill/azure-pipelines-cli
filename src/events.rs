@@ -251,7 +251,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
 
-        KeyCode::Esc => match app.view {
+        KeyCode::Char('q') => match app.view {
             View::Dashboard => {
                 app.confirm_prompt = Some(ConfirmPrompt {
                     message: "Quit? (y/n)".into(),
@@ -353,7 +353,7 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) -> Action {
 
     // Normal settings navigation
     match key.code {
-        KeyCode::Esc => {
+        KeyCode::Char('q') => {
             app.show_settings = false;
             app.settings = None;
         }

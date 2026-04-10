@@ -66,7 +66,7 @@ pub fn draw(f: &mut Frame, settings: &SettingsState) {
     let hint_text = if settings.editing {
         "Enter confirm  Esc cancel  ←→ move cursor"
     } else {
-        "↑↓ navigate  Enter/Space edit  Ctrl+S save  Esc close"
+        "↑↓ navigate  Enter/Space edit  Ctrl+S save  q close"
     };
     lines.push(Line::from(vec![Span::styled(
         format!("  {hint_text}"),
