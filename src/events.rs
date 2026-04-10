@@ -13,7 +13,7 @@ pub enum Action {
     FetchBuildHistory(u32),
     FetchMoreBuilds {
         definition_id: u32,
-        skip: u32,
+        continuation_token: String,
     },
     FetchBuildLog {
         build_id: u32,
@@ -194,10 +194,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 && app.build_history.has_more
                 && !app.build_history.loading_more
             {
-                if let Some(def) = &app.build_history.selected_definition {
+                if let (Some(def), Some(token)) = (
+                    &app.build_history.selected_definition,
+                    &app.build_history.continuation_token,
+                ) {
                     return Action::FetchMoreBuilds {
                         definition_id: def.id,
-                        skip: app.build_history.builds.len() as u32,
+                        continuation_token: token.clone(),
                     };
                 }
             }
@@ -314,10 +317,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 && app.build_history.has_more
                 && !app.build_history.loading_more
             {
-                if let Some(def) = &app.build_history.selected_definition {
+                if let (Some(def), Some(token)) = (
+                    &app.build_history.selected_definition,
+                    &app.build_history.continuation_token,
+                ) {
                     return Action::FetchMoreBuilds {
                         definition_id: def.id,
-                        skip: app.build_history.builds.len() as u32,
+                        continuation_token: token.clone(),
                     };
                 }
             }

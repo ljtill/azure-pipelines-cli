@@ -110,12 +110,15 @@ pub fn handle_action(
                 tx,
                 "Fetch builds",
                 move |c| async move { c.list_builds_for_definition(def_id).await },
-                |builds| AppMessage::BuildHistory { builds },
+                |(builds, continuation_token)| AppMessage::BuildHistory {
+                    builds,
+                    continuation_token,
+                },
             );
         }
         Action::FetchMoreBuilds {
             definition_id,
-            skip,
+            continuation_token,
         } => {
             app.build_history.loading_more = true;
             spawn_api(
@@ -123,10 +126,13 @@ pub fn handle_action(
                 tx,
                 "Fetch more builds",
                 move |c| async move {
-                    c.list_builds_for_definition_paged(definition_id, skip)
+                    c.list_builds_for_definition_continued(definition_id, &continuation_token)
                         .await
                 },
-                |builds| AppMessage::BuildHistoryMore { builds },
+                |(builds, continuation_token)| AppMessage::BuildHistoryMore {
+                    builds,
+                    continuation_token,
+                },
             );
         }
         Action::FetchTimeline(build_id) => {
@@ -411,20 +417,34 @@ pub fn handle_message(
             app.retention_leases.leases = retention_leases;
             app.retention_leases.rebuild_index();
         }
-        AppMessage::BuildHistory { builds } => {
-            tracing::info!(count = builds.len(), "build history loaded");
-            app.build_history.has_more =
-                builds.len() >= crate::api::endpoints::TOP_DEFINITION_BUILDS as usize;
+        AppMessage::BuildHistory {
+            builds,
+            continuation_token,
+        } => {
+            tracing::info!(
+                count = builds.len(),
+                has_more = continuation_token.is_some(),
+                "build history loaded"
+            );
+            app.build_history.has_more = continuation_token.is_some();
+            app.build_history.continuation_token = continuation_token;
             app.build_history.builds = builds;
             app.build_history
                 .nav
                 .set_len(app.build_history.builds.len());
         }
-        AppMessage::BuildHistoryMore { builds } => {
-            tracing::info!(count = builds.len(), "more build history loaded");
+        AppMessage::BuildHistoryMore {
+            builds,
+            continuation_token,
+        } => {
+            tracing::info!(
+                count = builds.len(),
+                has_more = continuation_token.is_some(),
+                "more build history loaded"
+            );
             app.build_history.loading_more = false;
-            app.build_history.has_more =
-                builds.len() >= crate::api::endpoints::TOP_DEFINITION_BUILDS as usize;
+            app.build_history.has_more = continuation_token.is_some();
+            app.build_history.continuation_token = continuation_token;
             app.build_history.builds.extend(builds);
             app.build_history
                 .nav
@@ -785,8 +805,13 @@ fn spawn_build_history_refresh(app: &App, client: &AdoClient, tx: &mpsc::Sender<
         tokio::spawn(
             async move {
                 match client.list_builds_for_definition(def_id).await {
-                    Ok(builds) => {
-                        let _ = tx.send(AppMessage::BuildHistory { builds }).await;
+                    Ok((builds, continuation_token)) => {
+                        let _ = tx
+                            .send(AppMessage::BuildHistory {
+                                builds,
+                                continuation_token,
+                            })
+                            .await;
                     }
                     Err(e) => {
                         let _ = tx

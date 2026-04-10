@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use reqwest::{Client, Url};
 
 use super::auth::AdoAuth;
-use super::endpoints::{Endpoints, TOP_DEFINITION_BUILDS};
+use super::endpoints::Endpoints;
 use super::models::*;
 
 #[derive(Clone)]
@@ -53,6 +53,41 @@ impl AdoClient {
             "api response"
         );
         Ok(body)
+    }
+
+    /// GET with continuation token extraction from the `x-ms-continuationtoken` header.
+    async fn get_with_continuation<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+    ) -> Result<(T, Option<String>)> {
+        let token = self.auth.token().await?;
+        let display_url = url_without_query(url);
+        let start = Instant::now();
+        tracing::debug!(method = "GET", url = display_url, "api request (paged)");
+        let resp = self
+            .http
+            .get(url)
+            .bearer_auth(&token)
+            .send()
+            .await?
+            .error_for_status()?;
+        let status = resp.status().as_u16();
+        let continuation = resp
+            .headers()
+            .get("x-ms-continuationtoken")
+            .and_then(|v| v.to_str().ok())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let body = resp.json::<T>().await?;
+        tracing::debug!(
+            method = "GET",
+            url = display_url,
+            status,
+            has_continuation = continuation.is_some(),
+            elapsed_ms = start.elapsed().as_millis() as u64,
+            "api response (paged)"
+        );
+        Ok((body, continuation))
     }
 
     async fn get_all_pages<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<Vec<T>> {
@@ -217,24 +252,30 @@ impl AdoClient {
         Ok(resp.value)
     }
 
-    pub async fn list_builds_for_definition(&self, definition_id: u32) -> Result<Vec<Build>> {
-        tracing::debug!(definition_id, "listing builds for definition");
-        let url = self.endpoints.builds_for_definition(definition_id);
-        let resp: BuildListResponse = self.get(&url).await?;
-        Ok(resp.value)
-    }
-
-    pub async fn list_builds_for_definition_paged(
+    pub async fn list_builds_for_definition(
         &self,
         definition_id: u32,
-        skip: u32,
-    ) -> Result<Vec<Build>> {
-        tracing::debug!(definition_id, skip, "listing builds for definition (paged)");
-        let url =
-            self.endpoints
-                .builds_for_definition_paged(definition_id, TOP_DEFINITION_BUILDS, skip);
-        let resp: BuildListResponse = self.get(&url).await?;
-        Ok(resp.value)
+    ) -> Result<(Vec<Build>, Option<String>)> {
+        tracing::debug!(definition_id, "listing builds for definition");
+        let url = self.endpoints.builds_for_definition(definition_id);
+        let (resp, continuation): (BuildListResponse, _) = self.get_with_continuation(&url).await?;
+        Ok((resp.value, continuation))
+    }
+
+    pub async fn list_builds_for_definition_continued(
+        &self,
+        definition_id: u32,
+        continuation_token: &str,
+    ) -> Result<(Vec<Build>, Option<String>)> {
+        tracing::debug!(definition_id, "listing builds for definition (continued)");
+        let base_url = self.endpoints.builds_for_definition(definition_id);
+        let url = format!(
+            "{}&continuationToken={}",
+            base_url,
+            encode_continuation_token(continuation_token)
+        );
+        let (resp, continuation): (BuildListResponse, _) = self.get_with_continuation(&url).await?;
+        Ok((resp.value, continuation))
     }
 
     pub async fn get_build(&self, build_id: u32) -> Result<Build> {
@@ -417,6 +458,21 @@ fn paginated_url(base_url: &str, continuation_token: Option<&str>) -> Result<Url
 /// Return the URL portion before the query string for logging.
 fn url_without_query(url: &str) -> &str {
     url.split('?').next().unwrap_or(url)
+}
+
+/// Percent-encode a continuation token for safe inclusion in a URL query string.
+fn encode_continuation_token(token: &str) -> String {
+    // Use reqwest's Url to properly encode the token
+    let dummy = format!("https://x?t={}", token);
+    if let Ok(url) = Url::parse(&dummy) {
+        // Extract the encoded value from the parsed URL
+        url.query_pairs()
+            .find(|(k, _)| k == "t")
+            .map(|(_, v)| v.into_owned())
+            .unwrap_or_else(|| token.to_string())
+    } else {
+        token.to_string()
+    }
 }
 
 #[cfg(test)]

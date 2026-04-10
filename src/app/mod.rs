@@ -25,6 +25,8 @@ pub struct BuildHistoryState {
     pub has_more: bool,
     /// Whether a "load more" request is currently in flight.
     pub loading_more: bool,
+    /// ADO continuation token for fetching the next page.
+    pub continuation_token: Option<String>,
 }
 
 /// State for the Active Runs view.
