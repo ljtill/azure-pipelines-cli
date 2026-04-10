@@ -44,6 +44,7 @@ impl Endpoints {
     }
 
     pub fn build_stage(&self, build_id: u32, stage_ref_name: &str) -> String {
+        let stage_ref_name = super::encode_path_segment(stage_ref_name);
         format!(
             "{}/build/builds/{build_id}/stages/{stage_ref_name}?api-version={API_VERSION}-preview.1",
             self.base_url
@@ -125,6 +126,16 @@ mod tests {
         assert_eq!(
             ep().build_stage(123, "__default"),
             format!("{BASE}/build/builds/123/stages/__default?api-version=7.1-preview.1")
+        );
+    }
+
+    #[test]
+    fn build_stage_url_encodes_reserved_characters() {
+        assert_eq!(
+            ep().build_stage(123, "stage name/%?&=+#"),
+            format!(
+                "{BASE}/build/builds/123/stages/stage%20name%2F%25%3F%26%3D%2B%23?api-version=7.1-preview.1"
+            )
         );
     }
 
