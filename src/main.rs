@@ -25,6 +25,8 @@ struct Cli {
 enum Command {
     /// Update to the latest release from GitHub
     Update,
+    /// Print the current version
+    Version,
 }
 
 /// RAII guard that disables mouse capture and restores the terminal on drop.
@@ -46,6 +48,10 @@ async fn main() -> Result<()> {
     // Handle subcommands that don't need the TUI
     if let Some(Command::Update) = cli.command {
         return run_update().await;
+    }
+    if let Some(Command::Version) = cli.command {
+        println!("pipelines v{}", update::current_version());
+        return Ok(());
     }
 
     // Pre-TUI checks: ensure Azure CLI or Developer CLI is available.

@@ -74,6 +74,9 @@ pipelines
 # Override config path
 pipelines --config /path/to/config.toml
 
+# Print installed version
+pipelines version
+
 # Update to the latest release
 pipelines update
 ```
