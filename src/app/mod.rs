@@ -1,5 +1,4 @@
 pub mod actions;
-mod dashboard;
 mod log_viewer;
 mod messages;
 pub mod nav;
@@ -7,7 +6,7 @@ pub mod notifications;
 pub mod run;
 pub mod settings;
 
-pub use dashboard::{DashboardRow, DashboardState};
+pub use crate::components::dashboard::DashboardRow;
 pub use log_viewer::{LogViewerState, TimelineRow};
 pub use nav::ListNav;
 
@@ -165,7 +164,7 @@ pub struct App {
     pub data: CoreData,
 
     // Dashboard view
-    pub dashboard: DashboardState,
+    pub dashboard: crate::components::dashboard::Dashboard,
 
     // Build history (for selected pipeline)
     pub build_history: BuildHistoryState,
@@ -191,7 +190,6 @@ pub struct App {
     // Components
     pub header: crate::components::header::Header,
     pub help: crate::components::help::Help,
-    pub dashboard_component: crate::components::dashboard::Dashboard,
     pub build_history_component: crate::components::build_history::BuildHistory,
     pub log_viewer_component: crate::components::log_viewer::LogViewer,
     pub settings_component: crate::components::settings::Settings,
@@ -240,7 +238,7 @@ impl App {
 
             data: CoreData::default(),
 
-            dashboard: DashboardState::default(),
+            dashboard: crate::components::dashboard::Dashboard::default(),
 
             build_history: BuildHistoryState::default(),
 
@@ -258,7 +256,6 @@ impl App {
 
             header: crate::components::header::Header,
             help: crate::components::help::Help,
-            dashboard_component: crate::components::dashboard::Dashboard,
             build_history_component: crate::components::build_history::BuildHistory,
             log_viewer_component: crate::components::log_viewer::LogViewer,
             settings_component: crate::components::settings::Settings,
