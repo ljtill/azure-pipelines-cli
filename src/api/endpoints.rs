@@ -68,14 +68,14 @@ impl Endpoints {
 
     pub fn builds_recent(&self) -> String {
         format!(
-            "{}/build/builds?api-version={API_VERSION}&$top={TOP_BUILDS}&queryOrder=startTimeDescending",
+            "{}/build/builds?api-version={API_VERSION}&$top={TOP_BUILDS}&queryOrder=queueTimeDescending",
             self.base_url
         )
     }
 
     pub fn builds_for_definition(&self, definition_id: u32) -> String {
         format!(
-            "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={TOP_DEFINITION_BUILDS}&queryOrder=startTimeDescending",
+            "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={TOP_DEFINITION_BUILDS}&queryOrder=queueTimeDescending",
             self.base_url
         )
     }
@@ -152,7 +152,7 @@ mod tests {
     fn builds_recent_url() {
         assert_eq!(
             ep().builds_recent(),
-            format!("{BASE}/build/builds?api-version=7.1&$top=100&queryOrder=startTimeDescending")
+            format!("{BASE}/build/builds?api-version=7.1&$top=100&queryOrder=queueTimeDescending")
         );
     }
 
@@ -161,7 +161,7 @@ mod tests {
         assert_eq!(
             ep().builds_for_definition(42),
             format!(
-                "{BASE}/build/builds?definitions=42&api-version=7.1&$top=20&queryOrder=startTimeDescending"
+                "{BASE}/build/builds?definitions=42&api-version=7.1&$top=20&queryOrder=queueTimeDescending"
             )
         );
     }
