@@ -8,12 +8,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         // Multi-select toggle for lease deletion
         KeyCode::Char(' ') => {
-            if let Some(build) = app.build_history.builds.get(app.build_history.nav.index()) {
-                let id = build.id;
-                if !app.build_history.selected.remove(&id) {
-                    app.build_history.selected.insert(id);
-                }
-            }
+            app.build_history.toggle_selected_at_cursor();
             Action::None
         }
         KeyCode::Char('c') => navigation::handle_cancel_request(app),

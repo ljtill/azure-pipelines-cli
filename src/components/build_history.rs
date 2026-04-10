@@ -35,6 +35,16 @@ pub struct BuildHistory {
 }
 
 impl BuildHistory {
+    /// Toggle selection state for the build at the current nav index.
+    pub fn toggle_selected_at_cursor(&mut self) {
+        if let Some(build) = self.builds.get(self.nav.index()) {
+            let id = build.id;
+            if !self.selected.remove(&id) {
+                self.selected.insert(id);
+            }
+        }
+    }
+
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let chunks = Layout::vertical([
             Constraint::Length(2), // pipeline name header

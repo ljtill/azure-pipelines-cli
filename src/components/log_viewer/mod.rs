@@ -238,15 +238,17 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
 mod tests {
     use super::*;
     use crate::api::models::{
-        Build, BuildDefinitionRef, BuildResult, BuildStatus, BuildTimeline, LogReference,
-        TaskState, TimelineRecord,
+        Build, BuildResult, BuildStatus, BuildTimeline, LogReference, TaskState, TimelineRecord,
     };
     use crate::app::View;
+    use crate::test_helpers::{make_build, make_timeline_record};
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
+    /// Create a timeline record with an optional log ID.
+    /// Wraps the shared make_timeline_record and adds the log field.
     #[allow(clippy::too_many_arguments)]
     fn make_record(
         id: &str,
@@ -258,37 +260,13 @@ mod tests {
         result: Option<BuildResult>,
         log_id: Option<u32>,
     ) -> TimelineRecord {
-        TimelineRecord {
-            id: id.to_string(),
-            parent_id: parent_id.map(|s| s.to_string()),
-            name: name.to_string(),
-            identifier: None,
-            record_type: record_type.to_string(),
-            state,
-            result,
-            order: Some(order),
-            log: log_id.map(|id| LogReference { id }),
-        }
+        let mut rec = make_timeline_record(id, record_type, parent_id, name, order, state, result);
+        rec.log = log_id.map(|id| LogReference { id });
+        rec
     }
 
     fn make_test_build(status: BuildStatus, result: Option<BuildResult>) -> Build {
-        Build {
-            id: 1,
-            build_number: "1".to_string(),
-            status,
-            result,
-            queue_time: None,
-            start_time: None,
-            finish_time: None,
-            definition: BuildDefinitionRef {
-                id: 1,
-                name: "test".to_string(),
-            },
-            source_branch: Some("refs/heads/main".to_string()),
-            requested_for: None,
-            reason: None,
-            trigger_info: None,
-        }
+        make_build(1, status, result)
     }
 
     /// Build a simple timeline: 1 stage -> 1 phase -> N tasks.

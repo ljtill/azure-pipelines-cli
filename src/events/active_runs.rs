@@ -13,12 +13,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         // Multi-select toggle
         KeyCode::Char(' ') => {
-            if let Some(build) = app.active_runs.filtered.get(app.active_runs.nav.index()) {
-                let id = build.id;
-                if !app.active_runs.selected.remove(&id) {
-                    app.active_runs.selected.insert(id);
-                }
-            }
+            app.active_runs.toggle_selected_at_cursor();
             Action::None
         }
         KeyCode::Char('c') => navigation::handle_cancel_request(app),
