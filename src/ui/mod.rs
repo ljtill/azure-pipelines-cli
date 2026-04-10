@@ -1,8 +1,6 @@
 pub mod active_runs;
 pub mod builds;
 pub mod dashboard;
-pub mod header;
-pub mod help;
 pub mod helpers;
 pub mod logs;
 pub mod pipelines;
@@ -13,6 +11,7 @@ pub mod theme;
 use ratatui::Frame;
 
 use crate::app::App;
+use crate::components::Component;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     use ratatui::layout::{Constraint, Layout};
@@ -24,7 +23,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     ])
     .split(f.area());
 
-    header::draw(f, app, chunks[0]);
+    app.header.draw_with_app(f, app, chunks[0]);
 
     match app.view {
         crate::app::View::Dashboard => dashboard::draw(f, app, chunks[1]),
@@ -37,7 +36,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_footer(f, app, chunks[2]);
 
     if app.show_help {
-        help::draw(f);
+        let _ = app.help.draw(f, f.area());
     }
 
     if app.show_settings {

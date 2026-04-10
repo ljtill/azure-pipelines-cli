@@ -269,6 +269,10 @@ pub struct App {
     // Settings overlay
     pub settings: Option<settings::SettingsState>,
 
+    // Components
+    pub header: crate::components::header::Header,
+    pub help: crate::components::help::Help,
+
     // Status
     pub last_refresh: Option<DateTime<Utc>>,
     pub notifications: Notifications,
@@ -332,6 +336,9 @@ impl App {
             retention_leases: RetentionLeasesState::default(),
 
             settings: None,
+
+            header: crate::components::header::Header,
+            help: crate::components::help::Help,
 
             last_refresh: None,
             notifications: Notifications::new(10),
