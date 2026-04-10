@@ -53,36 +53,7 @@ cargo install --path .
 
 ## Configuration
 
-On first launch, an interactive setup wizard creates `~/.config/pipelines/config.toml` with your Azure DevOps organization and project. All other settings can be adjusted in-app with `,` (settings).
-
-For advanced customization, edit the config file directly:
-
-```toml
-[azure_devops]
-organization = "your-org"
-project = "your-project"
-
-[display]
-refresh_interval_secs = 15   # main data refresh (default: 15)
-log_refresh_interval_secs = 5  # log viewer refresh (default: 5)
-
-[filters]
-folders = ["\\Infra", "\\Deploy"]  # only show these folder paths (prefix match)
-definition_ids = [42, 99]          # only show these pipeline definition IDs
-
-[notifications]
-enabled = true  # inline alerts when builds start, succeed, or fail (default: true)
-
-[update]
-check_for_updates = true  # background update checks (default: true)
-
-[logging]
-level = "info"             # default log level; RUST_LOG env var overrides
-# log_directory = "/custom/path"  # defaults to ~/.local/state/pipelines
-# max_log_files = 5        # daily log files to retain (default: 5)
-```
-
-> **Note:** folder filters apply to Dashboard and Pipelines views. Active Runs can only filter by definition ID (builds don't carry folder paths).
+On first launch, an interactive setup wizard creates `~/.config/pipelines/config.toml` with your Azure DevOps organization and project. All settings can be adjusted in-app with `,` (settings).
 
 ### Logging
 
