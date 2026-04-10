@@ -1,6 +1,6 @@
 use crate::api::models::{BuildResult, BuildStatus, TaskState};
 
-use super::LogViewerState;
+use super::LogViewer;
 use super::TimelineRow;
 
 /// A task record extracted from the timeline for auto-selection.
@@ -15,7 +15,7 @@ struct TaskCandidate {
 // ---------------------------------------------------------------------------
 // Follow / inspect mode transitions
 // ---------------------------------------------------------------------------
-impl LogViewerState {
+impl LogViewer {
     pub fn enter_follow_mode(&mut self) {
         self.follow_mode = true;
     }
@@ -33,7 +33,7 @@ impl LogViewerState {
 // ---------------------------------------------------------------------------
 // Auto-select and active-task detection
 // ---------------------------------------------------------------------------
-impl LogViewerState {
+impl LogViewer {
     /// Pick the most relevant timeline task to auto-show logs for.
     /// Returns (row_index, log_id) if found. Ensures parent stage/job are expanded.
     pub fn auto_select_log_entry(&mut self) -> Option<(usize, u32)> {
@@ -162,7 +162,7 @@ impl LogViewerState {
 // ---------------------------------------------------------------------------
 // Build status derived from timeline
 // ---------------------------------------------------------------------------
-impl LogViewerState {
+impl LogViewer {
     /// Update `selected_build` status/result from timeline records.
     /// Called on each timeline refresh so the log viewer header stays current.
     pub fn refresh_build_status_from_timeline(&mut self) {

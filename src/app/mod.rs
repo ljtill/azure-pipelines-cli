@@ -1,5 +1,4 @@
 pub mod actions;
-mod log_viewer;
 mod messages;
 pub mod nav;
 pub mod notifications;
@@ -7,7 +6,7 @@ pub mod run;
 pub mod settings;
 
 pub use crate::components::dashboard::DashboardRow;
-pub use log_viewer::{LogViewerState, TimelineRow};
+pub use crate::components::log_viewer::{LogViewer, TimelineRow};
 pub use nav::ListNav;
 
 /// Cached retention lease data, refreshed alongside the periodic data refresh.
@@ -150,7 +149,7 @@ pub struct App {
     pub build_history: crate::components::build_history::BuildHistory,
 
     // Log viewer state (grouped)
-    pub log_viewer: LogViewerState,
+    pub log_viewer: LogViewer,
 
     // Confirmation prompt
     pub confirm_prompt: Option<ConfirmPrompt>,
@@ -170,7 +169,6 @@ pub struct App {
     // Components
     pub header: crate::components::header::Header,
     pub help: crate::components::help::Help,
-    pub log_viewer_component: crate::components::log_viewer::LogViewer,
     pub settings_component: crate::components::settings::Settings,
 
     // Status
@@ -221,7 +219,7 @@ impl App {
 
             build_history: crate::components::build_history::BuildHistory::default(),
 
-            log_viewer: LogViewerState::default(),
+            log_viewer: LogViewer::default(),
 
             confirm_prompt: None,
 
@@ -235,7 +233,6 @@ impl App {
 
             header: crate::components::header::Header,
             help: crate::components::help::Help,
-            log_viewer_component: crate::components::log_viewer::LogViewer,
             settings_component: crate::components::settings::Settings,
 
             last_refresh: None,
@@ -283,7 +280,7 @@ impl App {
                 let return_to = self.log_viewer.return_to_view();
                 tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
                 let next_gen = self.log_viewer.generation() + 1;
-                self.log_viewer = LogViewerState::default();
+                self.log_viewer = LogViewer::default();
                 // Preserve generation across resets to invalidate stale messages.
                 self.log_viewer.set_generation(next_gen);
 
@@ -330,7 +327,7 @@ impl App {
         tracing::info!(build_id = build.id, "navigating to log viewer");
         let return_to = self.view;
         let next_gen = self.log_viewer.generation() + 1;
-        self.log_viewer = LogViewerState::new_for_build(build, return_to, next_gen);
+        self.log_viewer = LogViewer::new_for_build(build, return_to, next_gen);
         self.view = View::LogViewer;
     }
 

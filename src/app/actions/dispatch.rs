@@ -6,8 +6,8 @@ use crate::api::client::AdoClient;
 use crate::events::Action;
 
 use super::super::App;
+use super::super::TimelineRow;
 use super::super::View;
-use super::super::log_viewer::TimelineRow;
 use super::super::messages::AppMessage;
 use super::spawn::{
     open_url, spawn_api, spawn_build_history_refresh, spawn_data_refresh, spawn_log_fetch,

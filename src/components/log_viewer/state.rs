@@ -10,29 +10,29 @@ use crate::app::nav::ListNav;
 use super::TimelineRow;
 
 /// State for the log viewer screen — reset as a unit on navigation.
-pub struct LogViewerState {
-    pub(super) selected_build: Option<Build>,
-    pub(super) build_timeline: Option<BuildTimeline>,
-    pub(super) timeline_rows: Vec<TimelineRow>,
-    pub(super) collapsed_stages: HashSet<String>,
-    pub(super) collapsed_jobs: HashSet<String>,
-    pub(super) log_content: Vec<String>,
-    pub(super) log_auto_scroll: bool,
-    pub(super) log_generation: u64,
-    pub(super) timeline_initialized: bool,
-    pub(super) follow_mode: bool,
-    pub(super) followed_task_name: String,
-    pub(super) followed_log_id: Option<u32>,
-    pub(super) log_entries_nav: ListNav,
-    pub(super) log_scroll_offset: u32,
+pub struct LogViewer {
+    pub selected_build: Option<Build>,
+    pub build_timeline: Option<BuildTimeline>,
+    pub timeline_rows: Vec<TimelineRow>,
+    pub collapsed_stages: HashSet<String>,
+    pub collapsed_jobs: HashSet<String>,
+    pub log_content: Vec<String>,
+    pub log_auto_scroll: bool,
+    pub log_generation: u64,
+    pub timeline_initialized: bool,
+    pub follow_mode: bool,
+    pub followed_task_name: String,
+    pub followed_log_id: Option<u32>,
+    pub log_entries_nav: ListNav,
+    pub log_scroll_offset: u32,
     /// Cached layout areas from the last render, used for mouse hit-testing.
-    pub(super) tree_area: Option<Rect>,
-    pub(super) log_area: Option<Rect>,
+    pub tree_area: Option<Rect>,
+    pub log_area: Option<Rect>,
     /// The view to return to when pressing Esc from LogViewer.
-    pub(super) return_to_view: View,
+    pub return_to_view: View,
 }
 
-impl Default for LogViewerState {
+impl Default for LogViewer {
     fn default() -> Self {
         Self {
             selected_build: None,
@@ -59,9 +59,9 @@ impl Default for LogViewerState {
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
-impl LogViewerState {
+impl LogViewer {
     /// Create a new log viewer state for navigating to a specific build.
-    pub(in crate::app) fn new_for_build(build: Build, return_to: View, generation: u64) -> Self {
+    pub fn new_for_build(build: Build, return_to: View, generation: u64) -> Self {
         Self {
             selected_build: Some(build),
             log_auto_scroll: true,
@@ -76,7 +76,7 @@ impl LogViewerState {
 // ---------------------------------------------------------------------------
 // Getters
 // ---------------------------------------------------------------------------
-impl LogViewerState {
+impl LogViewer {
     pub fn selected_build(&self) -> Option<&Build> {
         self.selected_build.as_ref()
     }
@@ -142,7 +142,7 @@ impl LogViewerState {
 // ---------------------------------------------------------------------------
 // Mutators
 // ---------------------------------------------------------------------------
-impl LogViewerState {
+impl LogViewer {
     pub fn set_build_timeline(&mut self, timeline: BuildTimeline) {
         self.build_timeline = Some(timeline);
     }
@@ -195,7 +195,7 @@ impl LogViewerState {
 // ---------------------------------------------------------------------------
 // Timeline collapse state
 // ---------------------------------------------------------------------------
-impl LogViewerState {
+impl LogViewer {
     #[allow(dead_code)]
     pub fn is_stage_collapsed(&self, id: &str) -> bool {
         self.collapsed_stages.contains(id)

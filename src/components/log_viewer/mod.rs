@@ -2,9 +2,238 @@ mod follow;
 mod state;
 mod timeline;
 
-pub use state::LogViewerState;
+pub use state::LogViewer;
 pub use timeline::TimelineRow;
 
+use anyhow::Result;
+use ratatui::Frame;
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::Style;
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
+
+use super::Component;
+use crate::app::App;
+use crate::ui::helpers::{checkpoint_status_icon, timeline_status_icon};
+use crate::ui::theme;
+
+/// Draw the log viewer. This is a free function rather than a method on `LogViewer`
+/// because it needs `&mut App` (for `set_layout_areas` mouse hit-testing state)
+/// while the component is itself a field of `App`.
+pub fn draw_log_viewer(f: &mut Frame, app: &mut App, area: Rect) {
+    let build_label = app
+        .log_viewer
+        .selected_build()
+        .map(|b| format!("{} #{}", b.definition.name, b.build_number))
+        .unwrap_or_else(|| "Build".to_string());
+
+    let chunks = Layout::vertical([
+        Constraint::Length(2), // build info header
+        Constraint::Min(0),    // body (tree + log)
+    ])
+    .split(area);
+
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled(" ← ", theme::MUTED),
+        Span::styled(&build_label, theme::BRAND),
+        Span::styled(" — Log Viewer", theme::MUTED),
+    ]));
+    f.render_widget(header, chunks[0]);
+
+    let body = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
+        .split(chunks[1]);
+
+    // Store layout areas for mouse hit-testing.
+    app.log_viewer.set_layout_areas(body[0], body[1]);
+
+    draw_tree(f, app, body[0]);
+    draw_log(f, app, body[1]);
+}
+
+impl Component for LogViewer {
+    fn draw(&self, _frame: &mut Frame, _area: Rect) -> Result<()> {
+        Ok(())
+    }
+
+    fn footer_hints(&self) -> &str {
+        "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  q/Esc back"
+    }
+}
+
+fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
+    if app.log_viewer.timeline_rows().is_empty() {
+        let loading = Paragraph::new(" Loading timeline...")
+            .style(theme::MUTED)
+            .block(
+                Block::bordered()
+                    .title(" Pipeline Stages ")
+                    .title_style(theme::TITLE),
+            );
+        f.render_widget(loading, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .log_viewer
+        .timeline_rows()
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let selected = i == app.log_viewer.nav().index();
+            match row {
+                TimelineRow::Stage {
+                    name,
+                    state,
+                    result,
+                    collapsed,
+                    ..
+                } => {
+                    let arrow = if *collapsed { "▸" } else { "▾" };
+                    let (icon, icon_color) = timeline_status_icon(*state, *result);
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("{} ", arrow), theme::ARROW),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(name.as_str(), theme::STAGE),
+                    ]))
+                    .style(if selected {
+                        theme::SELECTED
+                    } else {
+                        Style::new()
+                    })
+                }
+                TimelineRow::Job {
+                    name,
+                    state,
+                    result,
+                    collapsed,
+                    ..
+                } => {
+                    let arrow = if *collapsed { "▸" } else { "▾" };
+                    let (icon, icon_color) = timeline_status_icon(*state, *result);
+                    ListItem::new(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(format!("{} ", arrow), theme::JOB_ARROW),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(name.as_str(), theme::JOB),
+                    ]))
+                    .style(if selected {
+                        theme::SELECTED
+                    } else {
+                        Style::new()
+                    })
+                }
+                TimelineRow::Task {
+                    name,
+                    state,
+                    result,
+                    log_id,
+                    ..
+                } => {
+                    let (icon, icon_color) = timeline_status_icon(*state, *result);
+                    let log_indicator = if log_id.is_some() { "" } else { " ·" };
+                    ListItem::new(Line::from(vec![
+                        Span::raw("      "),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(name.as_str(), theme::JOB),
+                        Span::styled(log_indicator, theme::MUTED),
+                    ]))
+                    .style(if selected {
+                        theme::SELECTED
+                    } else {
+                        Style::new()
+                    })
+                }
+                TimelineRow::Checkpoint {
+                    name,
+                    state,
+                    result,
+                    ..
+                } => {
+                    let (icon, icon_color) = checkpoint_status_icon(*state, *result);
+                    ListItem::new(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(name.as_str(), Style::new().fg(icon_color)),
+                    ]))
+                    .style(if selected {
+                        theme::SELECTED
+                    } else {
+                        Style::new()
+                    })
+                }
+            }
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::bordered()
+            .title(" Pipeline Stages ")
+            .title_style(theme::TITLE),
+    );
+
+    let mut state = ListState::default();
+    state.select(Some(app.log_viewer.nav().index()));
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_log(f: &mut Frame, app: &App, area: Rect) {
+    let title = if app.log_viewer.is_following() && !app.log_viewer.followed_task_name().is_empty()
+    {
+        format!(
+            " Log Output — FOLLOW: {} ",
+            app.log_viewer.followed_task_name()
+        )
+    } else if !app.log_viewer.is_following() {
+        if let Some(TimelineRow::Task { name, .. }) = app
+            .log_viewer
+            .timeline_rows()
+            .get(app.log_viewer.nav().index())
+        {
+            format!(" Log Output — {} ", name)
+        } else {
+            " Log Output ".to_string()
+        }
+    } else {
+        " Log Output ".to_string()
+    };
+
+    if app.log_viewer.log_content().is_empty() {
+        let hint = Paragraph::new(" Select a task and press Enter to view its log")
+            .style(theme::MUTED)
+            .block(Block::bordered().title(title));
+        f.render_widget(hint, area);
+    } else {
+        let lines: Vec<Line> = app
+            .log_viewer
+            .log_content()
+            .iter()
+            .map(|l| Line::from(Span::raw(l.as_str())))
+            .collect();
+
+        let total_lines = lines.len() as u32;
+        let visible_height = area.height.saturating_sub(2) as u32;
+        let max_scroll = total_lines.saturating_sub(visible_height);
+
+        let scroll_offset_u32 = if app.log_viewer.log_auto_scroll() {
+            max_scroll
+        } else {
+            app.log_viewer.log_scroll_offset().min(max_scroll)
+        };
+        let scroll_offset = scroll_offset_u32.min(u16::MAX as u32) as u16;
+
+        let title_style = if app.log_viewer.is_following() {
+            theme::FOLLOW_TITLE
+        } else {
+            theme::TITLE
+        };
+
+        let log = Paragraph::new(Text::from(lines))
+            .block(Block::bordered().title(title).title_style(title_style))
+            .wrap(Wrap { trim: false })
+            .scroll((scroll_offset, 0));
+        f.render_widget(log, area);
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,14 +332,14 @@ mod tests {
         BuildTimeline { records }
     }
 
-    /// Create a LogViewerState with a build, set timeline, and expand all nodes.
+    /// Create a LogViewer with a build, set timeline, and expand all nodes.
     fn state_with_expanded_timeline(
         build_status: BuildStatus,
         build_result: Option<BuildResult>,
         timeline: BuildTimeline,
-    ) -> LogViewerState {
+    ) -> LogViewer {
         let build = make_test_build(build_status, build_result);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.rebuild_timeline_rows();
         let stage_ids: Vec<String> = state.collapsed_stages.iter().cloned().collect();
@@ -131,7 +360,7 @@ mod tests {
 
     #[test]
     fn default_state_is_empty() {
-        let state = LogViewerState::default();
+        let state = LogViewer::default();
         assert!(state.selected_build().is_none());
         assert!(state.timeline_rows().is_empty());
         assert!(!state.is_following());
@@ -143,7 +372,7 @@ mod tests {
     #[test]
     fn new_for_build_sets_fields() {
         let build = make_test_build(BuildStatus::InProgress, None);
-        let state = LogViewerState::new_for_build(build, View::BuildHistory, 42);
+        let state = LogViewer::new_for_build(build, View::BuildHistory, 42);
         assert!(state.selected_build().is_some());
         assert_eq!(state.selected_build().unwrap().id, 1);
         assert!(state.is_following());
@@ -155,7 +384,7 @@ mod tests {
     #[test]
     fn enter_follow_and_inspect_modes() {
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         assert!(state.is_following());
         state.enter_inspect_mode();
         assert!(!state.is_following());
@@ -165,7 +394,7 @@ mod tests {
 
     #[test]
     fn set_followed_updates_both() {
-        let mut state = LogViewerState::default();
+        let mut state = LogViewer::default();
         state.set_followed("Initialize".to_string(), 42);
         assert_eq!(state.followed_task_name(), "Initialize");
         assert_eq!(state.followed_log_id(), Some(42));
@@ -173,7 +402,7 @@ mod tests {
 
     #[test]
     fn scroll_up_and_down() {
-        let mut state = LogViewerState::default();
+        let mut state = LogViewer::default();
         assert_eq!(state.log_scroll_offset(), 0);
         state.scroll_down(5);
         assert_eq!(state.log_scroll_offset(), 5);
@@ -188,7 +417,7 @@ mod tests {
 
     #[test]
     fn set_log_content_splits_lines_and_resets_scroll() {
-        let mut state = LogViewerState::default();
+        let mut state = LogViewer::default();
         state.scroll_down(10);
         state.set_log_content("line1\nline2\nline3".to_string());
         assert_eq!(state.log_content(), &["line1", "line2", "line3"]);
@@ -198,7 +427,7 @@ mod tests {
 
     #[test]
     fn clear_log_empties_content() {
-        let mut state = LogViewerState::default();
+        let mut state = LogViewer::default();
         state.set_log_content("some log\ndata".to_string());
         assert!(!state.log_content().is_empty());
         state.clear_log();
@@ -207,7 +436,7 @@ mod tests {
 
     #[test]
     fn set_generation_updates() {
-        let mut state = LogViewerState::default();
+        let mut state = LogViewer::default();
         assert_eq!(state.generation(), 0);
         state.set_generation(99);
         assert_eq!(state.generation(), 99);
@@ -229,7 +458,7 @@ mod tests {
             ("Task B", Some(TaskState::InProgress), None, 11),
         ]);
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
 
         // First rebuild pre-collapses all stages
@@ -290,7 +519,7 @@ mod tests {
             ],
         };
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.rebuild_timeline_rows();
 
@@ -312,7 +541,7 @@ mod tests {
             10,
         )]);
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
 
         assert!(!state.is_timeline_initialized());
@@ -332,7 +561,7 @@ mod tests {
             10,
         )]);
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.rebuild_timeline_rows();
         assert_eq!(state.timeline_rows().len(), 1);
@@ -532,7 +761,7 @@ mod tests {
             ],
         };
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.refresh_build_status_from_timeline();
         let b = state.selected_build().unwrap();
@@ -567,7 +796,7 @@ mod tests {
             ],
         };
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.refresh_build_status_from_timeline();
         let b = state.selected_build().unwrap();
@@ -602,7 +831,7 @@ mod tests {
             ],
         };
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.refresh_build_status_from_timeline();
         let b = state.selected_build().unwrap();
@@ -625,7 +854,7 @@ mod tests {
             )],
         };
         let build = make_test_build(BuildStatus::Completed, Some(BuildResult::Succeeded));
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.refresh_build_status_from_timeline();
         let b = state.selected_build().unwrap();
@@ -636,7 +865,7 @@ mod tests {
     #[test]
     fn refresh_status_noop_when_no_timeline() {
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.refresh_build_status_from_timeline();
         let b = state.selected_build().unwrap();
         assert_eq!(b.status, BuildStatus::InProgress);
@@ -670,7 +899,7 @@ mod tests {
             ],
         };
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.refresh_build_status_from_timeline();
         let b = state.selected_build().unwrap();
@@ -695,7 +924,7 @@ mod tests {
             ("Test", Some(TaskState::Pending), None, 12),
         ]);
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.rebuild_timeline_rows();
 
@@ -728,7 +957,7 @@ mod tests {
             ),
         ]);
         let build = make_test_build(BuildStatus::Completed, Some(BuildResult::Failed));
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.rebuild_timeline_rows();
 
@@ -750,7 +979,7 @@ mod tests {
             ("Build", Some(TaskState::InProgress), None, 11),
         ]);
         let build = make_test_build(BuildStatus::InProgress, None);
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         let result = state.find_active_task();
         assert!(result.is_some());
@@ -762,7 +991,7 @@ mod tests {
     #[test]
     fn find_active_task_returns_none_when_no_timeline() {
         let build = make_test_build(BuildStatus::InProgress, None);
-        let state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         assert!(state.find_active_task().is_none());
     }
 
@@ -830,7 +1059,7 @@ mod tests {
             ],
         };
         let build = make_test_build(BuildStatus::Completed, Some(BuildResult::Succeeded));
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.rebuild_timeline_rows();
         state.expand_stage("s1");
@@ -894,7 +1123,7 @@ mod tests {
             ],
         };
         let build = make_test_build(BuildStatus::Completed, Some(BuildResult::Succeeded));
-        let mut state = LogViewerState::new_for_build(build, View::BuildHistory, 1);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         state.rebuild_timeline_rows();
         state.expand_stage("s1");

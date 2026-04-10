@@ -6,8 +6,8 @@ use crate::api::client::AdoClient;
 use crate::api::models;
 
 use super::super::App;
+use super::super::TimelineRow;
 use super::super::View;
-use super::super::log_viewer::TimelineRow;
 use super::super::messages::{AppMessage, RefreshSource};
 use super::super::notifications::NotificationLevel;
 use super::spawn::{

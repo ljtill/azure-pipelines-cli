@@ -61,7 +61,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         crate::app::View::Pipelines => app.pipelines.footer_hints(),
         crate::app::View::ActiveRuns => app.active_runs.footer_hints(),
         crate::app::View::BuildHistory => app.build_history.footer_hints(),
-        crate::app::View::LogViewer => app.log_viewer_component.footer_hints(),
+        crate::app::View::LogViewer => app.log_viewer.footer_hints(),
     };
 
     let footer = Paragraph::new(Line::from(vec![Span::styled(hints, theme::MUTED)]));

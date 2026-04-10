@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::api::models::{BuildResult, TaskState};
 
-use super::LogViewerState;
+use super::LogViewer;
 
 /// A row in the timeline tree view — Stage, Job, Task, or Checkpoint.
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ pub enum TimelineRow {
 // Timeline tree building & queries
 // ---------------------------------------------------------------------------
 
-impl LogViewerState {
+impl LogViewer {
     /// Build the timeline tree rows from the raw timeline records.
     ///
     /// ADO timeline hierarchy: Stage → Phase → Job → Task
