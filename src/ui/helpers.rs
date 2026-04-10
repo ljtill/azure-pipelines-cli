@@ -32,7 +32,7 @@ pub fn status_label(status: BuildStatus, result: Option<BuildResult>) -> &'stati
 /// Shared status → (icon, color) mapping for build status and result.
 pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'static str, Color) {
     if status.is_in_progress() {
-        return ("⏳", Color::Yellow);
+        return ("●", Color::Yellow);
     }
     match result {
         Some(BuildResult::Succeeded) => ("✓", Color::Green),
@@ -56,7 +56,7 @@ pub fn timeline_status_icon(
         Some(BuildResult::PartiallySucceeded) => ("◐", Color::Yellow),
         Some(BuildResult::Canceled) | Some(BuildResult::Skipped) => ("⊘", Color::DarkGray),
         _ => match state {
-            Some(TaskState::InProgress) => ("⏳", Color::Yellow),
+            Some(TaskState::InProgress) => ("●", Color::Yellow),
             Some(TaskState::Completed) => ("✓", Color::Green),
             Some(TaskState::Pending) => ("○", Color::DarkGray),
             _ => ("○", Color::DarkGray),
@@ -73,9 +73,9 @@ pub fn checkpoint_status_icon(
         Some(BuildResult::Succeeded) => ("✓", Color::Green),
         Some(BuildResult::Failed) | Some(BuildResult::Canceled) => ("✗", Color::Red),
         _ => match state {
-            Some(TaskState::InProgress) | Some(TaskState::Pending) => ("⏸", Color::Magenta),
+            Some(TaskState::InProgress) | Some(TaskState::Pending) => ("◆", Color::Magenta),
             Some(TaskState::Completed) => ("✓", Color::Green),
-            _ => ("⏸", Color::Magenta),
+            _ => ("◆", Color::Magenta),
         },
     }
 }
@@ -162,14 +162,14 @@ mod tests {
     #[test]
     fn status_icon_in_progress() {
         let (icon, color) = status_icon(BuildStatus::InProgress, None);
-        assert_eq!(icon, "⏳");
+        assert_eq!(icon, "●");
         assert_eq!(color, Color::Yellow);
     }
 
     #[test]
     fn status_icon_in_progress_overrides_result() {
         let (icon, _) = status_icon(BuildStatus::InProgress, Some(BuildResult::Failed));
-        assert_eq!(icon, "⏳");
+        assert_eq!(icon, "●");
     }
 
     #[test]
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn timeline_in_progress_state() {
         let (icon, color) = timeline_status_icon(Some(TaskState::InProgress), None);
-        assert_eq!(icon, "⏳");
+        assert_eq!(icon, "●");
         assert_eq!(color, Color::Yellow);
     }
 
@@ -383,14 +383,14 @@ mod tests {
     #[test]
     fn checkpoint_pending_in_progress() {
         let (icon, color) = checkpoint_status_icon(Some(TaskState::InProgress), None);
-        assert_eq!(icon, "⏸");
+        assert_eq!(icon, "◆");
         assert_eq!(color, Color::Magenta);
     }
 
     #[test]
     fn checkpoint_pending_none() {
         let (icon, color) = checkpoint_status_icon(None, None);
-        assert_eq!(icon, "⏸");
+        assert_eq!(icon, "◆");
         assert_eq!(color, Color::Magenta);
     }
 
