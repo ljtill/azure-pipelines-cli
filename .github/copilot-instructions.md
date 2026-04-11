@@ -69,3 +69,56 @@ The codebase follows the [ratatui Component Architecture](https://ratatui.rs/con
 - **Log viewer modes.** Follow mode tracks the active task and auto-refreshes; inspect mode pins the selected task after Enter.
 - **Per-view sub-states.** `App` is decomposed into `data` (`CoreData`), `filters` (`FilterConfig`), `search` (`SearchState`), and view-specific component structs (e.g., `dashboard: Dashboard`, `pipelines: Pipelines`). Rebuild methods live on the component and take `&CoreData`/`&FilterConfig` parameters — do not add new fields directly to `App` when they belong to a specific view.
 - **Test helpers.** `src/test_helpers.rs` provides factory functions (`make_app`, `make_build`, `make_definition`, `make_config`, `make_simple_timeline`) used by both unit tests in `src/` and integration tests in `tests/`.
+
+## Code comments
+
+Every source file follows a uniform comment style. Preserve these conventions when adding or editing code.
+
+### Module docs (`//!`)
+
+Every `.rs` file starts with a `//!` module doc — a single sentence describing the module's purpose, ending with a period.
+
+```rust
+//! Shared rendering utilities for status icons, elapsed time, and text truncation.
+```
+
+### Doc comments (`///`)
+
+- Start with a **third-person present tense verb**: "Returns…", "Renders…", "Handles…", "Represents…".
+- End every doc comment (including the last line of multi-line docs) with a **period**.
+- Use sentence case.
+- Only document public items that benefit from it — do not add trivial comments to self-explanatory code.
+
+```rust
+/// Returns the compiled-in version string.
+pub fn version() -> &'static str { ... }
+
+/// Spawns an async task that fetches build definitions from the
+/// Azure DevOps REST API and sends the result as an `AppMessage`.
+pub fn spawn_fetch_definitions(...) { ... }
+```
+
+### Inline comments (`//`)
+
+- Sentence case, ending with a **period**.
+- Always include a space after `//`.
+- Explain *why*, not *what* — prefer no comment over a comment that restates the code.
+
+```rust
+// Derive active builds from recent builds instead of a separate API call.
+```
+
+### Section dividers
+
+Use the short form only:
+
+```rust
+// --- Section Name ---
+```
+
+Do **not** use full-width dividers (`// -------...`) or equals dividers (`// =======...`).
+
+### Anti-patterns
+
+- **No commented-out code.** Delete it; git keeps history.
+- **No empty doc comments.** Remove standalone `///` lines that carry no text (paragraph-separator `///` lines within multi-line docs are fine).
