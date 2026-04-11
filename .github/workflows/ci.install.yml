@@ -89,7 +89,7 @@ jobs:
 
       - name: Verify pinned version
         run: |
-          INSTALLED=$("$HOME/.local/bin/pipelines" --version 2>&1 || true)
+          INSTALLED=$("$HOME/.local/bin/pipelines" version 2>&1 || true)
           EXPECTED="${{ needs.check-release.outputs.latest_version }}"
           echo "Installed: $INSTALLED"
           echo "Expected version to contain: $EXPECTED"
@@ -154,7 +154,7 @@ jobs:
         shell: pwsh
         run: |
           $path = Join-Path $HOME '.local\bin\pipelines.exe'
-          $output = & $path --version 2>&1 | Out-String
+          $output = & $path version 2>&1 | Out-String
           $expected = "${{ needs.check-release.outputs.latest_version }}"
           Write-Host "Installed: $output"
           Write-Host "Expected version to contain: $expected"
@@ -203,7 +203,7 @@ jobs:
 
       - name: Verify older version is installed
         run: |
-          INSTALLED=$(pipelines --version 2>&1 || true)
+          INSTALLED=$(pipelines version 2>&1 || true)
           EXPECTED="${{ needs.check-release.outputs.previous_version }}"
           echo "Installed: $INSTALLED"
           echo "$INSTALLED" | grep -q "$EXPECTED"
@@ -213,7 +213,7 @@ jobs:
 
       - name: Verify updated to latest version
         run: |
-          INSTALLED=$(pipelines --version 2>&1 || true)
+          INSTALLED=$(pipelines version 2>&1 || true)
           EXPECTED="${{ needs.check-release.outputs.latest_version }}"
           echo "After update: $INSTALLED"
           echo "Expected: $EXPECTED"
@@ -260,7 +260,7 @@ jobs:
       - name: Verify older version is installed
         shell: pwsh
         run: |
-          $output = pipelines --version 2>&1 | Out-String
+          $output = pipelines version 2>&1 | Out-String
           $expected = "${{ needs.check-release.outputs.previous_version }}"
           Write-Host "Installed: $output"
           if ($output -notmatch [regex]::Escape($expected)) { throw "Version mismatch" }
@@ -272,7 +272,7 @@ jobs:
       - name: Verify updated to latest version
         shell: pwsh
         run: |
-          $output = pipelines --version 2>&1 | Out-String
+          $output = pipelines version 2>&1 | Out-String
           $expected = "${{ needs.check-release.outputs.latest_version }}"
           Write-Host "After update: $output"
           if ($output -notmatch [regex]::Escape($expected)) { throw "Version mismatch" }

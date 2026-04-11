@@ -40,7 +40,12 @@ if (-not (Test-Path $InstallDir)) {
 
 $Dest = Join-Path $InstallDir "$BinaryName.exe"
 $Temp = [System.IO.Path]::GetTempFileName()
-$ChecksumBody = (Invoke-WebRequest -Uri $ChecksumsUrl -UseBasicParsing).Content
+$RawContent = (Invoke-WebRequest -Uri $ChecksumsUrl -UseBasicParsing).Content
+$ChecksumBody = if ($RawContent -is [byte[]]) {
+    [System.Text.Encoding]::UTF8.GetString($RawContent)
+} else {
+    $RawContent
+}
 $ExpectedHash = $null
 foreach ($line in ($ChecksumBody -split "`r?`n")) {
     $parts = $line -split '\s+', 2
