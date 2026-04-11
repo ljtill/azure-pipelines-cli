@@ -11,7 +11,8 @@ $ErrorActionPreference = 'Stop'
 
 $Repo = 'ljtill/azure-pipelines-cli'
 $BinaryName = 'pipelines'
-$Artifact = "$BinaryName-windows-amd64.exe"
+$Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
+$Artifact = "$BinaryName-windows-$Arch.exe"
 
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
 
@@ -31,7 +32,7 @@ $ChecksumsUrl = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS"
 
 # --- download and install ---------------------------------------------------
 
-Write-Host "Installing $BinaryName $Tag (windows/amd64)..."
+Write-Host "Installing $BinaryName $Tag (windows/$Arch)..."
 
 if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null

@@ -217,6 +217,10 @@ jobs:
             runner: windows-latest
             artifact: pipelines-windows-amd64.exe
             cross: false
+          - target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+            artifact: pipelines-windows-arm64.exe
+            cross: false
 
     steps:
       - uses: actions/checkout@v6

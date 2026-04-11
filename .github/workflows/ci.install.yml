@@ -115,7 +115,11 @@ jobs:
     name: Install Script (Windows)
     needs: check-release
     if: needs.check-release.outputs.has_release == 'true'
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@v6
 
@@ -237,7 +241,11 @@ jobs:
     if: >-
       needs.check-release.outputs.has_release == 'true' &&
       needs.check-release.outputs.previous_version != ''
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@v6
 
