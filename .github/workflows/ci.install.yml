@@ -103,6 +103,7 @@ jobs:
       - name: Install via install.sh (custom INSTALL_DIR)
         env:
           INSTALL_DIR: ${{ runner.temp }}/custom-bin
+          GITHUB_TOKEN: ${{ github.token }}
         run: sh install.sh
 
       - name: Verify custom install dir
@@ -172,6 +173,7 @@ jobs:
         shell: pwsh
         env:
           INSTALL_DIR: ${{ runner.temp }}\custom-bin
+          GITHUB_TOKEN: ${{ github.token }}
         run: .\install.ps1
 
       - name: Verify custom install dir
