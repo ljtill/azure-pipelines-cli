@@ -67,6 +67,8 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install via install.sh (latest)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           sh install.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -125,6 +127,8 @@ jobs:
 
       - name: Install via install.ps1 (latest)
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           .\install.ps1
           "$HOME\.local\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8

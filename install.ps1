@@ -22,7 +22,11 @@ if ($env:VERSION) {
     $Version = $env:VERSION
 } else {
     Write-Host 'Fetching latest release...'
-    $Release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest"
+    $Headers = @{}
+    if ($env:GITHUB_TOKEN) {
+        $Headers['Authorization'] = "token $($env:GITHUB_TOKEN)"
+    }
+    $Release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers $Headers
     $Version = $Release.tag_name -replace '^v', ''
 }
 

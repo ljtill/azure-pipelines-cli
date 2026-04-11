@@ -76,11 +76,15 @@ ARTIFACT="${BINARY_NAME}-${os}-${arch}"
 
 if [ -z "${VERSION:-}" ]; then
   echo "Fetching latest release..."
+  AUTH_HEADER=""
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    AUTH_HEADER="Authorization: token ${GITHUB_TOKEN}"
+  fi
   if has curl; then
-    VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+    VERSION="$(curl -fsSL ${AUTH_HEADER:+-H "$AUTH_HEADER"} "https://api.github.com/repos/${REPO}/releases/latest" \
       | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')"
   elif has wget; then
-    VERSION="$(wget -qO- "https://api.github.com/repos/${REPO}/releases/latest" \
+    VERSION="$(wget -qO- ${AUTH_HEADER:+--header="$AUTH_HEADER"} "https://api.github.com/repos/${REPO}/releases/latest" \
       | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')"
   fi
   [ -z "$VERSION" ] && die "Could not determine latest version"
