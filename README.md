@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/ins
 Pin a specific version:
 
 ```sh
-VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
+VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
 ```
 
 ### Windows (PowerShell)

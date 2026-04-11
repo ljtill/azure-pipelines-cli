@@ -1,6 +1,6 @@
 [package]
 name = "azure-pipelines-cli"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "A terminal dashboard for monitoring Azure DevOps pipelines"
 repository = "https://github.com/ljtill/azure-pipelines-cli"
