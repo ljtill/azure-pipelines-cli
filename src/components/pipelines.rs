@@ -1,3 +1,5 @@
+//! Pipelines view component listing all pipeline definitions.
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -11,7 +13,7 @@ use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, InputMode};
 
-/// Pipelines flat-list component — renders all pipeline definitions with search.
+/// Renders all pipeline definitions as a flat list with search.
 #[derive(Debug, Default)]
 pub struct Pipelines {
     pub filtered: Vec<PipelineDefinition>,
@@ -52,13 +54,13 @@ impl Pipelines {
         self.nav.set_len(self.filtered.len());
     }
 
-    /// Render the pipelines view using data from the App.
+    /// Renders the pipelines view using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
         let list_area =
             split_with_search_bar(f, area, &app.search.query, app.search.mode, show_search);
 
-        // Column layout: padding(1) | name(fill) | folder(fill)
+        // Column layout: padding(1) | name(fill) | folder(fill).
         let rects = Layout::horizontal([
             Constraint::Length(1),
             Constraint::Fill(2),

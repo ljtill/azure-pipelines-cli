@@ -1,3 +1,5 @@
+//! Entry point for the Azure Pipelines CLI dashboard.
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -13,7 +15,7 @@ use azure_pipelines_cli::update;
 #[derive(Parser)]
 #[command(name = "pipelines", about = "TUI dashboard for Azure DevOps Pipelines")]
 struct Cli {
-    /// Path to config file
+    /// Path to the config file.
     #[arg(short, long, global = true)]
     config: Option<PathBuf>,
 
@@ -23,13 +25,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Update to the latest release from GitHub
+    /// Updates to the latest release from GitHub.
     Update,
-    /// Print the current version
+    /// Prints the current version.
     Version,
 }
 
-/// RAII guard that disables mouse capture and restores the terminal on drop.
+/// Provides an RAII guard that disables mouse capture and restores the terminal on drop.
 /// Terminal setup (raw mode, alternate screen, panic hook) is handled by
 /// `ratatui::init()` — this guard only adds mouse capture cleanup.
 struct MouseGuard;
@@ -45,7 +47,7 @@ impl Drop for MouseGuard {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Handle subcommands that don't need the TUI
+    // Handles subcommands that don't need the TUI.
     if let Some(Command::Update) = cli.command {
         return run_update().await;
     }
@@ -57,7 +59,7 @@ async fn main() -> Result<()> {
     // Pre-TUI checks: ensure Azure CLI or Developer CLI is available.
     check_azure_cli()?;
 
-    // Resolve config path and load early (if it exists) so the log level
+    // Resolves config path and loads early (if it exists) so the log level
     // is available before tracing initializes.
     let (config_path, config_exists) = Config::resolve_path(cli.config.as_ref())?;
     let early_config = if config_exists {
@@ -66,7 +68,7 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Initialize tracing with file-based output (avoids polluting the TUI).
+    // Initializes tracing with file-based output (avoids polluting the TUI).
     // Uses the configured level as default; RUST_LOG env var overrides.
     let log_level = early_config
         .as_ref()
@@ -159,7 +161,7 @@ async fn run_update() -> Result<()> {
     }
 }
 
-/// Initialize tracing to log to a rolling daily file.
+/// Initializes tracing to log to a rolling daily file.
 /// Uses the given level as default; `RUST_LOG` env var overrides if set.
 /// Logs go to `log_dir_override` if set, otherwise `~/.local/state/pipelines/`.
 /// Retains up to `max_log_files` daily log files.

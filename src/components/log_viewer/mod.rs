@@ -1,3 +1,5 @@
+//! Log viewer component for inspecting build stage, job, and task output.
+
 mod follow;
 mod state;
 mod timeline;
@@ -17,7 +19,7 @@ use crate::render::helpers::{checkpoint_status_icon, timeline_status_icon};
 use crate::render::theme;
 use crate::state::App;
 
-/// Draw the log viewer. This is a free function rather than a method on `LogViewer`
+/// Draws the log viewer. This is a free function rather than a method on `LogViewer`
 /// because it needs `&mut App` (for `set_layout_areas` mouse hit-testing state)
 /// while the component is itself a field of `App`.
 pub fn draw_log_viewer(f: &mut Frame, app: &mut App, area: Rect) {
@@ -243,11 +245,9 @@ mod tests {
     use crate::state::View;
     use crate::test_helpers::{make_build, make_timeline_record};
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
+    // --- Helpers ---
 
-    /// Create a timeline record with an optional log ID.
+    /// Creates a timeline record with an optional log ID.
     /// Wraps the shared make_timeline_record and adds the log field.
     #[allow(clippy::too_many_arguments)]
     fn make_record(
@@ -269,7 +269,7 @@ mod tests {
         make_build(1, status, result)
     }
 
-    /// Build a simple timeline: 1 stage -> 1 phase -> N tasks.
+    /// Builds a simple timeline: 1 stage -> 1 phase -> N tasks.
     fn simple_timeline(
         tasks: Vec<(&str, Option<TaskState>, Option<BuildResult>, u32)>,
     ) -> BuildTimeline {
@@ -310,7 +310,7 @@ mod tests {
         BuildTimeline { records }
     }
 
-    /// Create a LogViewer with a build, set timeline, and expand all nodes.
+    /// Creates a LogViewer with a build, sets timeline, and expands all nodes.
     fn state_with_expanded_timeline(
         build_status: BuildStatus,
         build_result: Option<BuildResult>,
@@ -332,9 +332,7 @@ mod tests {
         state
     }
 
-    // =======================================================================
-    // Group 1: State API tests
-    // =======================================================================
+    // --- Group 1: State API tests ---
 
     #[test]
     fn default_state_is_empty() {
@@ -420,9 +418,7 @@ mod tests {
         assert_eq!(state.generation(), 99);
     }
 
-    // =======================================================================
-    // Group 2: Timeline tree building tests
-    // =======================================================================
+    // --- Group 2: Timeline tree building tests ---
 
     #[test]
     fn rebuild_timeline_basic_structure() {
@@ -439,7 +435,7 @@ mod tests {
         let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
 
-        // First rebuild pre-collapses all stages
+        // First rebuild pre-collapses all stages.
         state.rebuild_timeline_rows();
         assert_eq!(state.timeline_rows().len(), 1);
         assert!(matches!(
@@ -450,7 +446,7 @@ mod tests {
             }
         ));
 
-        // Expand stage and job
+        // Expand stage and job.
         state.expand_stage("s1");
         state.expand_job("p1");
         state.rebuild_timeline_rows();
@@ -658,7 +654,7 @@ mod tests {
             Some(BuildResult::Succeeded),
             timeline,
         );
-        // Rows: [Stage(0), Job(1), TaskA(2), TaskB(3), Stage(4), Job(5), TaskC(6), TaskD(7)]
+        // Rows: [Stage(0), Job(1), TaskA(2), TaskB(3), Stage(4), Job(5), TaskC(6), TaskD(7)].
         assert_eq!(state.find_timeline_parent_index(5), Some(4));
     }
 
@@ -708,9 +704,7 @@ mod tests {
         assert!(state.nav().index() < state.nav().len());
     }
 
-    // =======================================================================
-    // Group 3: Build status from timeline
-    // =======================================================================
+    // --- Group 3: Build status from timeline ---
 
     #[test]
     fn refresh_status_all_succeeded() {
@@ -885,9 +879,7 @@ mod tests {
         assert!(b.result.is_none());
     }
 
-    // =======================================================================
-    // Group 4: Auto-select and find_active_task
-    // =======================================================================
+    // --- Group 4: Auto-select and find_active_task ---
 
     #[test]
     fn auto_select_picks_in_progress_task_for_running_build() {
@@ -973,9 +965,7 @@ mod tests {
         assert!(state.find_active_task().is_none());
     }
 
-    // =======================================================================
-    // Group 5: Checkpoint tests
-    // =======================================================================
+    // --- Group 5: Checkpoint tests ---
 
     #[test]
     fn rebuild_timeline_includes_checkpoints() {
@@ -1118,16 +1108,14 @@ mod tests {
         );
     }
 
-    // =======================================================================
-    // Regression: find_timeline_parent_index with large timelines
-    // =======================================================================
+    // --- Regression: find_timeline_parent_index with large timelines ---
 
     #[test]
     fn find_timeline_parent_index_large_timeline() {
         // 2 stages × 2 jobs × 3 tasks = 14 rows when fully expanded.
         let timeline = BuildTimeline {
             records: vec![
-                // Stage 1
+                // Stage 1.
                 make_record(
                     "s1",
                     None,
@@ -1218,7 +1206,7 @@ mod tests {
                     Some(BuildResult::Succeeded),
                     Some(15),
                 ),
-                // Stage 2
+                // Stage 2.
                 make_record(
                     "s2",
                     None,
@@ -1278,7 +1266,7 @@ mod tests {
             timeline,
         );
 
-        // Expected expanded layout:
+        // Expected expanded layout.
         //  0: Stage "s1"
         //  1:   Job "p1"
         //  2:     Task "t1"  (parent_job_id = "p1")

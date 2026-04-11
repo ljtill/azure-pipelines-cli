@@ -1,10 +1,14 @@
+//! URL builders for Azure DevOps web portal links.
+
 use super::Endpoints;
 
 impl Endpoints {
+    /// Constructs the web portal URL for viewing a build result.
     pub fn web_build(&self, build_id: u32) -> String {
         format!("{}/_build/results?buildId={}", self.web_base_url, build_id)
     }
 
+    /// Constructs the web portal URL for viewing a build definition.
     pub fn web_definition(&self, definition_id: u32) -> String {
         format!(
             "{}/_build?definitionId={}",

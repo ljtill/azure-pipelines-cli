@@ -1,9 +1,12 @@
+//! Azure DevOps pipeline definition model types.
+
 use serde::Deserialize;
 
 use super::builds::Build;
 
 // --- Pipeline Definitions ---
 
+/// Represents an Azure DevOps pipeline definition.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PipelineDefinition {
     pub id: u32,
@@ -13,7 +16,7 @@ pub struct PipelineDefinition {
     #[allow(dead_code)]
     #[serde(rename = "queueStatus")]
     pub queue_status: Option<String>,
-    /// Latest build for this definition, populated when `includeLatestBuilds=true`.
+    /// Contains the latest build, populated when `includeLatestBuilds=true`.
     #[serde(rename = "latestBuild")]
     pub latest_build: Option<Box<Build>>,
 }

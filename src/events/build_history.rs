@@ -1,12 +1,15 @@
+//! Event handling for the build history view.
+
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
 use crate::state::App;
 
+/// Handles key events specific to the build history view.
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
-        // Multi-select toggle for lease deletion
+        // Multi-select toggle for lease deletion.
         KeyCode::Char(' ') => {
             app.build_history.toggle_selected_at_cursor();
             Action::None
@@ -15,7 +18,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('d') => navigation::handle_delete_build_leases_request(app),
         KeyCode::Char('Q') => navigation::handle_queue_request(app),
         KeyCode::Down => {
-            // Load more builds when scrolling past the bottom
+            // Load more builds when scrolling past the bottom.
             if app.build_history.nav.is_at_bottom()
                 && app.build_history.has_more
                 && !app.build_history.loading_more
@@ -35,7 +38,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::End => {
             app.current_nav_mut().end();
-            // Load more builds when jumping to end
+            // Load more builds when jumping to end.
             if app.build_history.nav.is_at_bottom()
                 && app.build_history.has_more
                 && !app.build_history.loading_more
@@ -63,6 +66,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
+/// Handles the Enter key on build history, drilling into the log viewer.
 fn handle_enter_build_history(app: &mut App) -> Action {
     if let Some(build) = app
         .build_history

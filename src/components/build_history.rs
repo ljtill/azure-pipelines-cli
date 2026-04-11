@@ -1,3 +1,5 @@
+//! Build history view component displaying past build results.
+
 use std::collections::HashSet;
 
 use anyhow::Result;
@@ -16,28 +18,28 @@ use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, View};
 
-/// Build History component — renders builds for a selected pipeline definition.
+/// Renders builds for a selected pipeline definition.
 #[derive(Debug, Default)]
 pub struct BuildHistory {
     pub selected_definition: Option<PipelineDefinition>,
     pub builds: Vec<Build>,
     pub nav: ListNav,
-    /// Build IDs selected for batch lease deletion.
+    /// Holds build IDs selected for batch lease deletion.
     pub selected: HashSet<u32>,
-    /// The view to return to when pressing Esc/back from Build History.
+    /// Stores the view to return to when pressing Esc/back from Build History.
     pub return_to: Option<View>,
-    /// Whether more builds may be available beyond what's loaded.
+    /// Indicates whether more builds may be available beyond what's loaded.
     pub has_more: bool,
-    /// Whether a "load more" request is currently in flight.
+    /// Indicates whether a "load more" request is currently in flight.
     pub loading_more: bool,
-    /// ADO continuation token for fetching the next page.
+    /// Holds the ADO continuation token for fetching the next page.
     pub continuation_token: Option<String>,
-    /// Stashed nav index to restore after a refresh (e.g. post-lease-deletion).
+    /// Stores a stashed nav index to restore after a refresh (e.g. post-lease-deletion).
     pub pending_nav_index: Option<usize>,
 }
 
 impl BuildHistory {
-    /// Toggle selection state for the build at the current nav index.
+    /// Toggles selection state for the build at the current nav index.
     pub fn toggle_selected_at_cursor(&mut self) {
         if let Some(build) = self.builds.get(self.nav.index()) {
             let id = build.id;
@@ -49,8 +51,8 @@ impl BuildHistory {
 
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let chunks = Layout::vertical([
-            Constraint::Length(2), // pipeline name header
-            Constraint::Min(0),    // builds list
+            Constraint::Length(2), // Pipeline name header.
+            Constraint::Min(0),    // Builds list.
         ])
         .split(area);
 

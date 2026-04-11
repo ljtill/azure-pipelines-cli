@@ -1,3 +1,9 @@
+//! Bearer token authentication via Azure CLI credentials.
+//!
+//! Uses `DeveloperToolsCredential` (Azure CLI / Azure Developer CLI chain) to
+//! obtain OAuth bearer tokens for the Azure DevOps resource. Tokens are cached
+//! in memory and refreshed automatically before they expire.
+
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -7,14 +13,16 @@ use tokio::sync::RwLock;
 
 const ADO_RESOURCE: &str = "499b84ac-1321-427f-aa17-267ca6975798";
 
-/// Margin before actual expiry to trigger a refresh, avoiding edge-case failures.
+/// Specifies the margin before actual expiry to trigger a refresh, avoiding edge-case failures.
 const EXPIRY_MARGIN: std::time::Duration = std::time::Duration::from_secs(120);
 
+/// Holds a cached bearer token alongside its computed expiry instant.
 struct CachedToken {
     secret: String,
     expires_on: std::time::Instant,
 }
 
+/// Provides Azure DevOps bearer token authentication with in-memory caching.
 #[derive(Clone)]
 pub struct AdoAuth {
     credential: Arc<dyn TokenCredential>,
@@ -22,6 +30,7 @@ pub struct AdoAuth {
 }
 
 impl AdoAuth {
+    /// Creates a new authenticator backed by `DeveloperToolsCredential`.
     pub async fn new() -> Result<Self> {
         let credential: Arc<dyn TokenCredential> = DeveloperToolsCredential::new(None)?;
         Ok(Self {
@@ -30,8 +39,9 @@ impl AdoAuth {
         })
     }
 
+    /// Returns a valid bearer token, refreshing from the credential chain if the cache is stale.
     pub async fn token(&self) -> Result<String> {
-        // Fast path: check cached token under read lock
+        // Fast path: check cached token under read lock.
         {
             let cache = self.cache.read().await;
             if let Some(cached) = cache.as_ref()
@@ -42,9 +52,9 @@ impl AdoAuth {
             }
         }
 
-        // Slow path: refresh token under write lock
+        // Slow path: refresh token under write lock.
         let mut cache = self.cache.write().await;
-        // Double-check: another task may have refreshed while we waited for the lock
+        // Double-check: another task may have refreshed while we waited for the lock.
         if let Some(cached) = cache.as_ref()
             && cached.expires_on > std::time::Instant::now()
         {
@@ -74,8 +84,9 @@ impl AdoAuth {
             tracing::debug!(expires_in_secs = effective_secs, "auth token refreshed");
             std::time::Instant::now() + std::time::Duration::from_secs(effective_secs)
         } else {
+            // Already near expiry; will refresh on the next call.
             tracing::debug!("auth token near expiry, will refresh next call");
-            std::time::Instant::now() // Already near expiry → will refresh next call
+            std::time::Instant::now()
         };
 
         *cache = Some(CachedToken {

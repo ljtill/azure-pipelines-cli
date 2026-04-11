@@ -1,3 +1,5 @@
+//! Shared rendering utilities for status icons, elapsed time, and text truncation.
+
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
@@ -8,7 +10,7 @@ use super::theme;
 use crate::client::models::{Build, BuildResult, BuildStatus, TaskState};
 use crate::state::InputMode;
 
-/// Short human-readable label for a build's combined status and result.
+/// Returns a short human-readable label for a build's combined status and result.
 pub fn status_label(status: BuildStatus, result: Option<BuildResult>) -> &'static str {
     if status.is_in_progress() {
         return "Running";
@@ -29,7 +31,7 @@ pub fn status_label(status: BuildStatus, result: Option<BuildResult>) -> &'stati
     }
 }
 
-/// Shared status → (icon, color) mapping for build status and result.
+/// Returns the status icon and color for a build's status and result.
 pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'static str, Color) {
     if status.is_in_progress() {
         return ("●", Color::Yellow);
@@ -44,7 +46,7 @@ pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'stati
     }
 }
 
-/// Like `status_icon`, but shows "awaiting approval" for in-progress builds
+/// Returns the effective status icon, showing "awaiting approval" for in-progress builds
 /// that have a pending approval gate.
 pub fn effective_status_icon(
     status: BuildStatus,
@@ -57,7 +59,7 @@ pub fn effective_status_icon(
     status_icon(status, result)
 }
 
-/// Like `status_label`, but returns "Awaiting" for in-progress builds
+/// Returns the effective status label, using "Awaiting" for in-progress builds
 /// that have a pending approval gate.
 pub fn effective_status_label(
     status: BuildStatus,
@@ -70,7 +72,7 @@ pub fn effective_status_label(
     status_label(status, result)
 }
 
-/// Status icon for timeline records (stage/job/task) where state and result
+/// Returns the status icon for timeline records (stage/job/task) where state and result
 /// are separate optional fields.
 pub fn timeline_status_icon(
     state: Option<TaskState>,
@@ -90,7 +92,7 @@ pub fn timeline_status_icon(
     }
 }
 
-/// Status icon for checkpoint (approval) records.
+/// Returns the status icon for checkpoint (approval) records.
 pub fn checkpoint_status_icon(
     state: Option<TaskState>,
     result: Option<BuildResult>,
@@ -106,7 +108,7 @@ pub fn checkpoint_status_icon(
     }
 }
 
-/// Format a build's elapsed time or "ago" string.
+/// Formats a build's elapsed time or "ago" string.
 pub fn build_elapsed(build: &Build) -> String {
     use chrono::Utc;
 
@@ -141,7 +143,7 @@ pub fn build_elapsed(build: &Build) -> String {
     String::new()
 }
 
-/// Render a search/filter bar. Call only when the search bar should be visible.
+/// Renders a search/filter bar. Call only when the search bar should be visible.
 pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: InputMode) {
     let search = Paragraph::new(Line::from(vec![
         Span::styled(" / ", theme::SEARCH_PROMPT),
@@ -160,7 +162,7 @@ pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: Input
     f.render_widget(search, area);
 }
 
-/// Truncate a string to at most `max_len` characters, safe for multi-byte UTF-8.
+/// Truncates a string to at most `max_len` characters, safe for multi-byte UTF-8.
 /// Appends `…` when the text is clipped so the user knows content was cut.
 pub fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
@@ -179,7 +181,7 @@ pub fn truncate(s: &str, max_len: usize) -> String {
     result
 }
 
-/// Center a popup overlay within the given area using percentage-based sizing.
+/// Centers a popup overlay within the given area using percentage-based sizing.
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::vertical([
         Constraint::Percentage((100 - percent_y) / 2),
@@ -196,7 +198,7 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     .split(popup_layout[1])[1]
 }
 
-/// Return SELECTED style if the row is at the nav cursor, otherwise default.
+/// Returns the SELECTED style if the row is at the nav cursor, otherwise default.
 pub fn row_style(is_selected: bool) -> Style {
     if is_selected {
         theme::SELECTED
@@ -205,7 +207,7 @@ pub fn row_style(is_selected: bool) -> Style {
     }
 }
 
-/// Split an area with an optional search bar at the top. Returns the list area.
+/// Splits an area with an optional search bar at the top. Returns the list area.
 /// Renders the search bar if visible.
 pub fn split_with_search_bar(
     f: &mut Frame,
@@ -305,7 +307,7 @@ mod tests {
 
     #[test]
     fn truncate_multibyte_safe() {
-        // "café" = 5 bytes (é = 2 bytes), truncate at 4 should not split é
+        // "café" = 5 bytes (é = 2 bytes), truncate at 4 should not split é.
         let result = truncate("café", 4);
         assert_eq!(result, "caf…");
     }

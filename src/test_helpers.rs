@@ -1,3 +1,5 @@
+//! Factory functions for building test fixtures used by unit and integration tests.
+
 use std::path::PathBuf;
 
 use crate::client::models::*;
@@ -7,6 +9,7 @@ use crate::config::{
 };
 use crate::state::App;
 
+/// Creates a [`Build`] with the given id, status, and optional result.
 pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
     Build {
         id,
@@ -27,6 +30,7 @@ pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> 
     }
 }
 
+/// Creates a [`PipelineDefinition`] with the given id, name, and folder path.
 pub fn make_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
     PipelineDefinition {
         id,
@@ -37,6 +41,7 @@ pub fn make_definition(id: u32, name: &str, path: &str) -> PipelineDefinition {
     }
 }
 
+/// Creates a [`TimelineRecord`] with the given properties.
 pub fn make_timeline_record(
     id: &str,
     record_type: &str,
@@ -59,13 +64,14 @@ pub fn make_timeline_record(
     }
 }
 
+/// Creates a two-stage [`BuildTimeline`] (Build → Deploy) with phases and tasks.
 pub fn make_simple_timeline() -> BuildTimeline {
     let completed = Some(TaskState::Completed);
     let succeeded = Some(BuildResult::Succeeded);
 
     let mut records = Vec::new();
 
-    // Stage: Build
+    // Stage: Build.
     records.push(make_timeline_record(
         "stage-build",
         "Stage",
@@ -76,7 +82,7 @@ pub fn make_simple_timeline() -> BuildTimeline {
         succeeded,
     ));
 
-    // Phase under Build
+    // Phase under Build.
     records.push(make_timeline_record(
         "phase-build",
         "Phase",
@@ -87,7 +93,7 @@ pub fn make_simple_timeline() -> BuildTimeline {
         succeeded,
     ));
 
-    // Tasks under Build phase
+    // Tasks under Build phase.
     let mut task1 = make_timeline_record(
         "task-build-1",
         "Task",
@@ -112,7 +118,7 @@ pub fn make_simple_timeline() -> BuildTimeline {
     task2.log = Some(LogReference { id: 11 });
     records.push(task2);
 
-    // Stage: Deploy
+    // Stage: Deploy.
     records.push(make_timeline_record(
         "stage-deploy",
         "Stage",
@@ -123,7 +129,7 @@ pub fn make_simple_timeline() -> BuildTimeline {
         succeeded,
     ));
 
-    // Phase under Deploy
+    // Phase under Deploy.
     records.push(make_timeline_record(
         "phase-deploy",
         "Phase",
@@ -134,7 +140,7 @@ pub fn make_simple_timeline() -> BuildTimeline {
         succeeded,
     ));
 
-    // Tasks under Deploy phase
+    // Tasks under Deploy phase.
     let mut task3 = make_timeline_record(
         "task-deploy-1",
         "Task",
@@ -162,6 +168,7 @@ pub fn make_simple_timeline() -> BuildTimeline {
     BuildTimeline { records }
 }
 
+/// Creates a minimal [`Config`] with default test values.
 pub fn make_config() -> Config {
     Config {
         azure_devops: AzureDevOpsConfig {
@@ -176,6 +183,7 @@ pub fn make_config() -> Config {
     }
 }
 
+/// Creates a fully populated [`App`] with definitions, builds, and rebuilt views.
 pub fn make_app() -> App {
     let config = make_config();
     let mut app = App::new(
@@ -185,13 +193,13 @@ pub fn make_app() -> App {
         PathBuf::from("/tmp/test-config.toml"),
     );
 
-    // 3 definitions across two folders
+    // Creates 3 definitions across two folders.
     let def1 = make_definition(1, "CI Pipeline", "\\");
     let def2 = make_definition(2, "Deploy Pipeline", "\\Infra");
     let def3 = make_definition(3, "Infra Lint", "\\Infra");
     app.data.definitions = vec![def1.clone(), def2.clone(), def3.clone()];
 
-    // 3 recent builds, one per definition
+    // Creates 3 recent builds, one per definition.
     let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
     b1.definition = BuildDefinitionRef {
         id: 1,

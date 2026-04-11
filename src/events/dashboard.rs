@@ -1,9 +1,12 @@
+//! Event handling for the dashboard view.
+
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
 use crate::state::App;
 
+/// Handles key events specific to the dashboard view.
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Left => {
@@ -56,6 +59,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
+/// Handles the Enter key on the dashboard, toggling folders or drilling into pipelines.
 fn handle_enter_dashboard(app: &mut App) -> Action {
     if let Some(row) = app.dashboard.rows.get(app.dashboard.nav.index()) {
         match row {

@@ -1,3 +1,5 @@
+//! Dispatches user actions to state mutations and async tasks.
+
 use std::time::Instant;
 
 use tokio::sync::mpsc;
@@ -73,7 +75,7 @@ pub fn handle_action(
             spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
         }
         Action::FollowLatest => {
-            // Switch to follow mode: jump cursor to active task and fetch its log
+            // Switch to follow mode: jump cursor to active task and fetch its log.
             if let Some((idx, log_id)) = app.log_viewer.auto_select_log_entry() {
                 if let Some(TimelineRow::Task { name, .. }) =
                     app.log_viewer.timeline_rows().get(idx)

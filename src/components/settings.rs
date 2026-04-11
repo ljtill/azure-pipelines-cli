@@ -1,3 +1,5 @@
+//! Settings overlay component for runtime configuration.
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -9,11 +11,11 @@ use crate::render::helpers::centered_rect;
 use crate::render::theme;
 use crate::state::settings::{FieldKind, SettingsState};
 
-/// Settings overlay component — renders the config editor overlay.
+/// Renders the config editor overlay.
 pub struct Settings;
 
 impl Settings {
-    /// Render the settings overlay for a given settings state.
+    /// Renders the settings overlay for a given settings state.
     pub fn draw_with_state(&self, f: &mut Frame, settings: &SettingsState) {
         let area = centered_rect(60, 70, f.area());
 

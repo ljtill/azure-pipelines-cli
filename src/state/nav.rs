@@ -1,4 +1,6 @@
-/// Reusable navigation state for a scrollable list.
+//! Reusable list-navigation state shared across views.
+
+/// Stores reusable navigation state for a scrollable list.
 #[derive(Debug, Default)]
 pub struct ListNav {
     index: usize,
@@ -20,7 +22,7 @@ impl ListNav {
         self.len == 0
     }
 
-    /// Update the list length and clamp the index.
+    /// Updates the list length and clamps the index.
     pub fn set_len(&mut self, len: usize) {
         self.len = len;
         self.clamp();
@@ -51,7 +53,7 @@ impl ListNav {
         }
     }
 
-    /// Whether the cursor is on the last item in the list.
+    /// Returns whether the cursor is on the last item in the list.
     pub fn is_at_bottom(&self) -> bool {
         self.len > 0 && self.index == self.len - 1
     }

@@ -1,3 +1,5 @@
+//! Action dispatch and async message handling.
+
 mod dispatch;
 mod messages;
 mod spawn;

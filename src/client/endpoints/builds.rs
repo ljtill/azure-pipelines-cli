@@ -1,6 +1,9 @@
+//! URL builders for the Azure DevOps builds API.
+
 use super::{API_VERSION, Endpoints, TOP_BUILDS, TOP_DEFINITION_BUILDS};
 
 impl Endpoints {
+    /// Constructs the URL for fetching recent builds across all definitions.
     pub fn builds_recent(&self) -> String {
         format!(
             "{}/build/builds?api-version={API_VERSION}&$top={TOP_BUILDS}&queryOrder=queueTimeDescending",
@@ -8,6 +11,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for fetching recent builds for a specific definition.
     pub fn builds_for_definition(&self, definition_id: u32) -> String {
         format!(
             "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={TOP_DEFINITION_BUILDS}&queryOrder=queueTimeDescending",
@@ -15,6 +19,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for fetching builds for a definition with a custom page size.
     pub fn builds_for_definition_with_top(&self, definition_id: u32, top: u32) -> String {
         format!(
             "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={top}&queryOrder=queueTimeDescending",
@@ -22,6 +27,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for fetching a single build by ID.
     pub fn build(&self, build_id: u32) -> String {
         format!(
             "{}/build/builds/{build_id}?api-version={API_VERSION}",
@@ -29,6 +35,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for fetching a build's timeline records.
     pub fn build_timeline(&self, build_id: u32) -> String {
         format!(
             "{}/build/builds/{build_id}/timeline?api-version={API_VERSION}",
@@ -36,6 +43,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for fetching a specific build log by log ID.
     pub fn build_log(&self, build_id: u32, log_id: u32) -> String {
         format!(
             "{}/build/builds/{build_id}/logs/{log_id}?api-version={API_VERSION}",
@@ -43,6 +51,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for updating a build stage by reference name.
     pub fn build_stage(&self, build_id: u32, stage_ref_name: &str) -> String {
         let stage_ref_name = super::encode_path_segment(stage_ref_name);
         format!(
@@ -51,6 +60,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for creating a new run of a pipeline.
     pub fn pipeline_runs(&self, pipeline_id: u32) -> String {
         format!(
             "{}/pipelines/{pipeline_id}/runs?api-version={API_VERSION}",

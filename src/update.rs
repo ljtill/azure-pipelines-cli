@@ -1,3 +1,5 @@
+//! Self-update mechanism that downloads new releases from GitHub.
+
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
@@ -7,15 +9,15 @@ const GITHUB_API_BASE: &str = "https://api.github.com/repos";
 const GITHUB_DOWNLOAD_BASE: &str = "https://github.com";
 const CHECKSUMS_FILE_NAME: &str = "SHA256SUMS";
 
-/// Number of old versions to keep when pruning.
+/// Defines the number of old versions to keep when pruning.
 const VERSIONS_TO_KEEP: usize = 3;
 
-/// Return the compiled-in version from `Cargo.toml`.
+/// Returns the compiled-in version from `Cargo.toml`.
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-/// Return `true` if `remote` is strictly newer than `current` (semver comparison).
+/// Returns `true` if `remote` is strictly newer than `current` (semver comparison).
 pub fn is_newer(remote: &str, current: &str) -> bool {
     let parse = |s: &str| -> Option<(u64, u64, u64)> {
         let s = s.strip_prefix('v').unwrap_or(s);
@@ -32,7 +34,7 @@ pub fn is_newer(remote: &str, current: &str) -> bool {
     }
 }
 
-/// Return the expected GitHub Release artifact name for the current platform.
+/// Returns the expected GitHub Release artifact name for the current platform.
 pub fn platform_artifact_name() -> Result<String> {
     let os = if cfg!(target_os = "linux") {
         "linux"
@@ -169,7 +171,7 @@ fn verify_sha256(path: &std::path::Path, expected: &str) -> Result<()> {
     }
 }
 
-/// Directory where versioned binaries are stored.
+/// Returns the directory where versioned binaries are stored.
 pub fn versions_dir() -> Result<PathBuf> {
     let data_dir = dirs::home_dir()
         .context("Could not determine home directory")?
@@ -177,7 +179,7 @@ pub fn versions_dir() -> Result<PathBuf> {
     Ok(data_dir)
 }
 
-/// Path where the symlink lives.
+/// Returns the path where the symlink lives.
 pub fn symlink_path() -> Result<PathBuf> {
     let bin_dir = dirs::home_dir()
         .context("Could not determine home directory")?
@@ -192,7 +194,7 @@ pub fn symlink_path() -> Result<PathBuf> {
     Ok(bin_dir.join(name))
 }
 
-/// Check GitHub Releases for a newer version.
+/// Checks GitHub Releases for a newer version.
 ///
 /// Returns `Some(version_string)` if a newer version exists, `None` otherwise.
 /// Swallows all errors — this must never fail the app.
@@ -216,7 +218,7 @@ async fn check_for_update_inner() -> Result<Option<String>> {
     }
 }
 
-/// Fetch the latest release version string from GitHub.
+/// Fetches the latest release version string from GitHub.
 async fn fetch_latest_version() -> Result<String> {
     let url = format!("{GITHUB_API_BASE}/{GITHUB_REPO}/releases/latest");
     tracing::debug!(url = &*url, "fetching latest version from GitHub");
@@ -237,19 +239,19 @@ async fn fetch_latest_version() -> Result<String> {
         .as_str()
         .context("Missing tag_name in release response")?;
 
-    // Strip leading 'v' if present
+    // Strips leading 'v' if present.
     let version = tag.strip_prefix('v').unwrap_or(tag);
     tracing::debug!(version, "parsed latest version");
     Ok(version.to_string())
 }
 
-/// Result of a successful self-update.
+/// Represents the result of a successful self-update.
 pub struct UpdateResult {
     pub version: String,
     pub path: PathBuf,
 }
 
-/// Download the latest release, install to versioned directory, update symlink, prune old versions.
+/// Downloads the latest release, installs to the versioned directory, updates the symlink, and prunes old versions.
 pub async fn self_update() -> Result<UpdateResult> {
     let latest = fetch_latest_version().await?;
 
@@ -268,7 +270,7 @@ pub async fn self_update() -> Result<UpdateResult> {
         "starting self-update"
     );
 
-    // Prepare version directory
+    // Prepares the version directory.
     let version_dir = versions_dir()?.join(&latest);
     std::fs::create_dir_all(&version_dir)
         .with_context(|| format!("Failed to create directory: {}", version_dir.display()))?;
@@ -281,7 +283,7 @@ pub async fn self_update() -> Result<UpdateResult> {
     let binary_path = version_dir.join(binary_name);
     let temp_path = version_dir.join(format!("{binary_name}.download"));
 
-    // Download
+    // Downloads the binary.
     tracing::info!(url = &*download_url, "downloading binary");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
@@ -323,7 +325,7 @@ pub async fn self_update() -> Result<UpdateResult> {
     }
     tracing::debug!("SHA256 verification passed");
 
-    // Set executable permission (Unix)
+    // Sets executable permission (Unix).
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -338,11 +340,11 @@ pub async fn self_update() -> Result<UpdateResult> {
         .with_context(|| format!("Failed to install binary to {}", binary_path.display()))?;
     tracing::info!(path = %binary_path.display(), "binary installed");
 
-    // Update symlink
+    // Updates the symlink.
     update_symlink(&binary_path)?;
     tracing::debug!(target = %binary_path.display(), "symlink updated");
 
-    // Prune old versions
+    // Prunes old versions.
     if let Err(e) = prune_old_versions(VERSIONS_TO_KEEP) {
         tracing::warn!(error = %e, "failed to prune old versions");
     }
@@ -353,22 +355,22 @@ pub async fn self_update() -> Result<UpdateResult> {
     })
 }
 
-/// Remove the existing symlink (if any) and create a new one pointing to `target`.
+/// Removes the existing symlink (if any) and creates a new one pointing to `target`.
 /// Uses atomic replacement via a temporary symlink to avoid TOCTOU races.
 fn update_symlink(target: &std::path::Path) -> Result<()> {
     let link = symlink_path()?;
 
-    // Ensure parent directory exists
+    // Ensures the parent directory exists.
     if let Some(parent) = link.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     let tmp_link = link.with_extension("tmp");
 
-    // Clean up any stale temp symlink
+    // Cleans up any stale temp symlink.
     let _ = std::fs::remove_file(&tmp_link);
 
-    // Create symlink at temp path, then atomically rename over the real path
+    // Creates symlink at temp path, then atomically renames over the real path.
     #[cfg(unix)]
     std::os::unix::fs::symlink(target, &tmp_link)
         .with_context(|| format!("Failed to create temp symlink at {}", tmp_link.display()))?;
@@ -378,7 +380,7 @@ fn update_symlink(target: &std::path::Path) -> Result<()> {
         .with_context(|| format!("Failed to create temp symlink at {}", tmp_link.display()))?;
 
     std::fs::rename(&tmp_link, &link).with_context(|| {
-        // Clean up temp symlink on rename failure
+        // Cleans up temp symlink on rename failure.
         let _ = std::fs::remove_file(&tmp_link);
         format!("Failed to rename symlink to {}", link.display())
     })?;
@@ -386,7 +388,7 @@ fn update_symlink(target: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Keep the `keep` most recent versions, delete the rest.
+/// Keeps the `keep` most recent versions and deletes the rest.
 fn prune_old_versions(keep: usize) -> Result<()> {
     let base = versions_dir()?;
     if !base.exists() {
@@ -404,7 +406,7 @@ fn prune_old_versions(keep: usize) -> Result<()> {
         }
     }
 
-    // Sort by semver descending (newest first)
+    // Sorts by semver descending (newest first).
     versions.sort_by(|(a, _), (b, _)| {
         let parse = |s: &str| -> (u64, u64, u64) {
             let mut parts = s.splitn(3, '.');
@@ -416,7 +418,7 @@ fn prune_old_versions(keep: usize) -> Result<()> {
         parse(b).cmp(&parse(a))
     });
 
-    // Delete everything beyond `keep`
+    // Deletes everything beyond `keep`.
     for (_, path) in versions.into_iter().skip(keep) {
         tracing::info!(path = %path.display(), "pruning old version");
         if let Err(e) = std::fs::remove_dir_all(&path) {
@@ -458,7 +460,7 @@ mod tests {
 
     #[test]
     fn is_newer_with_prerelease() {
-        // Pre-release suffix is stripped — "0.2.0-beta" compares as "0.2.0"
+        // Pre-release suffix is stripped — "0.2.0-beta" compares as "0.2.0".
         assert!(is_newer("0.2.0-beta", "0.1.0"));
         assert!(!is_newer("0.1.0-beta", "0.1.0"));
     }
@@ -474,7 +476,7 @@ mod tests {
     fn current_version_is_set() {
         let v = current_version();
         assert!(!v.is_empty());
-        // Should be parseable as semver
+        // Should be parseable as semver.
         let parts: Vec<&str> = v.split('.').collect();
         assert_eq!(parts.len(), 3);
     }

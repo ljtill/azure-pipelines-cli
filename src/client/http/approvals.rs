@@ -1,3 +1,5 @@
+//! HTTP client methods for Azure DevOps pipeline approval operations.
+
 use std::time::Instant;
 
 use anyhow::Result;
@@ -5,6 +7,7 @@ use anyhow::Result;
 use crate::client::models::*;
 
 impl super::AdoClient {
+    /// Fetches all pending approvals for the configured project.
     pub async fn list_pending_approvals(&self) -> Result<Vec<Approval>> {
         tracing::debug!("listing pending approvals");
         let url = self.endpoints.approvals_pending();
@@ -12,6 +15,7 @@ impl super::AdoClient {
         Ok(resp.value)
     }
 
+    /// Sends an approval status update (approve/reject) with an optional comment.
     pub async fn update_approval(
         &self,
         approval_id: &str,

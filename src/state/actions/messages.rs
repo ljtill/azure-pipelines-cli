@@ -1,3 +1,5 @@
+//! Handles incoming async messages and applies them to application state.
+
 use std::collections::BTreeMap;
 
 use tokio::sync::mpsc;
@@ -67,8 +69,8 @@ pub fn handle_message(
 
             // Detect build state changes and emit in-app notifications.
             // Fires when:
-            //   - A build transitions to InProgress (started)
-            //   - A build transitions to Completed (succeeded/failed/canceled)
+            //   - A build transitions to InProgress (started).
+            //   - A build transitions to Completed (succeeded/failed/canceled).
             // Skipped on first load (prev is empty) to avoid a startup storm.
             if app.notifications_enabled && !app.prev_latest_builds.is_empty() {
                 for (def_id, build) in &map {
@@ -81,7 +83,7 @@ pub fn handle_message(
                     let id_changed = prev_id != Some(build.id);
                     let status_changed = prev_status != Some(build.status);
 
-                    // Only notify on meaningful transitions
+                    // Only notify on meaningful transitions.
                     if !id_changed && !status_changed {
                         continue;
                     }
@@ -159,7 +161,7 @@ pub fn handle_message(
             app.last_refresh = Some(chrono::Utc::now());
             app.loading = false;
 
-            // Update retention leases
+            // Update retention leases.
             app.retention_leases.leases = retention_leases;
             app.retention_leases.rebuild_index();
         }
@@ -178,7 +180,7 @@ pub fn handle_message(
             app.build_history
                 .nav
                 .set_len(app.build_history.builds.len());
-            // Restore stashed scroll position (e.g. after lease deletion refresh)
+            // Restore stashed scroll position (e.g. after lease deletion refresh).
             if let Some(idx) = app.build_history.pending_nav_index.take() {
                 app.build_history.nav.set_index(idx);
             }
@@ -206,7 +208,7 @@ pub fn handle_message(
             generation,
             is_refresh,
         } => {
-            // Discard stale timeline results
+            // Discard stale timeline results.
             if generation != app.log_viewer.generation() {
                 tracing::debug!(
                     build_id,
@@ -233,11 +235,11 @@ pub fn handle_message(
 
             app.log_viewer.set_build_timeline(timeline);
 
-            // Update selected_build status from timeline data so the header stays current
+            // Update selected_build status from timeline data so the header stays current.
             app.log_viewer.refresh_build_status_from_timeline();
 
             if !is_refresh {
-                // Initial load: full setup with auto-select
+                // Initial load: full setup with auto-select.
                 app.log_viewer.clear_log();
                 app.log_viewer.nav_mut().set_index(0);
                 app.log_viewer.enter_follow_mode();
@@ -256,7 +258,7 @@ pub fn handle_message(
                     spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
                 }
             } else if app.log_viewer.is_following() {
-                // Refresh in follow mode: update tree, track latest active task
+                // Refresh in follow mode: update tree, track latest active task.
                 app.log_viewer.rebuild_timeline_rows();
 
                 if let Some((task_name, log_id)) = app.log_viewer.find_active_task() {
@@ -268,7 +270,7 @@ pub fn handle_message(
                         spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
                     }
                 } else {
-                    // Build completed or no active task — exit follow mode gracefully
+                    // Build completed or no active task — exit follow mode gracefully.
                     tracing::debug!(
                         build_id,
                         "follow mode: no active task, switching to inspect"
@@ -276,7 +278,7 @@ pub fn handle_message(
                     app.log_viewer.enter_inspect_mode();
                 }
             } else {
-                // Refresh in inspect mode: only update tree status, preserve cursor + log
+                // Refresh in inspect mode: only update tree status, preserve cursor + log.
                 app.log_viewer.rebuild_timeline_rows();
             }
         }
@@ -284,7 +286,7 @@ pub fn handle_message(
             content,
             generation,
         } => {
-            // Discard stale log results
+            // Discard stale log results.
             if generation != app.log_viewer.generation() {
                 tracing::debug!(
                     generation,
@@ -382,10 +384,10 @@ pub fn handle_message(
                 app.notifications
                     .success(format!("Deleted {deleted} retention lease(s)"));
             }
-            // Clear stale multi-select state and preserve scroll position
+            // Clear stale multi-select state and preserve scroll position.
             app.build_history.selected.clear();
             app.build_history.pending_nav_index = Some(app.build_history.nav.index());
-            // Trigger a full data refresh to re-fetch leases
+            // Trigger a full data refresh to re-fetch leases.
             spawn_data_refresh(app, client, tx);
             if app.view == View::BuildHistory {
                 // Request enough builds to cover everything already loaded so
@@ -406,9 +408,7 @@ mod tests {
     use crate::state::View;
     use crate::test_helpers::*;
 
-    // -----------------------------------------------------------------------
-    // DataRefresh
-    // -----------------------------------------------------------------------
+    // --- DataRefresh ---
 
     #[test]
     fn data_refresh_updates_definitions_and_builds() {
@@ -472,8 +472,8 @@ mod tests {
         app.notifications.error("old error");
         assert!(app.notifications.clone_current().is_some());
 
-        // DataRefresh no longer clears notifications — they expire via TTL
-        // Simulate what handle_message(DataRefresh) does (no clear call)
+        // DataRefresh no longer clears notifications — they expire via TTL.
+        // Simulate what handle_message(DataRefresh) does (no clear call).
         app.loading = false;
         assert!(app.notifications.clone_current().is_some());
     }
@@ -483,7 +483,7 @@ mod tests {
         let mut app = make_app();
         assert_eq!(app.data.definitions.len(), 3); // make_app seeds 3
 
-        // Simulate a DataRefresh with only 1 definition
+        // Simulate a DataRefresh with only 1 definition.
         app.data.definitions = vec![make_definition(99, "Only", "\\")];
         app.data.recent_builds = vec![];
         app.data.latest_builds_by_def.clear();
@@ -530,7 +530,7 @@ mod tests {
                 map.insert(d.id, *build.clone());
             }
         }
-        // No recent_builds to overlay
+        // No recent_builds to overlay.
         app.data.latest_builds_by_def = map;
         app.data.recent_builds = vec![];
 
@@ -623,9 +623,7 @@ mod tests {
         assert_eq!(app.data.latest_builds_by_def[&50].id, 502);
     }
 
-    // -----------------------------------------------------------------------
-    // BuildHistory
-    // -----------------------------------------------------------------------
+    // --- BuildHistory ---
 
     #[test]
     fn build_history_populates_and_syncs_nav() {
@@ -641,7 +639,7 @@ mod tests {
             .set_len(app.build_history.builds.len());
 
         assert_eq!(app.build_history.builds.len(), 3);
-        // Nav synced — 3 items, index starts at 0
+        // Nav synced — 3 items, index starts at 0.
         app.build_history.nav.down();
         assert_eq!(app.build_history.nav.index(), 1);
     }
@@ -652,7 +650,7 @@ mod tests {
         app.build_history.builds = vec![];
         app.build_history.nav.set_len(0);
         assert_eq!(app.build_history.nav.index(), 0);
-        // down on empty list is a no-op
+        // Down on empty list is a no-op.
         app.build_history.nav.down();
         assert_eq!(app.build_history.nav.index(), 0);
     }
@@ -660,12 +658,12 @@ mod tests {
     #[test]
     fn build_history_restores_pending_nav_index() {
         let mut app = make_app();
-        // Simulate user at index 2 in a 5-item list
+        // Simulate user at index 2 in a 5-item list.
         app.build_history.nav.set_len(5);
         app.build_history.nav.set_index(2);
         app.build_history.pending_nav_index = Some(2);
 
-        // Simulate BuildHistory message arriving with fresh data
+        // Simulate BuildHistory message arriving with fresh data.
         let builds = vec![
             make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded)),
             make_build(2, BuildStatus::Completed, Some(BuildResult::Failed)),
@@ -688,7 +686,7 @@ mod tests {
     #[test]
     fn build_history_pending_nav_clamps_to_shorter_list() {
         let mut app = make_app();
-        // User was at index 4, but refresh returns only 3 builds
+        // User was at index 4, but refresh returns only 3 builds.
         app.build_history.pending_nav_index = Some(4);
 
         let builds = vec![
@@ -704,7 +702,7 @@ mod tests {
             app.build_history.nav.set_index(idx);
         }
 
-        // Clamped to last item (index 2)
+        // Clamped to last item (index 2).
         assert_eq!(app.build_history.nav.index(), 2);
     }
 
@@ -725,13 +723,11 @@ mod tests {
             app.build_history.nav.set_index(idx);
         }
 
-        // No pending index — stays at default 0
+        // No pending index — stays at default 0.
         assert_eq!(app.build_history.nav.index(), 0);
     }
 
-    // -----------------------------------------------------------------------
-    // LogContent
-    // -----------------------------------------------------------------------
+    // --- LogContent ---
 
     #[test]
     fn log_content_splits_lines() {
@@ -758,7 +754,7 @@ mod tests {
             Some(BuildResult::Succeeded),
         ));
         app.log_viewer.set_log_content(String::new());
-        // "".lines() yields nothing, so vec should be empty
+        // "".lines() yields nothing, so vec should be empty.
         assert!(app.log_viewer.log_content().is_empty());
     }
 
@@ -773,15 +769,13 @@ mod tests {
         app.log_viewer.scroll_down(50);
         assert!(app.log_viewer.log_scroll_offset() > 0);
 
-        // Setting new log content resets scroll
+        // Setting new log content resets scroll.
         app.log_viewer.set_log_content("fresh\nlog".into());
         assert_eq!(app.log_viewer.log_scroll_offset(), 0);
         assert!(app.log_viewer.log_auto_scroll());
     }
 
-    // -----------------------------------------------------------------------
-    // Generation / stale-guard
-    // -----------------------------------------------------------------------
+    // --- Generation / stale-guard ---
 
     #[test]
     fn stale_generation_detected() {
@@ -833,18 +827,16 @@ mod tests {
         let current_gen = app.log_viewer.generation();
         let stale_gen = current_gen.wrapping_sub(1);
 
-        // Simulate the stale guard: only apply content if generation matches
+        // Simulate the stale guard: only apply content if generation matches.
         let content = "should not appear".to_string();
         if stale_gen == app.log_viewer.generation() {
             app.log_viewer.set_log_content(content);
         }
-        // Content should remain empty because the generation didn't match
+        // Content should remain empty because the generation didn't match.
         assert!(app.log_viewer.log_content().is_empty());
     }
 
-    // -----------------------------------------------------------------------
-    // Error / notification messages
-    // -----------------------------------------------------------------------
+    // --- Error / notification messages ---
 
     #[test]
     fn error_pushes_notification() {
@@ -869,7 +861,7 @@ mod tests {
         app.active_runs.selected.insert(2);
         assert_eq!(app.active_runs.selected.len(), 2);
 
-        // BuildsCancelled handler clears selections
+        // BuildsCancelled handler clears selections.
         app.active_runs.selected.clear();
         assert!(app.active_runs.selected.is_empty());
     }
@@ -877,7 +869,7 @@ mod tests {
     #[test]
     fn batch_cancel_with_failures_shows_error() {
         let mut app = make_app();
-        // Simulate partial-failure path from BuildsCancelled
+        // Simulate partial-failure path from BuildsCancelled.
         let cancelled = 2u32;
         let failed = 1u32;
         app.active_runs.selected.clear();
@@ -905,9 +897,7 @@ mod tests {
         assert_eq!(n.message, "Cancelled 3 build(s)");
     }
 
-    // -----------------------------------------------------------------------
-    // PipelineQueued
-    // -----------------------------------------------------------------------
+    // --- PipelineQueued ---
 
     #[test]
     fn pipeline_queued_navigates_to_log_viewer() {
@@ -936,14 +926,12 @@ mod tests {
         assert!(app.log_viewer.is_following());
     }
 
-    // -----------------------------------------------------------------------
-    // StageRetried / CheckUpdated notification
-    // -----------------------------------------------------------------------
+    // --- StageRetried / CheckUpdated notification ---
 
     #[test]
     fn stage_retried_shows_success() {
         let mut app = make_app();
-        // Mirrors handle_message(StageRetried) notification path
+        // Mirrors handle_message(StageRetried) notification path.
         app.notifications.success("Stage retried");
         let n = app.notifications.clone_current().unwrap();
         assert_eq!(n.message, "Stage retried");
@@ -957,11 +945,9 @@ mod tests {
         assert_eq!(n.message, "Check updated");
     }
 
-    // -----------------------------------------------------------------------
-    // State-change notifications
-    // -----------------------------------------------------------------------
+    // --- State-change notifications ---
 
-    /// Helper: simulate the DataRefresh notification-diff logic for a given
+    /// Simulates the DataRefresh notification-diff logic for a given
     /// app and new latest_builds_by_def map. Mirrors the logic in handle_message.
     fn simulate_notification_diff(app: &mut crate::state::App, map: &BTreeMap<u32, Build>) {
         use crate::state::notifications::NotificationLevel;
@@ -1038,7 +1024,7 @@ mod tests {
         let mut app = make_app();
         app.notifications_enabled = true;
 
-        // First refresh: completed build (seed)
+        // First refresh: completed build (seed).
         let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b1.definition = BuildDefinitionRef {
             id: 1,
@@ -1049,7 +1035,7 @@ mod tests {
         simulate_notification_diff(&mut app, &map1);
         assert!(app.notifications.clone_current().is_none()); // first load
 
-        // Second refresh: new build started
+        // Second refresh: new build started.
         let mut b2 = make_build(101, BuildStatus::InProgress, None);
         b2.definition = BuildDefinitionRef {
             id: 1,
@@ -1072,7 +1058,7 @@ mod tests {
         let mut app = make_app();
         app.notifications_enabled = true;
 
-        // First refresh: in-progress build (seed)
+        // First refresh: in-progress build (seed).
         let mut b1 = make_build(100, BuildStatus::InProgress, None);
         b1.definition = BuildDefinitionRef {
             id: 1,
@@ -1082,7 +1068,7 @@ mod tests {
         map1.insert(1u32, b1);
         simulate_notification_diff(&mut app, &map1);
 
-        // Second refresh: same build ID now completed
+        // Second refresh: same build ID now completed.
         let mut b2 = make_build(100, BuildStatus::Completed, Some(BuildResult::Failed));
         b2.definition = BuildDefinitionRef {
             id: 1,
@@ -1105,7 +1091,7 @@ mod tests {
         let mut app = make_app();
         app.notifications_enabled = true;
 
-        // Seed with build 100 in-progress
+        // Seed with build 100 in-progress.
         let mut b1 = make_build(100, BuildStatus::InProgress, None);
         b1.definition = BuildDefinitionRef {
             id: 1,
@@ -1115,7 +1101,7 @@ mod tests {
         map1.insert(1u32, b1);
         simulate_notification_diff(&mut app, &map1);
 
-        // New build 101 completed (different build ID)
+        // New build 101 completed (different build ID).
         let mut b2 = make_build(101, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b2.definition = BuildDefinitionRef {
             id: 1,
@@ -1138,7 +1124,7 @@ mod tests {
         let mut app = make_app();
         app.notifications_enabled = true;
 
-        // Seed with completed build
+        // Seed with completed build.
         let mut b = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b.definition = BuildDefinitionRef {
             id: 1,
@@ -1148,7 +1134,7 @@ mod tests {
         map.insert(1u32, b.clone());
         simulate_notification_diff(&mut app, &map);
 
-        // Same build again
+        // Same build again.
         simulate_notification_diff(&mut app, &map);
 
         // No notification (first load skipped, second has same build_id + status).
@@ -1160,7 +1146,7 @@ mod tests {
         let mut app = make_app();
         app.notifications_enabled = false;
 
-        // Seed snapshot manually
+        // Seed snapshot manually.
         app.prev_latest_builds
             .insert(1, (100, BuildStatus::InProgress, None));
 

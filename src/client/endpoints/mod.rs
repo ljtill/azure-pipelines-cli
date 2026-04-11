@@ -1,14 +1,20 @@
+//! URL builders for the Azure DevOps REST API.
+
 pub mod approvals;
 pub mod builds;
 pub mod definitions;
 pub mod retention;
 pub mod web;
 
+// --- Constants ---
+
 const API_VERSION: &str = "7.1";
 pub(crate) const TOP_BUILDS: u32 = 100;
 pub(crate) const TOP_DEFINITION_BUILDS: u32 = 20;
 
-/// Percent-encode a string for use in a URL path segment.
+// --- Helpers ---
+
+/// Percent-encodes a string for use in a URL path segment.
 ///
 /// Encodes control characters (0x00–0x1F, 0x7F) and the characters ` #?/&=+%`
 /// as `%XX` hex pairs. All other UTF-8 bytes pass through unchanged.
@@ -37,6 +43,9 @@ fn encode_path_segment(input: &str) -> String {
     out
 }
 
+// --- Endpoints ---
+
+/// Holds pre-computed base URLs for an Azure DevOps organization and project.
 #[derive(Clone)]
 pub struct Endpoints {
     pub(crate) base_url: String,
@@ -44,6 +53,7 @@ pub struct Endpoints {
 }
 
 impl Endpoints {
+    /// Creates a new set of endpoints for the given organization and project.
     pub fn new(organization: &str, project: &str) -> Self {
         let org = encode_path_segment(organization);
         let proj = encode_path_segment(project);

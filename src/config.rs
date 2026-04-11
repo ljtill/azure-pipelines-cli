@@ -1,3 +1,5 @@
+//! TOML configuration loading, validation, and persistence.
+
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -26,11 +28,11 @@ pub struct AzureDevOpsConfig {
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct FiltersConfig {
-    /// Only show definitions under these folder paths (e.g. `["\\Infra", "\\Deploy"]`).
-    /// Empty means show all folders.
+    /// Shows only definitions under these folder paths (e.g. `["\\Infra", "\\Deploy"]`).
+    /// Defaults to all folders when empty.
     #[serde(default)]
     pub folders: Vec<String>,
-    /// Only show these specific definition IDs. Empty means show all.
+    /// Shows only these specific definition IDs. Defaults to all when empty.
     #[serde(default)]
     pub definition_ids: Vec<u32>,
 }
@@ -57,10 +59,10 @@ fn default_check_for_updates() -> bool {
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
-    /// Directory for log files. Defaults to `~/.local/state/pipelines`.
+    /// Specifies the log file directory. Defaults to `~/.local/state/pipelines`.
     #[serde(default)]
     pub log_directory: Option<String>,
-    /// Maximum number of daily log files to retain. Defaults to 5.
+    /// Limits the number of daily log files retained. Defaults to 5.
     #[serde(default = "default_max_log_files")]
     pub max_log_files: usize,
 }
@@ -156,7 +158,7 @@ impl Config {
         Ok(config)
     }
 
-    /// Resolve the config file path, returning whether it exists.
+    /// Resolves the config file path, returning whether it exists.
     pub fn resolve_path(cli_path: Option<&PathBuf>) -> Result<(PathBuf, bool)> {
         let path = match cli_path {
             Some(p) => p.clone(),
@@ -167,7 +169,7 @@ impl Config {
         Ok((path, exists))
     }
 
-    /// Write a minimal config file with the given org and project.
+    /// Writes a minimal config file with the given org and project.
     pub fn write_initial(path: &PathBuf, organization: &str, project: &str) -> Result<()> {
         tracing::info!(
             path = %path.display(),
@@ -201,7 +203,7 @@ impl Config {
         Ok(())
     }
 
-    /// Serialize the full config and write it to the given path.
+    /// Serializes the full config and writes it to the given path.
     pub fn save(&self, path: &PathBuf) -> Result<()> {
         tracing::info!(path = %path.display(), "saving config");
         if let Some(parent) = path.parent() {
@@ -220,7 +222,7 @@ impl Config {
     }
 }
 
-/// Check that Azure CLI (`az`) or Azure Developer CLI (`azd`) is available on PATH.
+/// Checks that Azure CLI (`az`) or Azure Developer CLI (`azd`) is available on PATH.
 /// Returns `Ok(())` if at least one is found, or an error with install guidance.
 pub fn check_azure_cli() -> Result<()> {
     if which("az") {
@@ -262,7 +264,7 @@ fn default_config_path_from(
     xdg_config_home: Option<PathBuf>,
     home_dir: Option<PathBuf>,
 ) -> Result<PathBuf> {
-    // Prefer XDG_CONFIG_HOME (~/.config) over platform default (~/Library/Application Support on macOS)
+    // Prefers XDG_CONFIG_HOME (~/.config) over platform default (~/Library/Application Support on macOS).
     let config_dir = xdg_config_home
         .filter(|p| p.is_absolute())
         .or_else(|| home_dir.map(|h| h.join(".config")))
@@ -287,15 +289,15 @@ project = "myproject"
         assert_eq!(config.azure_devops.project, "myproject");
         assert!(config.filters.folders.is_empty());
         assert!(config.filters.definition_ids.is_empty());
-        // Update config defaults
+        // Update config defaults.
         assert!(config.update.check_for_updates);
-        // Logging defaults
+        // Logging defaults.
         assert_eq!(config.logging.level, "info");
         assert!(config.logging.log_directory.is_none());
         assert_eq!(config.logging.max_log_files, 5);
-        // Notifications defaults
+        // Notifications defaults.
         assert!(config.notifications.enabled);
-        // Display defaults
+        // Display defaults.
         assert_eq!(config.display.refresh_interval_secs, 15);
         assert_eq!(config.display.log_refresh_interval_secs, 5);
     }

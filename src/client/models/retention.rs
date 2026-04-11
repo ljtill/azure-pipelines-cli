@@ -1,9 +1,11 @@
+//! Azure DevOps retention lease model types.
+
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 // --- Retention Leases ---
 
-/// A retention lease prevents automated systems from deleting a pipeline run.
+/// Represents a retention lease that prevents automated systems from deleting a pipeline run.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RetentionLease {
     #[serde(rename = "leaseId")]

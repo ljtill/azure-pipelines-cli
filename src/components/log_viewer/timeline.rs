@@ -1,10 +1,12 @@
+//! Timeline tree building and row model for the log viewer.
+
 use std::collections::HashMap;
 
 use crate::client::models::{BuildResult, TaskState};
 
 use super::LogViewer;
 
-/// A row in the timeline tree view — Stage, Job, Task, or Checkpoint.
+/// Represents a row in the timeline tree view — Stage, Job, Task, or Checkpoint.
 #[derive(Debug, Clone)]
 pub enum TimelineRow {
     Stage {
@@ -42,12 +44,10 @@ pub enum TimelineRow {
     },
 }
 
-// ---------------------------------------------------------------------------
-// Timeline tree building & queries
-// ---------------------------------------------------------------------------
+// --- Timeline tree building & queries ---
 
 impl LogViewer {
-    /// Build the timeline tree rows from the raw timeline records.
+    /// Builds the timeline tree rows from the raw timeline records.
     ///
     /// ADO timeline hierarchy: Stage → Phase → Job → Task
     /// We display: Stage → Phase (as "Job" row) → Task
@@ -79,7 +79,7 @@ impl LogViewer {
 
         stages.sort_by_key(|s| s.order.unwrap_or(999));
 
-        // Pre-collapse all on first load for a compact overview
+        // Pre-collapse all on first load for a compact overview.
         if !self.timeline_initialized {
             self.timeline_initialized = true;
             for stage in &stages {
@@ -111,7 +111,7 @@ impl LogViewer {
                 continue;
             }
 
-            // Insert checkpoint rows (approval gates) before jobs
+            // Insert checkpoint rows (approval gates) before jobs.
             if let Some(stage_children) = children_of.get(&stage.id) {
                 for child in stage_children.iter() {
                     if child.record_type == "Checkpoint"
@@ -196,7 +196,7 @@ impl LogViewer {
         self.log_entries_nav.set_len(self.timeline_rows.len());
     }
 
-    /// Toggle collapse for a timeline stage or job at the given row index.
+    /// Toggles collapse for a timeline stage or job at the given row index.
     pub fn toggle_timeline_node(&mut self, index: usize) -> bool {
         if let Some(row) = self.timeline_rows.get(index) {
             match row {
@@ -218,7 +218,7 @@ impl LogViewer {
         false
     }
 
-    /// Collapse a timeline stage or job. Returns true if it was expanded.
+    /// Collapses a timeline stage or job. Returns true if it was expanded.
     pub fn collapse_timeline_node(&mut self, index: usize) -> bool {
         if let Some(row) = self.timeline_rows.get(index) {
             match row {
@@ -240,7 +240,7 @@ impl LogViewer {
         false
     }
 
-    /// Expand a timeline stage or job. Returns true if it was collapsed.
+    /// Expands a timeline stage or job. Returns true if it was collapsed.
     pub fn expand_timeline_node(&mut self, index: usize) -> bool {
         if let Some(row) = self.timeline_rows.get(index) {
             match row {
@@ -262,7 +262,7 @@ impl LogViewer {
         false
     }
 
-    /// Find the parent row index for a timeline row (job→stage, task→job).
+    /// Finds the parent row index for a timeline row (job→stage, task→job).
     pub fn find_timeline_parent_index(&self, index: usize) -> Option<usize> {
         if let Some(row) = self.timeline_rows.get(index) {
             match row {
@@ -298,7 +298,7 @@ impl LogViewer {
         None
     }
 
-    /// Check what kind of timeline row is at the given index.
+    /// Checks what kind of timeline row is at the given index.
     pub fn timeline_row_kind(&self, index: usize) -> Option<&str> {
         self.timeline_rows.get(index).map(|row| match row {
             TimelineRow::Stage { .. } => "stage",
@@ -308,7 +308,7 @@ impl LogViewer {
         })
     }
 
-    /// Get the log_id for a Task timeline row at the given index.
+    /// Gets the log_id for a Task timeline row at the given index.
     pub fn timeline_task_log_id(&self, index: usize) -> Option<u32> {
         if let Some(TimelineRow::Task { log_id, .. }) = self.timeline_rows.get(index) {
             *log_id
@@ -317,7 +317,7 @@ impl LogViewer {
         }
     }
 
-    /// Get the stage ref name (identifier) for a Stage timeline row at the given index.
+    /// Gets the stage ref name (identifier) for a Stage timeline row at the given index.
     pub fn timeline_stage_ref_name(&self, index: usize) -> Option<String> {
         if let Some(TimelineRow::Stage {
             identifier, name, ..
@@ -329,7 +329,7 @@ impl LogViewer {
         }
     }
 
-    /// Get the approval ID for a Checkpoint timeline row at the given index.
+    /// Gets the approval ID for a Checkpoint timeline row at the given index.
     pub fn timeline_approval_id(&self, index: usize) -> Option<String> {
         if let Some(TimelineRow::Checkpoint { approval_id, .. }) = self.timeline_rows.get(index) {
             approval_id.clone()

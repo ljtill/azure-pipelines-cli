@@ -1,3 +1,5 @@
+//! Dashboard view component showing pipeline status grouped by folder.
+
 use std::collections::{BTreeMap, HashSet};
 
 use anyhow::Result;
@@ -16,7 +18,7 @@ use crate::render::theme;
 use crate::state::App;
 use crate::state::nav::ListNav;
 
-/// A row in the dashboard grouped view — either a folder header or a pipeline entry.
+/// Represents a row in the dashboard grouped view — either a folder header or a pipeline entry.
 #[derive(Debug, Clone)]
 pub enum DashboardRow {
     FolderHeader {
@@ -29,7 +31,7 @@ pub enum DashboardRow {
     },
 }
 
-/// Normalize an ADO definition path to a canonical folder key.
+/// Normalizes an ADO definition path to a canonical folder key.
 /// Empty or `\\` paths become `\\`; everything else is kept as-is.
 fn folder_key(path: &str) -> String {
     if path.is_empty() || path == "\\" {
@@ -39,7 +41,7 @@ fn folder_key(path: &str) -> String {
     }
 }
 
-/// Convert a raw folder key (e.g. `\\Infra\\Deploy`) to a display-friendly string.
+/// Converts a raw folder key (e.g. `\\Infra\\Deploy`) to a display-friendly string.
 fn folder_display(key: &str) -> String {
     let display = key.trim_start_matches('\\').replace('\\', " / ");
     if display.is_empty() {
@@ -49,7 +51,7 @@ fn folder_display(key: &str) -> String {
     }
 }
 
-/// Check if a definition passes the configured filters.
+/// Checks if a definition passes the configured filters.
 fn matches_filter(
     def: &PipelineDefinition,
     filter_definition_ids: &[u32],
@@ -77,7 +79,7 @@ fn find_folder_key_for_display(
     None
 }
 
-/// Dashboard component — renders pipelines grouped by folder with collapse/expand.
+/// Renders pipelines grouped by folder with collapse/expand.
 #[derive(Debug, Default)]
 pub struct Dashboard {
     pub rows: Vec<DashboardRow>,
@@ -86,7 +88,7 @@ pub struct Dashboard {
 }
 
 impl Dashboard {
-    /// Rebuild the dashboard rows from definitions + latest builds, grouped by folder.
+    /// Rebuilds the dashboard rows from definitions + latest builds, grouped by folder.
     pub fn rebuild(
         &mut self,
         definitions: &[PipelineDefinition],
@@ -132,7 +134,7 @@ impl Dashboard {
         self.nav.set_len(self.rows.len());
     }
 
-    /// Toggle collapse state for a folder at the given dashboard row index.
+    /// Toggles collapse state for a folder at the given dashboard row index.
     pub fn toggle_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
         if let Some(DashboardRow::FolderHeader { path, .. }) = self.rows.get(index) {
             let fk = find_folder_key_for_display(path, definitions);
@@ -148,7 +150,7 @@ impl Dashboard {
         false
     }
 
-    /// Collapse the folder at the given dashboard index.
+    /// Collapses the folder at the given dashboard index.
     pub fn collapse_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
         if let Some(DashboardRow::FolderHeader {
             path, collapsed, ..
@@ -164,7 +166,7 @@ impl Dashboard {
         false
     }
 
-    /// Expand the folder at the given dashboard index.
+    /// Expands the folder at the given dashboard index.
     pub fn expand_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
         if let Some(DashboardRow::FolderHeader {
             path, collapsed, ..
@@ -180,7 +182,7 @@ impl Dashboard {
         false
     }
 
-    /// Find the dashboard row index of the parent folder for a pipeline row.
+    /// Finds the dashboard row index of the parent folder for a pipeline row.
     pub fn find_parent_folder_index(&self, pipeline_index: usize) -> Option<usize> {
         for i in (0..pipeline_index).rev() {
             if let Some(DashboardRow::FolderHeader { .. }) = self.rows.get(i) {
@@ -190,7 +192,7 @@ impl Dashboard {
         None
     }
 
-    /// Check if a dashboard row is a folder header.
+    /// Checks if a dashboard row is a folder header.
     pub fn is_folder_header(&self, index: usize) -> bool {
         matches!(
             self.rows.get(index),
@@ -428,9 +430,9 @@ mod tests {
         let mut state = Dashboard::default();
         state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
 
-        // Should have: Root folder header + 2 pipelines, then Infra folder header + 1 pipeline
-        // BTreeMap sorts keys, so "\" comes before "\Infra"
-        assert_eq!(state.rows.len(), 5); // 2 headers + 3 pipelines
+        // Should have: Root folder header + 2 pipelines, then Infra folder header + 1 pipeline.
+        // BTreeMap sorts keys, so "\" comes before "\Infra".
+        assert_eq!(state.rows.len(), 5); // 2 headers + 3 pipelines.
         assert!(
             matches!(&state.rows[0], DashboardRow::FolderHeader { path, .. } if path == "Root")
         );
@@ -485,7 +487,7 @@ mod tests {
         ];
         let mut state = Dashboard::default();
         state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
-        // Row 0 is Root folder header (expanded), rows 1-2 are pipelines
+        // Row 0 is Root folder header (expanded), rows 1-2 are pipelines.
         assert_eq!(state.rows.len(), 3);
 
         state.toggle_folder_at(0, &definitions); // collapse

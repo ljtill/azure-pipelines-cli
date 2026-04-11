@@ -1,3 +1,5 @@
+//! Shared Azure DevOps model types and enums.
+
 pub mod approvals;
 pub mod builds;
 pub mod definitions;
@@ -15,7 +17,8 @@ use serde::de::{self, Visitor};
 
 // --- Enums for build status and result ---
 
-/// Build status as returned by the Azure DevOps API.
+/// Represents a build status as returned by the Azure DevOps API.
+///
 /// Deserialized case-insensitively with an `Unknown` fallback for unrecognized values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildStatus {
@@ -75,7 +78,8 @@ impl fmt::Display for BuildStatus {
     }
 }
 
-/// Build or timeline record result.
+/// Represents a build or timeline record result.
+///
 /// Deserialized case-insensitively with an `Unknown` fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildResult {
@@ -115,7 +119,8 @@ impl<'de> Deserialize<'de> for BuildResult {
     }
 }
 
-/// Timeline record state (stage/job/task).
+/// Represents a timeline record state (stage/job/task).
+///
 /// Deserialized case-insensitively with an `Unknown` fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
@@ -157,6 +162,7 @@ impl<'de> Deserialize<'de> for TaskState {
 
 // --- Generic paginated list response ---
 
+/// Represents a generic paginated list response from the Azure DevOps API.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ListResponse<T> {
     pub value: Vec<T>,

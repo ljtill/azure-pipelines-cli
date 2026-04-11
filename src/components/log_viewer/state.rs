@@ -1,3 +1,5 @@
+//! Log viewer state and accessors.
+
 use std::collections::HashSet;
 
 use ratatui::layout::Rect;
@@ -9,7 +11,7 @@ use crate::state::nav::ListNav;
 
 use super::TimelineRow;
 
-/// State for the log viewer screen — reset as a unit on navigation.
+/// Holds state for the log viewer screen — reset as a unit on navigation.
 pub struct LogViewer {
     pub selected_build: Option<Build>,
     pub build_timeline: Option<BuildTimeline>,
@@ -25,10 +27,10 @@ pub struct LogViewer {
     pub followed_log_id: Option<u32>,
     pub log_entries_nav: ListNav,
     pub log_scroll_offset: u32,
-    /// Cached layout areas from the last render, used for mouse hit-testing.
+    /// Stores cached layout areas from the last render, used for mouse hit-testing.
     pub tree_area: Option<Rect>,
     pub log_area: Option<Rect>,
-    /// The view to return to when pressing Esc from LogViewer.
+    /// Stores the view to return to when pressing Esc from LogViewer.
     pub return_to_view: View,
 }
 
@@ -56,11 +58,9 @@ impl Default for LogViewer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Construction
-// ---------------------------------------------------------------------------
+// --- Construction ---
 impl LogViewer {
-    /// Create a new log viewer state for navigating to a specific build.
+    /// Creates a new log viewer state for navigating to a specific build.
     pub fn new_for_build(build: Build, return_to: View, generation: u64) -> Self {
         Self {
             selected_build: Some(build),
@@ -73,9 +73,7 @@ impl LogViewer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Getters
-// ---------------------------------------------------------------------------
+// --- Getters ---
 impl LogViewer {
     pub fn selected_build(&self) -> Option<&Build> {
         self.selected_build.as_ref()
@@ -139,9 +137,7 @@ impl LogViewer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Mutators
-// ---------------------------------------------------------------------------
+// --- Mutators ---
 impl LogViewer {
     pub fn set_build_timeline(&mut self, timeline: BuildTimeline) {
         self.build_timeline = Some(timeline);
@@ -192,9 +188,7 @@ impl LogViewer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Timeline collapse state
-// ---------------------------------------------------------------------------
+// --- Timeline collapse state ---
 impl LogViewer {
     #[allow(dead_code)]
     pub fn is_stage_collapsed(&self, id: &str) -> bool {

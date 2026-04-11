@@ -1,3 +1,5 @@
+//! Event handling for the log viewer.
+
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 
@@ -5,6 +7,7 @@ use super::Action;
 use super::navigation;
 use crate::state::{App, TimelineRow};
 
+/// Handles key events specific to the log viewer.
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Char('f') => {
@@ -64,6 +67,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
+/// Handles the Enter key on the log viewer, toggling nodes or fetching task logs.
 fn handle_enter_log_viewer(app: &mut App) -> Action {
     let idx = app.log_viewer.nav().index();
     match app.log_viewer.timeline_row_kind(idx) {
@@ -87,6 +91,7 @@ fn handle_enter_log_viewer(app: &mut App) -> Action {
     }
 }
 
+/// Prompts the user to confirm retrying the stage under the cursor.
 fn handle_retry_request(app: &mut App) -> Action {
     let idx = app.log_viewer.nav().index();
 
@@ -152,6 +157,7 @@ fn handle_retry_request(app: &mut App) -> Action {
     Action::None
 }
 
+/// Prompts the user to approve the checkpoint under the cursor.
 fn handle_approve_request(app: &mut App) -> Action {
     let idx = app.log_viewer.nav().index();
     if app.log_viewer.timeline_row_kind(idx) != Some("checkpoint") {
@@ -172,6 +178,7 @@ fn handle_approve_request(app: &mut App) -> Action {
     Action::None
 }
 
+/// Prompts the user to reject the checkpoint under the cursor.
 fn handle_reject_request(app: &mut App) -> Action {
     let idx = app.log_viewer.nav().index();
     if app.log_viewer.timeline_row_kind(idx) != Some("checkpoint") {

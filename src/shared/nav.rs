@@ -1,3 +1,3 @@
-// Re-export from the canonical location so callers can use shared::nav::ListNav
-// while the implementation stays in app::nav during migration.
+//! Generic list navigation state for scrollable UI lists.
+
 pub use crate::state::nav::ListNav;

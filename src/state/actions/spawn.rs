@@ -1,3 +1,5 @@
+//! Spawns async API calls and background tasks.
+
 use std::future::Future;
 
 use anyhow::Result;
@@ -9,9 +11,7 @@ use crate::client::http::AdoClient;
 use super::super::App;
 use super::super::messages::{AppMessage, RefreshSource};
 
-// ---------------------------------------------------------------------------
-// Drop guard for async refresh tasks
-// ---------------------------------------------------------------------------
+// --- Drop guard for async refresh tasks ---
 
 /// Ensures a fallback message is sent if the spawned task exits unexpectedly
 /// (e.g., due to a panic). Call `defuse()` on the happy path to suppress.
@@ -28,7 +28,7 @@ impl RefreshGuard {
         }
     }
 
-    /// Disarm the guard — no fallback message will be sent on drop.
+    /// Disarms the guard — no fallback message will be sent on drop.
     pub(super) fn defuse(&mut self) {
         self.tx = None;
         self.fallback = None;
@@ -43,7 +43,7 @@ impl Drop for RefreshGuard {
     }
 }
 
-/// Spawn an async API call on a background task, routing the result to AppMessage.
+/// Spawns an async API call on a background task, routing the result to AppMessage.
 pub(super) fn spawn_api<F, Fut, T>(
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
@@ -150,7 +150,7 @@ pub fn spawn_data_refresh(
     true
 }
 
-/// Re-fetch the build history for the currently selected pipeline definition.
+/// Re-fetches the build history for the currently selected pipeline definition.
 ///
 /// When `top` is `Some(n)`, request up to `n` builds in a single page instead
 /// of the default `TOP_DEFINITION_BUILDS` (20). This is used after in-place
@@ -371,9 +371,9 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
     true
 }
 
-/// Open a URL in the platform's default browser.
+/// Opens a URL in the platform's default browser.
 pub(super) fn open_url(url: &str) -> std::io::Result<std::process::Child> {
-    // Only allow https:// URLs to prevent command injection
+    // Only allow https:// URLs to prevent command injection.
     if !url.starts_with("https://") {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,

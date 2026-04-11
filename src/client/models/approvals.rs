@@ -1,3 +1,5 @@
+//! Azure DevOps pipeline approval model types.
+
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
@@ -5,6 +7,7 @@ use super::builds::IdentityRef;
 
 // --- Approvals ---
 
+/// Represents a paginated list of approvals.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ApprovalListResponse {
     pub value: Vec<Approval>,
@@ -12,6 +15,7 @@ pub struct ApprovalListResponse {
     pub count: u32,
 }
 
+/// Represents a pipeline approval request.
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct Approval {
@@ -25,24 +29,25 @@ pub struct Approval {
     #[allow(dead_code)]
     #[serde(default)]
     pub steps: Vec<ApprovalStep>,
-    /// Pipeline/build reference — links this approval to a specific run.
+    /// References the pipeline/build linking this approval to a specific run.
     pub pipeline: Option<ApprovalPipelineRef>,
 }
 
-/// Pipeline reference within an approval response.
+/// Represents a pipeline reference within an approval response.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ApprovalPipelineRef {
-    /// The build/run that triggered this approval.
+    /// References the build/run that triggered this approval.
     pub owner: Option<ApprovalOwnerRef>,
 }
 
-/// Build/run owner reference within an approval's pipeline field.
+/// Represents a build/run owner reference within an approval's pipeline field.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ApprovalOwnerRef {
-    /// The build/run ID.
+    /// Contains the build/run ID.
     pub id: u32,
 }
 
+/// Represents a single approval step assigned to an approver.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ApprovalStep {
     #[allow(dead_code)]
@@ -55,7 +60,7 @@ pub struct ApprovalStep {
 }
 
 impl Approval {
-    /// Extract the build/run ID this approval is associated with.
+    /// Extracts the build/run ID this approval is associated with.
     pub fn build_id(&self) -> Option<u32> {
         self.pipeline.as_ref()?.owner.as_ref().map(|o| o.id)
     }

@@ -1,9 +1,12 @@
+//! Event handling for the pipelines view.
+
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
 use crate::state::{App, InputMode};
 
+/// Handles key events specific to the pipelines view.
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Char('/') => {
@@ -19,6 +22,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
+/// Handles the Enter key on pipelines, drilling into build history.
 fn handle_enter_pipelines(app: &mut App) -> Action {
     if let Some(def) = app
         .pipelines

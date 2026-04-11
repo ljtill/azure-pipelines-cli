@@ -1,9 +1,12 @@
+//! Event handling for the active runs view.
+
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
 use crate::state::{App, InputMode};
 
+/// Handles key events specific to the active runs view.
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Char('/') => {
@@ -11,7 +14,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.search.mode = InputMode::Search;
             Action::None
         }
-        // Multi-select toggle
+        // Multi-select toggle.
         KeyCode::Char(' ') => {
             app.active_runs.toggle_selected_at_cursor();
             Action::None
@@ -24,6 +27,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
+/// Handles the Enter key on active runs, drilling into the log viewer.
 fn handle_enter_active_runs(app: &mut App) -> Action {
     if let Some(build) = app
         .active_runs

@@ -1,3 +1,5 @@
+//! Shared event handlers used across multiple views.
+
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -5,6 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::Action;
 use crate::state::{App, ConfirmAction, InputMode, View};
 
+/// Handles key input while a confirmation prompt is active.
 pub fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Char('y') | KeyCode::Char('Y') => {
@@ -38,13 +41,14 @@ pub fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
+/// Handles key input within the settings overlay.
 pub fn handle_settings_key(app: &mut App, key: KeyEvent) -> Action {
     let Some(settings) = app.settings.as_mut() else {
         return Action::None;
     };
 
     if settings.editing {
-        // In field-edit mode
+        // In field-edit mode.
         match key.code {
             KeyCode::Esc => {
                 settings.cancel_edit();
@@ -72,7 +76,7 @@ pub fn handle_settings_key(app: &mut App, key: KeyEvent) -> Action {
         return Action::None;
     }
 
-    // Normal settings navigation
+    // Normal settings navigation.
     match key.code {
         KeyCode::Char('q') => {
             app.show_settings = false;
@@ -98,28 +102,29 @@ pub fn handle_settings_key(app: &mut App, key: KeyEvent) -> Action {
     Action::None
 }
 
+/// Saves the current settings to disk and applies runtime changes.
 pub fn handle_settings_save(app: &mut App) -> Action {
     if let Some(settings) = app.settings.as_ref() {
         match settings.save() {
             Ok(config) => {
-                // Detect connection change (org/project)
+                // Detect connection change (org/project).
                 let new_label = format!(
                     "{} / {}",
                     config.azure_devops.organization, config.azure_devops.project
                 );
                 let needs_reload = new_label != app.org_project_label;
 
-                // Apply runtime-relevant changes
+                // Apply runtime-relevant changes.
                 app.filters.folders = config.filters.folders;
                 app.filters.definition_ids = config.filters.definition_ids.clone();
                 app.notifications_enabled = config.notifications.enabled;
 
-                // Apply display settings live
+                // Apply display settings live.
                 app.refresh_interval = Duration::from_secs(config.display.refresh_interval_secs);
                 app.log_refresh_interval =
                     Duration::from_secs(config.display.log_refresh_interval_secs);
 
-                // Rebuild filtered views with new filters
+                // Rebuild filtered views with new filters.
                 app.dashboard.rebuild(
                     &app.data.definitions,
                     &app.data.latest_builds_by_def,
@@ -163,6 +168,7 @@ pub fn handle_settings_save(app: &mut App) -> Action {
     Action::None
 }
 
+/// Handles key input while the search bar is active.
 pub fn handle_search_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => {
@@ -186,6 +192,7 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) -> Action {
     Action::None
 }
 
+/// Rebuilds the filtered list for the current view after a search query change.
 pub fn rebuild_search_results(app: &mut App) {
     match app.view {
         View::Pipelines => {

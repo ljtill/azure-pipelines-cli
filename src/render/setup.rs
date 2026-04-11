@@ -1,3 +1,5 @@
+//! First-run setup wizard for initial configuration.
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -10,9 +12,7 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use crate::config::Config;
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
+// --- State ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Field {
@@ -43,16 +43,14 @@ impl SetupState {
     }
 }
 
-/// Outcome of processing a single key event.
+/// Represents the outcome of processing a single key event.
 enum Outcome {
     Continue,
     Complete,
     Quit,
 }
 
-// ---------------------------------------------------------------------------
-// Event handling
-// ---------------------------------------------------------------------------
+// --- Event handling ---
 
 fn handle_key(state: &mut SetupState, code: KeyCode) -> Outcome {
     match code {
@@ -91,9 +89,7 @@ fn handle_key(state: &mut SetupState, code: KeyCode) -> Outcome {
     }
 }
 
-// ---------------------------------------------------------------------------
-// UI
-// ---------------------------------------------------------------------------
+// --- UI ---
 
 fn draw(f: &mut Frame, state: &SetupState) {
     let dialog_width = 54;
@@ -111,22 +107,22 @@ fn draw(f: &mut Frame, state: &SetupState) {
     f.render_widget(block, area);
 
     let rows = Layout::vertical([
-        Constraint::Length(1), // subtitle
-        Constraint::Length(1), // blank
-        Constraint::Length(1), // org label + field
-        Constraint::Length(1), // project label + field
-        Constraint::Length(1), // blank
-        Constraint::Length(1), // hints
+        Constraint::Length(1), // Subtitle.
+        Constraint::Length(1), // Blank.
+        Constraint::Length(1), // Org label + field.
+        Constraint::Length(1), // Project label + field.
+        Constraint::Length(1), // Blank.
+        Constraint::Length(1), // Hints.
     ])
     .split(inner);
 
-    // Subtitle
+    // Subtitle.
     let subtitle = Paragraph::new("No configuration found. Let's set things up.")
         .style(Style::new().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     f.render_widget(subtitle, rows[0]);
 
-    // Fields
+    // Fields.
     draw_field(
         f,
         rows[2],
@@ -142,7 +138,7 @@ fn draw(f: &mut Frame, state: &SetupState) {
         state.active == Field::Project,
     );
 
-    // Hints
+    // Hints.
     let hints = Paragraph::new(Line::from(vec![
         Span::styled(
             "Enter",
@@ -189,11 +185,9 @@ fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
         .split(vertical[0])[0]
 }
 
-// ---------------------------------------------------------------------------
-// Public entry point
-// ---------------------------------------------------------------------------
+// --- Public entry point ---
 
-/// Run the interactive setup flow. Returns `Ok(Some(config))` on success,
+/// Runs the interactive setup flow. Returns `Ok(Some(config))` on success,
 /// `Ok(None)` if the user pressed Esc to quit.
 pub fn run_setup(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
@@ -232,9 +226,7 @@ pub fn run_setup(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

@@ -1,3 +1,5 @@
+//! UI component trait and shared component infrastructure.
+
 use anyhow::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::Frame;
@@ -12,7 +14,7 @@ pub mod log_viewer;
 pub mod pipelines;
 pub mod settings;
 
-/// A self-contained UI component following the
+/// Defines a self-contained UI component following the
 /// [ratatui component architecture](https://ratatui.rs/concepts/application-patterns/component-architecture/).
 ///
 /// Each component encapsulates its own state, keybindings, rendering, and action
@@ -29,21 +31,21 @@ pub mod settings;
 /// 4. **Rendering** — `draw(&self, frame, area)` renders the component. The
 ///    `&self` receiver enforces render-only access.
 pub trait Component {
-    /// Handle a key event. Return an `Action` if async or cross-component work
-    /// is needed; return `None` for purely local state changes.
+    /// Handles a key event. Returns an `Action` if async or cross-component work
+    /// is needed; returns `None` for purely local state changes.
     fn handle_key_event(&mut self, _key: KeyEvent) -> Result<Option<crate::events::Action>> {
         Ok(None)
     }
 
-    /// Handle a mouse event.
+    /// Handles a mouse event.
     fn handle_mouse_event(&mut self, _mouse: MouseEvent) -> Result<Option<crate::events::Action>> {
         Ok(None)
     }
 
-    /// Render this component into the given area. Must not mutate state.
+    /// Renders this component into the given area. Must not mutate state.
     fn draw(&self, frame: &mut Frame, area: Rect) -> Result<()>;
 
-    /// Return the footer hint text describing this component's keybindings.
+    /// Returns the footer hint text describing this component's keybindings.
     fn footer_hints(&self) -> &str {
         ""
     }

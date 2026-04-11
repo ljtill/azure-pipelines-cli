@@ -1,3 +1,5 @@
+//! Main event loop driving terminal rendering and async message dispatch.
+
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -16,7 +18,7 @@ use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_lo
 use super::messages::AppMessage;
 use super::{App, View};
 
-/// Outcome of the run loop — tells the caller whether to quit or reload.
+/// Represents the outcome of the run loop — tells the caller whether to quit or reload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunResult {
     Quit,
@@ -35,14 +37,14 @@ pub async fn run(
         config,
         config_path,
     );
-    let mut last_data_fetch = Instant::now() - app.refresh_interval; // trigger immediate fetch
+    let mut last_data_fetch = Instant::now() - app.refresh_interval; // Trigger immediate fetch.
     let mut last_log_fetch: Option<Instant> = None;
 
     let (tx, mut rx) = mpsc::channel::<AppMessage>(64);
     let mut event_stream = EventStream::new();
     let mut ui_tick = tokio::time::interval(Duration::from_secs(1));
 
-    // Spawn background update check (once, at startup)
+    // Spawn background update check (once, at startup).
     if config.update.check_for_updates {
         let tx = tx.clone();
         tokio::spawn(async move {
@@ -62,7 +64,7 @@ pub async fn run(
             break;
         }
 
-        // Spawn periodic background refreshes
+        // Spawn periodic background refreshes.
         let should_refresh_data = !app.data_refresh.in_flight
             && app.data_refresh.backoff_elapsed()
             && last_data_fetch.elapsed() >= app.refresh_interval;
@@ -82,7 +84,7 @@ pub async fn run(
             last_log_fetch = Some(Instant::now());
         }
 
-        // Draw
+        // Draw.
         terminal.draw(|f| render::draw(f, &mut app))?;
 
         // Async event stream: no dropped keypresses since EventStream only

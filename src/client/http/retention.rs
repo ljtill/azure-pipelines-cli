@@ -1,3 +1,5 @@
+//! HTTP client methods for Azure DevOps retention lease operations.
+
 use std::collections::HashMap;
 
 use anyhow::Result;
@@ -5,6 +7,7 @@ use anyhow::Result;
 use crate::client::models::*;
 
 impl super::AdoClient {
+    /// Fetches retention leases for a single pipeline definition.
     pub async fn list_retention_leases_for_definition(
         &self,
         definition_id: u32,
@@ -16,7 +19,7 @@ impl super::AdoClient {
         self.get_all_pages(&url).await
     }
 
-    /// Fetch retention leases across multiple definitions in parallel.
+    /// Fetches retention leases across multiple definitions in parallel.
     /// Tolerates per-definition failures (logs and skips them).
     pub async fn list_all_retention_leases(
         &self,
@@ -76,6 +79,7 @@ impl super::AdoClient {
         Ok(leases)
     }
 
+    /// Deletes the specified retention leases by their IDs.
     pub async fn delete_retention_leases(&self, ids: &[u32]) -> Result<()> {
         if ids.is_empty() {
             return Ok(());

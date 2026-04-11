@@ -1,3 +1,5 @@
+//! Core application state and the `App` struct.
+
 pub mod actions;
 mod messages;
 pub mod nav;
@@ -9,26 +11,26 @@ pub use crate::components::dashboard::DashboardRow;
 pub use crate::components::log_viewer::{LogViewer, TimelineRow};
 pub use nav::ListNav;
 
-/// Cached retention lease data, refreshed alongside the periodic data refresh.
+/// Stores cached retention lease data, refreshed alongside the periodic data refresh.
 #[derive(Debug, Default)]
 pub struct RetentionLeasesState {
     pub leases: Vec<RetentionLease>,
-    /// Build IDs (run IDs) that have at least one retention lease.
+    /// Stores build IDs (run IDs) that have at least one retention lease.
     pub retained_run_ids: HashSet<u32>,
 }
 
 impl RetentionLeasesState {
-    /// Update the `retained_run_ids` index from the current lease list.
+    /// Updates the `retained_run_ids` index from the current lease list.
     pub fn rebuild_index(&mut self) {
         self.retained_run_ids = self.leases.iter().map(|l| l.run_id).collect();
     }
 
-    /// Return leases for a specific build/run ID.
+    /// Returns leases for a specific build/run ID.
     pub fn leases_for_run(&self, run_id: u32) -> Vec<&RetentionLease> {
         self.leases.iter().filter(|l| l.run_id == run_id).collect()
     }
 
-    /// Return lease count for a specific pipeline definition.
+    /// Returns the lease count for a specific pipeline definition.
     pub fn lease_count_for_definition(&self, definition_id: u32) -> usize {
         self.leases
             .iter()
@@ -49,7 +51,7 @@ use crate::client::models::{
 
 use notifications::Notifications;
 
-/// Shared API data refreshed periodically from Azure DevOps.
+/// Stores shared API data refreshed periodically from Azure DevOps.
 #[derive(Debug, Default)]
 pub struct CoreData {
     pub definitions: Vec<PipelineDefinition>,
@@ -57,17 +59,18 @@ pub struct CoreData {
     pub active_builds: Vec<Build>,
     pub pending_approvals: Vec<Approval>,
     pub latest_builds_by_def: BTreeMap<u32, Build>,
-    /// Build IDs that have at least one pending approval gate.
+    /// Stores build IDs that have at least one pending approval gate.
     pub pending_approval_build_ids: HashSet<u32>,
 }
 
-/// Filter configuration from config.toml.
+/// Stores filter configuration from config.toml.
 #[derive(Debug, Default, Clone)]
 pub struct FilterConfig {
     pub folders: Vec<String>,
     pub definition_ids: Vec<u32>,
 }
 
+/// Represents the active view in the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Dashboard,
@@ -77,6 +80,7 @@ pub enum View {
     LogViewer,
 }
 
+/// Represents the current input mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputMode {
     #[default]
@@ -84,14 +88,14 @@ pub enum InputMode {
     Search,
 }
 
-/// Cross-cutting search/filter state shared by Pipelines and Active Runs views.
+/// Stores cross-cutting search/filter state shared by Pipelines and Active Runs views.
 #[derive(Debug, Default)]
 pub struct SearchState {
     pub query: String,
     pub mode: InputMode,
 }
 
-/// Action pending user confirmation (y/n).
+/// Represents an action pending user confirmation (y/n).
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
     CancelBuild {
@@ -119,13 +123,14 @@ pub enum ConfirmAction {
     Quit,
 }
 
-/// A pending confirmation prompt shown in the footer.
+/// Represents a pending confirmation prompt shown in the footer.
 #[derive(Debug, Clone)]
 pub struct ConfirmPrompt {
     pub message: String,
     pub action: ConfirmAction,
 }
 
+/// Holds the central application state, including views, data, and configuration.
 pub struct App {
     pub view: View,
     pub search: SearchState,
@@ -136,58 +141,58 @@ pub struct App {
     endpoints: Endpoints,
     pub config_path: std::path::PathBuf,
 
-    // Filters
+    // --- Filters ---
     pub filters: FilterConfig,
 
-    // Data
+    // --- Data ---
     pub data: CoreData,
 
-    // Dashboard view
+    // --- Dashboard ---
     pub dashboard: crate::components::dashboard::Dashboard,
 
-    // Build history (for selected pipeline)
+    // --- Build History ---
     pub build_history: crate::components::build_history::BuildHistory,
 
-    // Log viewer state (grouped)
+    // --- Log Viewer ---
     pub log_viewer: LogViewer,
 
-    // Confirmation prompt
+    // --- Confirmation ---
     pub confirm_prompt: Option<ConfirmPrompt>,
 
-    // Active Runs view
+    // --- Active Runs ---
     pub active_runs: crate::components::active_runs::ActiveRuns,
 
-    // Pipelines view
+    // --- Pipelines ---
     pub pipelines: crate::components::pipelines::Pipelines,
 
-    // Retention Leases view
+    // --- Retention Leases ---
     pub retention_leases: RetentionLeasesState,
 
-    // Settings overlay
+    // --- Settings ---
     pub settings: Option<settings::SettingsState>,
 
-    // Components
+    // --- Components ---
     pub header: crate::components::header::Header,
     pub help: crate::components::help::Help,
     pub settings_component: crate::components::settings::Settings,
 
-    // Status
+    // --- Status ---
     pub last_refresh: Option<DateTime<Utc>>,
     pub notifications: Notifications,
     pub loading: bool,
     pub data_refresh: crate::shared::refresh::RefreshState,
     pub log_refresh: crate::shared::refresh::RefreshState,
 
-    // Refresh timing
+    // --- Refresh Timing ---
     pub refresh_interval: Duration,
     pub log_refresh_interval: Duration,
 
-    // Reload flag (triggers full restart of the run loop)
+    // --- Reload ---
     pub reload_requested: bool,
 
-    // State-change notifications
+    // --- State-Change Notifications ---
     pub notifications_enabled: bool,
-    /// Previous snapshot of (build_id, status, result) per definition,
+    /// Stores the previous snapshot of (build_id, status, result) per definition,
     /// used to detect state changes between data refreshes.
     pub prev_latest_builds: BTreeMap<u32, (u32, BuildStatus, Option<BuildResult>)>,
 }
@@ -349,7 +354,7 @@ impl App {
         self.endpoints.web_definition(definition_id)
     }
 
-    /// Build a snapshot `Config` reflecting the current runtime state.
+    /// Builds a snapshot `Config` reflecting the current runtime state.
     /// Used to populate the settings overlay.
     pub fn current_config(&self) -> crate::config::Config {
         crate::config::Config {
@@ -380,9 +385,9 @@ impl App {
         }
     }
 
-    /// Open the settings overlay, populated from the on-disk config.
+    /// Opens the settings overlay, populated from the on-disk config.
     pub fn open_settings(&mut self) {
-        // Load the current config from disk to get the true persisted state
+        // Load the current config from disk to get the true persisted state.
         let config = crate::config::Config::load(Some(&self.config_path))
             .unwrap_or_else(|_| self.current_config());
         self.settings = Some(settings::SettingsState::from_config(
@@ -467,7 +472,7 @@ mod tests {
         app.go_back();
         assert_eq!(app.view, View::BuildHistory);
         assert!(app.log_viewer.selected_build().is_none());
-        // Generation should be preserved (incremented)
+        // Generation should be preserved (incremented).
         assert!(app.log_viewer.generation() > generation);
     }
 
@@ -498,7 +503,7 @@ mod tests {
         app.show_help = true;
         app.go_back();
         assert!(!app.show_help);
-        assert_eq!(app.view, View::Dashboard); // didn't change view
+        assert_eq!(app.view, View::Dashboard); // Didn't change view.
     }
 
     #[test]

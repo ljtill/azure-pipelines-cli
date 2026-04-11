@@ -1,3 +1,5 @@
+//! Active runs view component showing currently executing builds.
+
 use std::collections::HashSet;
 
 use anyhow::Result;
@@ -17,7 +19,7 @@ use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, InputMode};
 
-/// Active Runs component — renders currently running builds with multi-select.
+/// Renders currently running builds with multi-select support.
 #[derive(Debug, Default)]
 pub struct ActiveRuns {
     pub filtered: Vec<Build>,
@@ -57,7 +59,7 @@ impl ActiveRuns {
         self.nav.set_len(self.filtered.len());
     }
 
-    /// Toggle selection state for the item at the current nav index.
+    /// Toggles selection state for the item at the current nav index.
     pub fn toggle_selected_at_cursor(&mut self) {
         if let Some(build) = self.filtered.get(self.nav.index()) {
             let id = build.id;

@@ -1,7 +1,9 @@
+//! Auto-expiring notification queue for user-facing messages.
+
 use std::collections::VecDeque;
 use std::time::Instant;
 
-/// Severity level for a notification.
+/// Represents the severity level for a notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationLevel {
     #[allow(dead_code)]
@@ -10,7 +12,7 @@ pub enum NotificationLevel {
     Error,
 }
 
-/// A timestamped user-facing notification.
+/// Represents a timestamped user-facing notification.
 #[derive(Debug, Clone)]
 pub struct Notification {
     pub level: NotificationLevel,
@@ -19,7 +21,7 @@ pub struct Notification {
     pub persistent: bool,
 }
 
-/// Auto-expiring notification queue.
+/// Manages an auto-expiring notification queue.
 pub struct Notifications {
     queue: VecDeque<Notification>,
     ttl_secs: u64,
@@ -74,8 +76,8 @@ impl Notifications {
         self.push(NotificationLevel::Error, message);
     }
 
-    /// Push an error, but if the most recent notification has the same message,
-    /// just refresh its timestamp instead of adding a duplicate.
+    /// Pushes an error, but if the most recent notification has the same message,
+    /// just refreshes its timestamp instead of adding a duplicate.
     pub fn error_dedup(&mut self, message: impl Into<String>) {
         let message = message.into();
         if let Some(last) = self.queue.back()
@@ -89,11 +91,11 @@ impl Notifications {
         self.push(NotificationLevel::Error, message);
     }
 
-    /// Return the most recent non-expired notification, pruning expired ones.
+    /// Returns the most recent non-expired notification, pruning expired ones.
     #[allow(dead_code)]
     pub fn current(&mut self) -> Option<&Notification> {
         let cutoff = Instant::now() - std::time::Duration::from_secs(self.ttl_secs);
-        // Remove expired (non-persistent) from the front
+        // Remove expired (non-persistent) from the front.
         while self
             .queue
             .front()
@@ -104,7 +106,7 @@ impl Notifications {
         self.queue.back()
     }
 
-    /// Return a clone of the most recent non-expired notification (read-only).
+    /// Returns a clone of the most recent non-expired notification (read-only).
     pub fn clone_current(&self) -> Option<Notification> {
         let cutoff = Instant::now() - std::time::Duration::from_secs(self.ttl_secs);
         self.queue
@@ -113,7 +115,7 @@ impl Notifications {
             .cloned()
     }
 
-    /// Clear all notifications.
+    /// Clears all notifications.
     pub fn clear(&mut self) {
         self.queue.clear();
     }
@@ -157,7 +159,7 @@ mod tests {
         let mut n = Notifications::new(60);
         n.error_dedup("network down");
         n.error_dedup("network down");
-        // Only one notification should exist
+        // Only one notification should exist.
         assert_eq!(n.queue.len(), 1);
         assert_eq!(n.current().unwrap().message, "network down");
     }
@@ -176,7 +178,7 @@ mod tests {
         let mut n = Notifications::new(60);
         n.error_dedup("network down");
         let first_time = n.queue.back().unwrap().created_at;
-        // Spin briefly so Instant advances
+        // Spin briefly so Instant advances.
         std::thread::sleep(std::time::Duration::from_millis(5));
         n.error_dedup("network down");
         let second_time = n.queue.back().unwrap().created_at;

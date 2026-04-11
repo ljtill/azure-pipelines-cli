@@ -1,3 +1,5 @@
+//! Top-level render dispatch for all application views.
+
 pub mod helpers;
 pub mod setup;
 pub mod theme;
@@ -11,9 +13,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     use ratatui::layout::{Constraint, Layout};
 
     let chunks = Layout::vertical([
-        Constraint::Length(3), // header
-        Constraint::Min(0),    // body
-        Constraint::Length(1), // footer
+        Constraint::Length(3), // Header.
+        Constraint::Min(0),    // Body.
+        Constraint::Length(1), // Footer.
     ])
     .split(f.area());
 
@@ -46,7 +48,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
-    // Show confirmation prompt if active
+    // Show confirmation prompt if active.
     if let Some(prompt) = &app.confirm_prompt {
         let footer = Paragraph::new(Line::from(vec![Span::styled(
             format!(" {}", prompt.message),

@@ -1,6 +1,9 @@
+//! URL builders for the Azure DevOps build definitions API.
+
 use super::{API_VERSION, Endpoints};
 
 impl Endpoints {
+    /// Constructs the URL for fetching all build definitions with latest build info.
     pub fn definitions(&self) -> String {
         format!(
             "{}/build/definitions?api-version={API_VERSION}&includeLatestBuilds=true",

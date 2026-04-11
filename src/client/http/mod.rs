@@ -1,3 +1,9 @@
+//! HTTP transport layer for the Azure DevOps REST API.
+//!
+//! Provides [`AdoClient`] with authenticated GET, POST, PATCH, and DELETE helpers,
+//! automatic pagination via continuation tokens, and structured tracing for every
+//! request/response cycle.
+
 mod approvals;
 mod builds;
 mod definitions;
@@ -12,6 +18,7 @@ use super::auth::AdoAuth;
 use super::endpoints::Endpoints;
 use super::models::*;
 
+/// Authenticated HTTP client for the Azure DevOps REST API.
 #[derive(Clone)]
 pub struct AdoClient {
     pub(crate) http: Client,
@@ -20,6 +27,7 @@ pub struct AdoClient {
 }
 
 impl AdoClient {
+    /// Creates a new client configured for the given organization and project.
     pub async fn new(organization: &str, project: &str) -> Result<Self> {
         let auth = AdoAuth::new().await?;
         let http = Client::builder()
@@ -36,6 +44,7 @@ impl AdoClient {
         })
     }
 
+    /// Sends an authenticated GET request and deserializes the JSON response.
     pub(crate) async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
         let token = self.auth.token().await?;
         let display_url = url_without_query(url);
@@ -60,7 +69,7 @@ impl AdoClient {
         Ok(body)
     }
 
-    /// GET with continuation token extraction from the `x-ms-continuationtoken` header.
+    /// Sends a GET request and extracts the continuation token from the `x-ms-continuationtoken` header.
     pub(crate) async fn get_with_continuation<T: serde::de::DeserializeOwned>(
         &self,
         url: &str,
@@ -95,6 +104,7 @@ impl AdoClient {
         Ok((body, continuation))
     }
 
+    /// Fetches all pages of a paginated list endpoint, following continuation tokens until exhausted.
     pub(crate) async fn get_all_pages<T: serde::de::DeserializeOwned>(
         &self,
         url: &str,
@@ -144,6 +154,7 @@ impl AdoClient {
         Ok(all_items)
     }
 
+    /// Sends an authenticated GET request and returns the response body as plain text.
     pub(crate) async fn get_text(&self, url: &str) -> Result<String> {
         let token = self.auth.token().await?;
         let display_url = url_without_query(url);
@@ -169,6 +180,7 @@ impl AdoClient {
         Ok(text)
     }
 
+    /// Sends an authenticated PATCH request with a JSON body, discarding the response.
     pub(crate) async fn patch_json<B: serde::Serialize>(&self, url: &str, body: &B) -> Result<()> {
         let token = self.auth.token().await?;
         let display_url = url_without_query(url);
@@ -193,6 +205,7 @@ impl AdoClient {
         Ok(())
     }
 
+    /// Sends an authenticated POST request with a JSON body and deserializes the response.
     pub(crate) async fn post_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(
         &self,
         url: &str,
@@ -222,6 +235,7 @@ impl AdoClient {
         Ok(body)
     }
 
+    /// Sends an authenticated DELETE request, discarding the response.
     pub(crate) async fn delete(&self, url: &str) -> Result<()> {
         let token = self.auth.token().await?;
         let display_url = url_without_query(url);
@@ -246,6 +260,7 @@ impl AdoClient {
     }
 }
 
+/// Appends a continuation token query parameter to a base URL.
 fn paginated_url(base_url: &str, continuation_token: Option<&str>) -> Result<Url> {
     let mut url =
         Url::parse(base_url).with_context(|| format!("Failed to parse URL: {base_url}"))?;
@@ -256,12 +271,12 @@ fn paginated_url(base_url: &str, continuation_token: Option<&str>) -> Result<Url
     Ok(url)
 }
 
-/// Return the URL portion before the query string for logging.
+/// Returns the URL portion before the query string for logging.
 fn url_without_query(url: &str) -> &str {
     url.split('?').next().unwrap_or(url)
 }
 
-/// Percent-encode a continuation token for safe inclusion in a URL query string.
+/// Percent-encodes a continuation token for safe inclusion in a URL query string.
 pub(crate) fn encode_continuation_token(token: &str) -> String {
     let dummy = format!("https://x?t={}", token);
     if let Ok(url) = Url::parse(&dummy) {

@@ -1,3 +1,5 @@
+//! Follow and inspect mode logic for the log viewer.
+
 use crate::client::models::{BuildResult, BuildStatus, TaskState};
 
 use super::LogViewer;
@@ -12,9 +14,7 @@ struct TaskCandidate {
     log_id: u32,
 }
 
-// ---------------------------------------------------------------------------
-// Follow / inspect mode transitions
-// ---------------------------------------------------------------------------
+// --- Follow / inspect mode transitions ---
 impl LogViewer {
     pub fn enter_follow_mode(&mut self) {
         self.follow_mode = true;
@@ -30,11 +30,9 @@ impl LogViewer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Auto-select and active-task detection
-// ---------------------------------------------------------------------------
+// --- Auto-select and active-task detection ---
 impl LogViewer {
-    /// Pick the most relevant timeline task to auto-show logs for.
+    /// Picks the most relevant timeline task to auto-show logs for.
     /// Returns (row_index, log_id) if found. Ensures parent stage/job are expanded.
     pub fn auto_select_log_entry(&mut self) -> Option<(usize, u32)> {
         let timeline = self.build_timeline.as_ref()?;
@@ -121,7 +119,7 @@ impl LogViewer {
         }
     }
 
-    /// Find the currently active task without moving cursor or changing state.
+    /// Finds the currently active task without moving cursor or changing state.
     pub fn find_active_task(&self) -> Option<(String, u32)> {
         let timeline = self.build_timeline.as_ref()?;
         let tasks: Vec<_> = timeline
@@ -159,11 +157,9 @@ impl LogViewer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Build status derived from timeline
-// ---------------------------------------------------------------------------
+// --- Build status derived from timeline ---
 impl LogViewer {
-    /// Update `selected_build` status/result from timeline records.
+    /// Updates `selected_build` status/result from timeline records.
     /// Called on each timeline refresh so the log viewer header stays current.
     pub fn refresh_build_status_from_timeline(&mut self) {
         let timeline = match &self.build_timeline {

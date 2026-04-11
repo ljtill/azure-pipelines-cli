@@ -1,6 +1,9 @@
+//! Cross-view navigation actions like opening in browser, cancelling, and queueing builds.
+
 use super::Action;
 use crate::state::{App, ConfirmAction, ConfirmPrompt, View};
 
+/// Opens the currently selected item in the default web browser.
 pub fn handle_open_in_browser(app: &App) -> Action {
     let url = match app.view {
         View::Dashboard => {
@@ -39,8 +42,9 @@ pub fn handle_open_in_browser(app: &App) -> Action {
     }
 }
 
+/// Prompts the user to confirm cancellation of one or more builds.
 pub fn handle_cancel_request(app: &mut App) -> Action {
-    // Batch cancel: if items are selected in Active Runs, cancel all of them
+    // Batch cancel: if items are selected in Active Runs, cancel all of them.
     if app.view == View::ActiveRuns && !app.active_runs.selected.is_empty() {
         let count = app.active_runs.selected.len();
         let build_ids: Vec<u32> = app.active_runs.selected.iter().copied().collect();
@@ -51,7 +55,7 @@ pub fn handle_cancel_request(app: &mut App) -> Action {
         return Action::None;
     }
 
-    // Single cancel: cursor item
+    // Single cancel: cursor item.
     let build = match app.view {
         View::LogViewer => app.log_viewer.selected_build(),
         View::ActiveRuns => app.active_runs.filtered.get(app.active_runs.nav.index()),
@@ -70,6 +74,7 @@ pub fn handle_cancel_request(app: &mut App) -> Action {
     Action::None
 }
 
+/// Prompts the user to confirm queueing a new pipeline run.
 pub fn handle_queue_request(app: &mut App) -> Action {
     let (def_id, def_name) = match app.view {
         View::Dashboard => {
@@ -107,8 +112,9 @@ pub fn handle_queue_request(app: &mut App) -> Action {
     Action::None
 }
 
+/// Prompts the user to confirm deletion of retention leases for selected builds.
 pub fn handle_delete_build_leases_request(app: &mut App) -> Action {
-    // Batch delete: if builds are selected, collect leases for all of them
+    // Batch delete: if builds are selected, collect leases for all of them.
     if !app.build_history.selected.is_empty() {
         let lease_ids: Vec<u32> = app
             .build_history
@@ -134,7 +140,7 @@ pub fn handle_delete_build_leases_request(app: &mut App) -> Action {
         return Action::None;
     }
 
-    // Single delete: cursor item
+    // Single delete: cursor item.
     if let Some(build) = app.build_history.builds.get(app.build_history.nav.index()) {
         let lease_ids: Vec<u32> = app
             .retention_leases

@@ -1,6 +1,9 @@
+//! URL builders for the Azure DevOps build retention API.
+
 use super::{API_VERSION, Endpoints};
 
 impl Endpoints {
+    /// Constructs the URL for fetching retention leases for a build definition.
     pub fn retention_leases_for_definition(&self, definition_id: u32) -> String {
         format!(
             "{}/build/retention/leases?definitionId={definition_id}&api-version={API_VERSION}",
@@ -8,6 +11,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for deleting retention leases by their IDs.
     pub fn retention_leases_delete(&self, ids: &[u32]) -> String {
         let ids_str: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
         format!(

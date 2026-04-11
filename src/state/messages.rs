@@ -1,3 +1,5 @@
+//! Asynchronous message types for state updates.
+
 use crate::client::models::{Approval, Build, BuildTimeline, PipelineDefinition, RetentionLease};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,7 +10,7 @@ pub enum RefreshSource {
     Log,
 }
 
-/// Messages sent from background tasks to the main event loop.
+/// Represents a message sent from background tasks to the main event loop.
 pub enum AppMessage {
     DataRefresh {
         definitions: Vec<PipelineDefinition>,
@@ -53,7 +55,7 @@ pub enum AppMessage {
         version: String,
     },
     Error(String),
-    /// Like `Error`, but for periodic refresh failures — uses dedup to avoid
+    /// Behaves like `Error`, but for periodic refresh failures — uses dedup to avoid
     /// flooding the notification queue when the network is persistently down.
     RefreshError {
         message: String,

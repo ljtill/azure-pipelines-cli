@@ -1,6 +1,9 @@
+//! URL builders for the Azure DevOps pipeline approvals API.
+
 use super::{API_VERSION, Endpoints};
 
 impl Endpoints {
+    /// Constructs the URL for fetching pending pipeline approvals.
     pub fn approvals_pending(&self) -> String {
         format!(
             "{}/pipelines/approvals?state=pending&$expand=steps&api-version={API_VERSION}",
@@ -8,6 +11,7 @@ impl Endpoints {
         )
     }
 
+    /// Constructs the URL for submitting approval decisions.
     pub fn approvals_update(&self) -> String {
         format!(
             "{}/pipelines/approvals?api-version={API_VERSION}",

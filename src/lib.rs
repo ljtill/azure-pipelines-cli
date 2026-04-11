@@ -49,7 +49,7 @@ pub mod shared;
 pub mod state;
 pub mod update;
 
-/// Test factory functions used by unit and integration tests.
+/// Provides test factory functions for unit and integration tests.
 ///
 /// Kept public for integration tests in `tests/`. Not intended for
 /// downstream consumers — will be gated behind a feature flag if

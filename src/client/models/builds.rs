@@ -1,3 +1,5 @@
+//! Azure DevOps build and timeline model types.
+
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
@@ -7,6 +9,7 @@ use super::{BuildResult, BuildStatus};
 
 // --- Builds ---
 
+/// Represents a paginated list of builds.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BuildListResponse {
     pub value: Vec<Build>,
@@ -14,6 +17,7 @@ pub struct BuildListResponse {
     pub count: u32,
 }
 
+/// Represents a single Azure DevOps build.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Build {
     pub id: u32,
@@ -38,12 +42,14 @@ pub struct Build {
     pub trigger_info: Option<HashMap<String, String>>,
 }
 
+/// Represents a minimal reference to a build definition.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BuildDefinitionRef {
     pub id: u32,
     pub name: String,
 }
 
+/// Represents an identity reference with a display name.
 #[derive(Debug, Clone, Deserialize)]
 pub struct IdentityRef {
     #[serde(rename = "displayName")]
@@ -52,11 +58,13 @@ pub struct IdentityRef {
 
 // --- Build Timeline (stages/jobs/tasks) ---
 
+/// Represents a build timeline containing stage, job, and task records.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BuildTimeline {
     pub records: Vec<TimelineRecord>,
 }
 
+/// Represents a single record in a build timeline.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TimelineRecord {
     pub id: String,
@@ -75,6 +83,7 @@ pub struct TimelineRecord {
 
 // --- Pipeline Run (queue) ---
 
+/// Represents a queued pipeline run.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PipelineRun {
     pub id: u32,
@@ -82,12 +91,14 @@ pub struct PipelineRun {
     pub name: String,
 }
 
+/// Represents a reference to a log resource.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogReference {
     pub id: u32,
 }
 
 impl Build {
+    /// Returns the branch name with `refs/heads/` or `refs/pull/` prefix stripped.
     pub fn short_branch(&self) -> String {
         self.source_branch
             .as_deref()
@@ -103,6 +114,7 @@ impl Build {
             .to_string()
     }
 
+    /// Returns the display name of the user who requested the build.
     pub fn requestor(&self) -> &str {
         self.requested_for
             .as_ref()
@@ -110,25 +122,28 @@ impl Build {
             .unwrap_or("Unknown")
     }
 
+    /// Returns `true` if this build was triggered by a pull request.
     pub fn is_pr_build(&self) -> bool {
         self.reason
             .as_deref()
             .is_some_and(|r| r.eq_ignore_ascii_case("pullRequest"))
     }
 
+    /// Returns the pull request title from trigger info, if available.
     pub fn pr_title(&self) -> Option<&str> {
         self.trigger_info
             .as_ref()
             .and_then(|ti| ti.get("pr.title").map(|s| s.as_str()))
     }
 
+    /// Returns the pull request number from trigger info, if available.
     pub fn pr_number(&self) -> Option<&str> {
         self.trigger_info
             .as_ref()
             .and_then(|ti| ti.get("pr.number").map(|s| s.as_str()))
     }
 
-    /// User-facing branch/PR description for list views.
+    /// Returns the user-facing branch or PR description for list views.
     ///
     /// For PR builds with trigger info: `PR #42 · Fix login timeout`
     /// For other builds: the short branch name (e.g. `main`, `feat/widget`).

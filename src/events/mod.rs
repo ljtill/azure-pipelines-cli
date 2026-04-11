@@ -1,3 +1,5 @@
+//! Keyboard and mouse event dispatch to per-view handlers.
+
 mod active_runs;
 mod build_history;
 mod common;
@@ -10,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 
 use crate::state::{App, ConfirmAction, ConfirmPrompt, InputMode, View};
 
-/// The action requested by the user after handling a key event.
+/// Represents the action requested by the user after handling a key event.
 #[derive(Debug)]
 pub enum Action {
     None,
@@ -41,41 +43,42 @@ pub enum Action {
     DeleteRetentionLeases(Vec<u32>),
 }
 
+/// Dispatches a key event to the appropriate view-specific handler.
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     tracing::trace!(key = ?key.code, modifiers = ?key.modifiers, view = ?app.view, "key event");
 
-    // Ctrl+C always quits
+    // Ctrl+C always quits.
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Action::Quit;
     }
 
-    // Confirmation prompt — only accept y/n/Esc
+    // Confirmation prompt — only accept y/n/Esc.
     if app.confirm_prompt.is_some() {
         return common::handle_confirm_key(app, key);
     }
 
-    // Search mode input
+    // Search mode input.
     if app.search.mode == InputMode::Search {
         return common::handle_search_key(app, key);
     }
 
-    // Help overlay — any key dismisses
+    // Help overlay — any key dismisses.
     if app.show_help {
         app.show_help = false;
         return Action::None;
     }
 
-    // Settings overlay — route keys to dedicated handler
+    // Settings overlay — route keys to dedicated handler.
     if app.show_settings {
         return common::handle_settings_key(app, key);
     }
 
-    // Common keys (work in all views)
+    // Common keys (work in all views).
     if let Some(action) = handle_common_key(app, key) {
         return action;
     }
 
-    // View-specific keys
+    // View-specific keys.
     match app.view {
         View::Dashboard => dashboard::handle_key(app, key),
         View::Pipelines => pipelines::handle_key(app, key),
@@ -85,7 +88,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
-/// Keys that work identically across all/most views.
+/// Handles keys that work identically across all views.
 fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
     match key.code {
         KeyCode::Char('?') => {
@@ -108,7 +111,7 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             Some(Action::None)
         }
 
-        // Tab switching
+        // Tab switching.
         KeyCode::Char('1') => {
             tracing::info!(from = ?app.view, to = ?View::Dashboard, "view switch");
             app.search.query.clear();
@@ -139,7 +142,7 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             Some(Action::None)
         }
 
-        // Navigation
+        // Navigation.
         KeyCode::Up => {
             app.current_nav_mut().up();
             Some(Action::None)
@@ -157,14 +160,15 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             Some(Action::None)
         }
 
-        // q/Esc — go back logic
+        // q/Esc — go back logic.
         KeyCode::Char('q') => Some(handle_quit_key(app)),
         KeyCode::Esc => Some(handle_esc_key(app)),
 
-        _ => None, // fall through to view-specific
+        _ => None, // Fall through to view-specific.
     }
 }
 
+/// Handles the quit key by navigating back or prompting to confirm quit.
 fn handle_quit_key(app: &mut App) -> Action {
     match app.view {
         View::Dashboard => {
@@ -187,6 +191,7 @@ fn handle_quit_key(app: &mut App) -> Action {
     }
 }
 
+/// Handles the Esc key by navigating back to the parent view.
 fn handle_esc_key(app: &mut App) -> Action {
     match app.view {
         View::Dashboard => Action::None,
@@ -203,6 +208,7 @@ fn handle_esc_key(app: &mut App) -> Action {
     }
 }
 
+/// Handles mouse scroll events in the log viewer.
 pub fn handle_mouse(app: &mut App, mouse: MouseEvent) -> Action {
     match mouse.kind {
         MouseEventKind::ScrollUp if app.view == View::LogViewer => {

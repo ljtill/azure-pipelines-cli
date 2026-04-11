@@ -1,3 +1,5 @@
+//! Help overlay component showing keyboard shortcuts.
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -8,8 +10,7 @@ use super::Component;
 use crate::render::helpers::centered_rect;
 use crate::render::theme;
 
-/// Help overlay component — renders the full keybinding reference.
-///
+/// Displays the full keybinding reference.
 /// This is a stateless overlay; any key press dismisses it (handled by App).
 #[derive(Default)]
 pub struct Help;

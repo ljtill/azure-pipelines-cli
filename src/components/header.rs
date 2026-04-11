@@ -1,3 +1,5 @@
+//! Header bar component displaying app title and status indicators.
+
 use anyhow::Result;
 use chrono::Utc;
 use ratatui::Frame;
@@ -11,14 +13,13 @@ use crate::render::helpers::truncate;
 use crate::render::theme;
 use crate::state::{App, View};
 
-/// Header bar component — renders the title, refresh status, notifications, and tab bar.
-///
+/// Renders the title, refresh status, notifications, and tab bar.
 /// Always visible at the top of the screen. Not interactive.
 #[derive(Default)]
 pub struct Header;
 
 impl Header {
-    /// Render the header using data from the App. This is a helper that takes
+    /// Renders the header using data from the App. This is a helper that takes
     /// `&App` since the header reads cross-cutting state (notifications, refresh
     /// timestamps, approvals, view, etc.).
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
@@ -28,7 +29,7 @@ impl Header {
         ])
         .split(area);
 
-        // Title bar with org/project and refresh status
+        // Title bar with org/project and refresh status.
         let refresh_text = if app.loading {
             " ⟳ refreshing...".to_string()
         } else if let Some(last) = app.last_refresh {
@@ -75,7 +76,7 @@ impl Header {
         ]));
         f.render_widget(title, chunks[0]);
 
-        // Tab bar
+        // Tab bar.
         let tab_titles = vec!["[1] Dashboard", "[2] Pipelines", "[3] Active Runs"];
         let selected = match app.view {
             View::Dashboard => 0,

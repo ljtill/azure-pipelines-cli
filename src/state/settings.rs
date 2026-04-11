@@ -1,3 +1,5 @@
+//! Runtime settings state and form editing logic.
+
 use std::path::PathBuf;
 
 use crate::config::{
@@ -5,56 +7,56 @@ use crate::config::{
     UpdateConfig,
 };
 
-/// Which field type a settings row represents.
+/// Represents the field type for a settings row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
-    /// Free-form text input.
+    /// Represents free-form text input.
     Text,
-    /// Comma-separated list of strings.
+    /// Represents a comma-separated list of strings.
     StringList,
-    /// Comma-separated list of u32 values.
+    /// Represents a comma-separated list of u32 values.
     IntList,
-    /// Boolean toggle (Enter/Space to flip).
+    /// Represents a boolean toggle (Enter/Space to flip).
     Toggle,
-    /// Cycle through a fixed set of values (Enter to advance).
+    /// Cycles through a fixed set of values (Enter to advance).
     Cycle,
-    /// Positive integer input.
+    /// Represents positive integer input.
     Number,
 }
 
-/// A single row in the settings form.
+/// Represents a single row in the settings form.
 #[derive(Debug, Clone)]
 pub struct SettingsField {
     pub label: &'static str,
     pub section: &'static str,
     pub kind: FieldKind,
-    /// Current value serialized to a display string.
+    /// Stores the current value serialized to a display string.
     pub value: String,
-    /// Hint text shown to the right of the field.
+    /// Stores hint text shown to the right of the field.
     pub hint: &'static str,
 }
 
 const LOG_LEVELS: &[&str] = &["trace", "debug", "info", "warn", "error"];
 
-/// Editable settings state, populated from the current config on open.
+/// Stores editable settings state, populated from the current config on open.
 #[derive(Debug)]
 pub struct SettingsState {
     pub fields: Vec<SettingsField>,
-    /// Index of the currently selected/focused field.
+    /// Stores the index of the currently selected/focused field.
     pub selected: usize,
-    /// Whether the currently selected field is in edit mode.
+    /// Indicates whether the currently selected field is in edit mode.
     pub editing: bool,
-    /// The path to the config file (needed for save).
+    /// Stores the path to the config file (needed for save).
     pub config_path: PathBuf,
-    /// Cursor position within the edit buffer.
+    /// Stores the cursor position within the edit buffer.
     pub cursor: usize,
 }
 
 impl SettingsState {
-    /// Build a new `SettingsState` from the running config and file path.
+    /// Builds a new `SettingsState` from the running config and file path.
     pub fn from_config(config: &Config, config_path: PathBuf) -> Self {
         let fields = vec![
-            // Connection
+            // --- Connection ---
             SettingsField {
                 label: "Organization",
                 section: "Connection",
@@ -69,7 +71,7 @@ impl SettingsState {
                 value: config.azure_devops.project.clone(),
                 hint: "reload on save",
             },
-            // Filters
+            // --- Filters ---
             SettingsField {
                 label: "Filter folders",
                 section: "Filters",
@@ -90,7 +92,7 @@ impl SettingsState {
                     .join(", "),
                 hint: "comma-separated",
             },
-            // Display
+            // --- Display ---
             SettingsField {
                 label: "Refresh interval (secs)",
                 section: "Display",
@@ -112,7 +114,7 @@ impl SettingsState {
                 value: config.notifications.enabled.to_string(),
                 hint: "",
             },
-            // General
+            // --- General ---
             SettingsField {
                 label: "Log level",
                 section: "General",
@@ -153,7 +155,7 @@ impl SettingsState {
         }
     }
 
-    /// Enter edit mode for the current field.
+    /// Enters edit mode for the current field.
     pub fn start_edit(&mut self) {
         let field = &self.fields[self.selected];
         match field.kind {
@@ -176,19 +178,19 @@ impl SettingsState {
         }
     }
 
-    /// Stop editing (confirm the current value).
+    /// Stops editing (confirms the current value).
     pub fn stop_edit(&mut self) {
         self.editing = false;
     }
 
-    /// Cancel editing (we don't restore old value — Esc from the overlay
+    /// Cancels editing (we don't restore old value — Esc from the overlay
     /// discards the entire settings state, so individual field cancel
     /// isn't needed).
     pub fn cancel_edit(&mut self) {
         self.editing = false;
     }
 
-    /// Insert a character at the cursor position for the active field.
+    /// Inserts a character at the cursor position for the active field.
     pub fn insert_char(&mut self, c: char) {
         let field = &mut self.fields[self.selected];
         match field.kind {
@@ -205,7 +207,7 @@ impl SettingsState {
         }
     }
 
-    /// Delete the character before the cursor.
+    /// Deletes the character before the cursor.
     pub fn backspace(&mut self) {
         if self.cursor > 0 {
             self.fields[self.selected].value.remove(self.cursor - 1);
@@ -213,7 +215,7 @@ impl SettingsState {
         }
     }
 
-    /// Delete the character at the cursor.
+    /// Deletes the character at the cursor.
     pub fn delete(&mut self) {
         let len = self.fields[self.selected].value.len();
         if self.cursor < len {
@@ -234,7 +236,7 @@ impl SettingsState {
         }
     }
 
-    /// Build a `Config` from the current field values.
+    /// Builds a `Config` from the current field values.
     pub fn to_config(&self) -> Config {
         let get = |label: &str| -> &str {
             self.fields
@@ -297,7 +299,7 @@ impl SettingsState {
         }
     }
 
-    /// Save the settings to disk and return the built config.
+    /// Saves the settings to disk and returns the built config.
     pub fn save(&self) -> Result<Config, anyhow::Error> {
         let config = self.to_config();
         config.save(&self.config_path)?;
@@ -334,7 +336,7 @@ mod tests {
         assert_eq!(s.selected, 1);
         s.move_up();
         assert_eq!(s.selected, 0);
-        // Can't go above 0
+        // Can't go above 0.
         s.move_up();
         assert_eq!(s.selected, 0);
     }
@@ -351,13 +353,13 @@ mod tests {
     #[test]
     fn toggle_field() {
         let mut s = make_settings();
-        // "Check for updates" is now index 8
+        // "Check for updates" is now index 8.
         s.selected = 8;
         assert_eq!(s.fields[8].kind, FieldKind::Toggle);
         assert_eq!(s.fields[8].value, "true");
         s.start_edit();
         assert_eq!(s.fields[8].value, "false");
-        assert!(!s.editing); // Toggle doesn't enter edit mode
+        assert!(!s.editing); // Toggle doesn't enter edit mode.
         s.start_edit();
         assert_eq!(s.fields[8].value, "true");
     }
@@ -365,15 +367,15 @@ mod tests {
     #[test]
     fn cycle_field() {
         let mut s = make_settings();
-        // "Log level" is now index 7
+        // "Log level" is now index 7.
         s.selected = 7;
         assert_eq!(s.fields[7].kind, FieldKind::Cycle);
         assert_eq!(s.fields[7].value, "info");
-        s.start_edit(); // info -> warn
+        s.start_edit(); // Info -> warn.
         assert_eq!(s.fields[7].value, "warn");
-        s.start_edit(); // warn -> error
+        s.start_edit(); // Warn -> error.
         assert_eq!(s.fields[7].value, "error");
-        s.start_edit(); // error -> trace (wraps)
+        s.start_edit(); // Error -> trace (wraps).
         assert_eq!(s.fields[7].value, "trace");
     }
 
@@ -393,12 +395,12 @@ mod tests {
     #[test]
     fn number_field_rejects_non_digits() {
         let mut s = make_settings();
-        // "Refresh interval (secs)" is now index 4
+        // "Refresh interval (secs)" is now index 4.
         s.selected = 4;
         s.start_edit();
         let before = s.fields[4].value.clone();
         s.insert_char('a');
-        assert_eq!(s.fields[4].value, before); // unchanged
+        assert_eq!(s.fields[4].value, before); // Unchanged.
         s.insert_char('5');
         assert!(s.fields[4].value.ends_with('5'));
     }
