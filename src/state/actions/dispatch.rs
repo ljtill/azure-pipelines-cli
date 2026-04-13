@@ -75,16 +75,24 @@ pub fn handle_action(
         }
         Action::FollowLatest => {
             // Switch to follow mode: jump cursor to active task and fetch its log.
-            if let Some((idx, log_id)) = app.log_viewer.auto_select_log_entry() {
-                if let Some(TimelineRow::Task { name, .. }) =
+            if let Some((idx, maybe_log_id)) = app.log_viewer.auto_select_log_entry() {
+                let task_name = if let Some(TimelineRow::Task { name, .. }) =
                     app.log_viewer.timeline_rows().get(idx)
                 {
-                    app.log_viewer.set_followed(name.clone(), log_id);
+                    name.clone()
                 } else {
-                    app.log_viewer.set_followed(String::new(), log_id);
-                }
-                if let Some(build) = app.log_viewer.selected_build() {
-                    spawn_log_fetch(client, tx, build.id, log_id, app.log_viewer.generation());
+                    String::new()
+                };
+
+                if let Some(log_id) = maybe_log_id {
+                    app.log_viewer.set_followed(task_name, log_id);
+                    if let Some(build) = app.log_viewer.selected_build() {
+                        spawn_log_fetch(client, tx, build.id, log_id, app.log_viewer.generation());
+                    }
+                } else {
+                    // In-progress task with no log yet — position cursor and wait.
+                    app.log_viewer.set_followed_pending(task_name);
+                    app.log_viewer.clear_log();
                 }
             }
         }

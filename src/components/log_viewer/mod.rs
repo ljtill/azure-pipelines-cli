@@ -4,6 +4,7 @@ mod follow;
 mod state;
 mod timeline;
 
+pub use follow::ActiveTaskResult;
 pub use state::LogViewer;
 pub use timeline::TimelineRow;
 
@@ -900,7 +901,7 @@ mod tests {
         let result = state.auto_select_log_entry();
         assert!(result.is_some());
         let (_, log_id) = result.unwrap();
-        assert_eq!(log_id, 11);
+        assert_eq!(log_id, Some(11));
     }
 
     #[test]
@@ -933,7 +934,7 @@ mod tests {
         let result = state.auto_select_log_entry();
         assert!(result.is_some());
         let (_, log_id) = result.unwrap();
-        assert_eq!(log_id, 11);
+        assert_eq!(log_id, Some(11));
     }
 
     #[test]
@@ -951,17 +952,176 @@ mod tests {
         let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
         state.set_build_timeline(timeline);
         let result = state.find_active_task();
-        assert!(result.is_some());
-        let (name, log_id) = result.unwrap();
-        assert_eq!(name, "Build");
-        assert_eq!(log_id, 11);
+        assert_eq!(
+            result,
+            ActiveTaskResult::Found {
+                name: "Build".to_string(),
+                log_id: 11
+            }
+        );
     }
 
     #[test]
     fn find_active_task_returns_none_when_no_timeline() {
         let build = make_test_build(BuildStatus::InProgress, None);
         let state = LogViewer::new_for_build(build, View::BuildHistory, 1);
-        assert!(state.find_active_task().is_none());
+        assert_eq!(state.find_active_task(), ActiveTaskResult::None);
+    }
+
+    #[test]
+    fn find_active_task_returns_pending_when_in_progress_task_has_no_log() {
+        let timeline = BuildTimeline {
+            records: vec![
+                make_record(
+                    "s1",
+                    None,
+                    "Build",
+                    "Stage",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "p1",
+                    Some("s1"),
+                    "Job 1",
+                    "Phase",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "t1",
+                    Some("p1"),
+                    "Init",
+                    "Task",
+                    1,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(10),
+                ),
+                // InProgress task with NO log — just started.
+                make_record(
+                    "t2",
+                    Some("p1"),
+                    "Build",
+                    "Task",
+                    2,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+            ],
+        };
+        let build = make_test_build(BuildStatus::InProgress, None);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
+        state.set_build_timeline(timeline);
+        assert_eq!(
+            state.find_active_task(),
+            ActiveTaskResult::Pending {
+                name: "Build".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn find_active_task_returns_found_for_completed_build_with_failed_task() {
+        let timeline = simple_timeline(&[
+            (
+                "Init",
+                Some(TaskState::Completed),
+                Some(BuildResult::Succeeded),
+                10,
+            ),
+            (
+                "Build",
+                Some(TaskState::Completed),
+                Some(BuildResult::Failed),
+                11,
+            ),
+        ]);
+        let build = make_test_build(BuildStatus::Completed, Some(BuildResult::Failed));
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
+        state.set_build_timeline(timeline);
+        assert_eq!(
+            state.find_active_task(),
+            ActiveTaskResult::Found {
+                name: "Build".to_string(),
+                log_id: 11
+            }
+        );
+    }
+
+    #[test]
+    fn auto_select_picks_in_progress_task_without_log() {
+        let timeline = BuildTimeline {
+            records: vec![
+                make_record(
+                    "s1",
+                    None,
+                    "Build",
+                    "Stage",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "p1",
+                    Some("s1"),
+                    "Job 1",
+                    "Phase",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "t1",
+                    Some("p1"),
+                    "Init",
+                    "Task",
+                    1,
+                    Some(TaskState::Completed),
+                    Some(BuildResult::Succeeded),
+                    Some(10),
+                ),
+                // InProgress task with NO log.
+                make_record(
+                    "t2",
+                    Some("p1"),
+                    "Build",
+                    "Task",
+                    2,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+            ],
+        };
+        let build = make_test_build(BuildStatus::InProgress, None);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
+        state.set_build_timeline(timeline);
+        state.rebuild_timeline_rows();
+
+        let result = state.auto_select_log_entry();
+        assert!(result.is_some());
+        let (_, log_id) = result.unwrap();
+        // No log available yet for the InProgress task.
+        assert_eq!(log_id, None);
+    }
+
+    #[test]
+    fn set_followed_pending_clears_log_id() {
+        let mut state = LogViewer::default();
+        state.set_followed("Init".to_string(), 42);
+        assert_eq!(state.followed_log_id(), Some(42));
+
+        state.set_followed_pending("Build".to_string());
+        assert_eq!(state.followed_task_name(), "Build");
+        assert_eq!(state.followed_log_id(), None);
     }
 
     // --- Group 5: Checkpoint tests ---

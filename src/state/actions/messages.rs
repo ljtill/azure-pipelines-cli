@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::client::http::AdoClient;
 use crate::client::models;
+use crate::components::log_viewer::ActiveTaskResult;
 
 use super::super::App;
 use super::super::TimelineRow;
@@ -246,37 +247,65 @@ pub fn handle_message(
                 app.log_viewer.enter_follow_mode();
                 app.log_viewer.rebuild_timeline_rows();
 
-                if let Some((_idx, log_id)) = app.log_viewer.auto_select_log_entry() {
-                    if let Some(TimelineRow::Task { name, .. }) = app
+                if let Some((_idx, maybe_log_id)) = app.log_viewer.auto_select_log_entry() {
+                    let task_name = if let Some(TimelineRow::Task { name, .. }) = app
                         .log_viewer
                         .timeline_rows()
                         .get(app.log_viewer.nav().index())
                     {
-                        app.log_viewer.set_followed(name.clone(), log_id);
+                        name.clone()
                     } else {
-                        app.log_viewer.set_followed(String::new(), log_id);
+                        String::new()
+                    };
+
+                    if let Some(log_id) = maybe_log_id {
+                        app.log_viewer.set_followed(task_name, log_id);
+                        spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
+                    } else {
+                        // In-progress task has no log yet — show it but wait for log.
+                        app.log_viewer.set_followed_pending(task_name);
                     }
-                    spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
                 }
             } else if app.log_viewer.is_following() {
                 // Refresh in follow mode: update tree, track latest active task.
                 app.log_viewer.rebuild_timeline_rows();
 
-                if let Some((task_name, log_id)) = app.log_viewer.find_active_task() {
-                    let task_changed = app.log_viewer.followed_log_id() != Some(log_id);
-                    app.log_viewer.set_followed(task_name, log_id);
+                match app.log_viewer.find_active_task() {
+                    ActiveTaskResult::Found { name, log_id } => {
+                        let task_changed = app.log_viewer.followed_log_id() != Some(log_id);
+                        app.log_viewer.set_followed(name, log_id);
 
-                    if task_changed {
-                        tracing::debug!(build_id, log_id, "follow mode: task changed");
-                        spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
+                        if task_changed {
+                            tracing::debug!(build_id, log_id, "follow mode: task changed");
+                            app.log_viewer.clear_log();
+                            spawn_log_fetch(
+                                client,
+                                tx,
+                                build_id,
+                                log_id,
+                                app.log_viewer.generation(),
+                            );
+                        }
                     }
-                } else {
-                    // Build completed or no active task — exit follow mode gracefully.
-                    tracing::debug!(
-                        build_id,
-                        "follow mode: no active task, switching to inspect"
-                    );
-                    app.log_viewer.enter_inspect_mode();
+                    ActiveTaskResult::Pending { name } => {
+                        // The next step is starting — jump cursor to it, clear the
+                        // log pane, and keep follow mode active until the log appears.
+                        tracing::debug!(
+                            build_id,
+                            task = %name,
+                            "follow mode: task pending log"
+                        );
+                        app.log_viewer.set_followed_pending(name);
+                        app.log_viewer.clear_log();
+                    }
+                    ActiveTaskResult::None => {
+                        // Build completed or no active task — exit follow mode.
+                        tracing::debug!(
+                            build_id,
+                            "follow mode: no active task, switching to inspect"
+                        );
+                        app.log_viewer.enter_inspect_mode();
+                    }
                 }
             } else {
                 // Refresh in inspect mode: only update tree status, preserve cursor + log.
@@ -286,6 +315,7 @@ pub fn handle_message(
         AppMessage::LogContent {
             content,
             generation,
+            log_id,
         } => {
             // Discard stale log results.
             if generation != app.log_viewer.generation() {
@@ -296,7 +326,21 @@ pub fn handle_message(
                 );
                 return;
             }
-            tracing::debug!(bytes = content.len(), "log content received");
+            // Discard log content for a different task when in follow mode.
+            if app.log_viewer.is_following()
+                && app
+                    .log_viewer
+                    .followed_log_id()
+                    .is_some_and(|fid| fid != log_id)
+            {
+                tracing::debug!(
+                    log_id,
+                    followed = ?app.log_viewer.followed_log_id(),
+                    "discarding log content for non-followed task"
+                );
+                return;
+            }
+            tracing::debug!(bytes = content.len(), log_id, "log content received");
             app.log_viewer.set_log_content(&content);
         }
         AppMessage::LogRefreshFinished { had_failure } => {

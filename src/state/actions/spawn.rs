@@ -215,6 +215,7 @@ pub fn spawn_log_fetch(
                         .send(AppMessage::LogContent {
                             content,
                             generation,
+                            log_id,
                         })
                         .await;
                 }
@@ -278,8 +279,8 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
         app.log_viewer
             .timeline_task_log_id(app.log_viewer.nav().index())
     };
-    let should_refresh_log =
-        !app.log_viewer.log_content().is_empty() && log_id_to_refresh.is_some();
+    let should_refresh_log = log_id_to_refresh.is_some()
+        && (!app.log_viewer.log_content().is_empty() || should_refresh_timeline);
 
     let timeline_client = client.clone();
     let log_client = client.clone();
@@ -302,7 +303,7 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
             let log_future = async move {
                 if should_refresh_log {
                     if let Some(log_id) = log_id_to_refresh {
-                        Some(log_client.get_build_log(build_id, log_id).await)
+                        Some((log_id, log_client.get_build_log(build_id, log_id).await))
                     } else {
                         None
                     }
@@ -338,13 +339,14 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
                 }
             }
 
-            if let Some(result) = log_result {
+            if let Some((log_id, result)) = log_result {
                 match result {
                     Ok(content) => {
                         let _ = tx
                             .send(AppMessage::LogContent {
                                 content,
                                 generation,
+                                log_id,
                             })
                             .await;
                     }

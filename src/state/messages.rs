@@ -35,6 +35,7 @@ pub enum AppMessage {
     LogContent {
         content: String,
         generation: u64,
+        log_id: u32,
     },
     LogRefreshFinished {
         had_failure: bool,
