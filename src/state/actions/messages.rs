@@ -452,6 +452,22 @@ pub fn handle_message(
             tracing::info!("user identity resolved");
             app.user_id = Some(user_id);
         }
+        AppMessage::PullRequestDetailLoaded {
+            pull_request,
+            threads,
+        } => {
+            tracing::info!(
+                pr_id = pull_request.pull_request_id,
+                threads = threads.len(),
+                "pull request detail loaded"
+            );
+            app.pull_request_detail.pull_request = Some(pull_request);
+            app.pull_request_detail.threads = threads;
+            app.pull_request_detail.loading = false;
+            // Set nav length to number of display sections.
+            let section_count = app.pull_request_detail.section_count();
+            app.pull_request_detail.nav.set_len(section_count);
+        }
     }
 }
 

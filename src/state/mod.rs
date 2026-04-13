@@ -351,6 +351,18 @@ impl App {
         self.view = View::LogViewer;
     }
 
+    /// Navigates to the pull request detail view for the given PR.
+    pub fn navigate_to_pr_detail(&mut self, pr: &crate::client::models::PullRequest) {
+        tracing::info!(pr_id = pr.pull_request_id, "navigating to PR detail");
+        self.pull_request_detail = crate::components::pull_request_detail::PullRequestDetail {
+            pull_request: None,
+            threads: vec![],
+            nav: ListNav::default(),
+            loading: true,
+        };
+        self.view = View::PullRequestDetail;
+    }
+
     pub fn current_nav_mut(&mut self) -> &mut nav::ListNav {
         match self.view {
             View::Dashboard => &mut self.dashboard.nav,

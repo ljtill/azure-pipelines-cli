@@ -46,7 +46,18 @@ pub fn handle_open_in_browser(app: &App) -> Action {
                     Some(app.endpoints_web_pull_request(repo_name, pr.pull_request_id))
                 }
             }),
-        View::PullRequestDetail => None, // TODO: Phase 3 will wire PR detail browser URL.
+        View::PullRequestDetail => app
+            .pull_request_detail
+            .pull_request
+            .as_ref()
+            .and_then(|pr| {
+                let repo_name = pr.repo_name();
+                if repo_name.is_empty() {
+                    None
+                } else {
+                    Some(app.endpoints_web_pull_request(repo_name, pr.pull_request_id))
+                }
+            }),
     };
 
     url.map_or(Action::None, Action::OpenInBrowser)

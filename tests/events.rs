@@ -699,3 +699,97 @@ fn o_opens_browser_on_pull_requests() {
         matches!(action, Action::OpenInBrowser(url) if url.contains("my-repo") && url.contains("42"))
     );
 }
+
+// ---------------------------------------------------------------------------
+// Pull Request Detail view
+// ---------------------------------------------------------------------------
+
+#[test]
+fn enter_on_pr_list_drills_into_detail() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    app.pull_requests.set_data(
+        vec![make_pull_request(42, "Test PR", "active", "my-repo")],
+        "",
+    );
+
+    let action = handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.view, View::PullRequestDetail);
+    assert!(app.pull_request_detail.loading);
+    assert!(matches!(
+        action,
+        Action::FetchPullRequestDetail { pr_id: 42, .. }
+    ));
+}
+
+#[test]
+fn right_on_pr_list_drills_into_detail() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    app.pull_requests.set_data(
+        vec![make_pull_request(99, "Another PR", "active", "backend")],
+        "",
+    );
+
+    let action = handle_key(&mut app, key(KeyCode::Right));
+    assert_eq!(app.view, View::PullRequestDetail);
+    assert!(matches!(
+        action,
+        Action::FetchPullRequestDetail { pr_id: 99, .. }
+    ));
+}
+
+#[test]
+fn q_on_pr_detail_goes_back_to_pr_list() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    app.pull_requests.set_data(
+        vec![make_pull_request(42, "Test PR", "active", "my-repo")],
+        "",
+    );
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.view, View::PullRequestDetail);
+
+    handle_key(&mut app, key(KeyCode::Char('q')));
+    assert_eq!(app.view, View::PullRequests);
+}
+
+#[test]
+fn esc_on_pr_detail_goes_back_to_pr_list() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    app.pull_requests.set_data(
+        vec![make_pull_request(42, "Test PR", "active", "my-repo")],
+        "",
+    );
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.view, View::PullRequestDetail);
+
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.view, View::PullRequests);
+}
+
+#[test]
+fn left_on_pr_detail_goes_back() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    app.pull_requests.set_data(
+        vec![make_pull_request(42, "Test PR", "active", "my-repo")],
+        "",
+    );
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.view, View::PullRequestDetail);
+
+    handle_key(&mut app, key(KeyCode::Left));
+    assert_eq!(app.view, View::PullRequests);
+}
+
+#[test]
+fn enter_on_empty_pr_list_is_noop() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    // No PRs loaded.
+    let action = handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.view, View::PullRequests);
+    assert!(matches!(action, Action::None));
+}

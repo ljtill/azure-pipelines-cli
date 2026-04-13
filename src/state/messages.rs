@@ -1,7 +1,8 @@
 //! Asynchronous message types for state updates.
 
 use crate::client::models::{
-    Approval, Build, BuildTimeline, PipelineDefinition, PullRequest, RetentionLease,
+    Approval, Build, BuildTimeline, PipelineDefinition, PullRequest, PullRequestThread,
+    RetentionLease,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,5 +74,9 @@ pub enum AppMessage {
     },
     UserIdentity {
         user_id: String,
+    },
+    PullRequestDetailLoaded {
+        pull_request: PullRequest,
+        threads: Vec<PullRequestThread>,
     },
 }

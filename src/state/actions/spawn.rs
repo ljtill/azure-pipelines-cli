@@ -402,6 +402,35 @@ pub fn spawn_fetch_pull_requests(app: &App, client: &AdoClient, tx: &mpsc::Sende
     );
 }
 
+/// Spawns an async task that fetches a pull request and its threads in parallel.
+pub fn spawn_fetch_pr_detail(
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    repo_id: String,
+    pr_id: u32,
+) {
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::info_span!("fetch_pr_detail", pr_id);
+    tokio::spawn(
+        async move {
+            let (pr_result, threads_result) = tokio::join!(
+                client.get_pull_request(&repo_id, pr_id),
+                client.list_pull_request_threads(&repo_id, pr_id),
+            );
+            let msg = match (pr_result, threads_result) {
+                (Ok(pull_request), Ok(threads)) => AppMessage::PullRequestDetailLoaded {
+                    pull_request,
+                    threads,
+                },
+                (Err(e), _) | (_, Err(e)) => AppMessage::Error(format!("Fetch PR detail: {e}")),
+            };
+            let _ = tx.send(msg).await;
+        }
+        .instrument(span),
+    );
+}
+
 /// Spawns a one-shot task to resolve the current user's identity from the ADO Connection Data API.
 pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
     let client = client.clone();

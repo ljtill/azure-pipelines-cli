@@ -19,8 +19,22 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Right | KeyCode::Enter => {
-            // Drill into PR detail — will be wired in Phase 3.
-            Action::None
+            if let Some(pr) = app
+                .pull_requests
+                .filtered
+                .get(app.pull_requests.nav.index())
+                .cloned()
+            {
+                let repo_id = pr
+                    .repository
+                    .as_ref()
+                    .map_or(String::new(), |r| r.id.clone());
+                let pr_id = pr.pull_request_id;
+                app.navigate_to_pr_detail(&pr);
+                Action::FetchPullRequestDetail { repo_id, pr_id }
+            } else {
+                Action::None
+            }
         }
         KeyCode::Char('o') => navigation::handle_open_in_browser(app),
         _ => Action::None,

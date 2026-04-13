@@ -7,6 +7,7 @@ mod dashboard;
 mod log_viewer;
 mod navigation;
 mod pipelines;
+mod pull_request_detail;
 mod pull_requests;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -43,6 +44,10 @@ pub enum Action {
     Reload,
     DeleteRetentionLeases(Vec<u32>),
     FetchPullRequests,
+    FetchPullRequestDetail {
+        repo_id: String,
+        pr_id: u32,
+    },
 }
 
 /// Dispatches a key event to the appropriate view-specific handler.
@@ -88,8 +93,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         View::BuildHistory => build_history::handle_key(app, key),
         View::LogViewer => log_viewer::handle_key(app, key),
         View::PullRequests => pull_requests::handle_key(app, key),
-        // PR Detail view — no view-specific keys until Phase 3.
-        View::PullRequestDetail => Action::None,
+        View::PullRequestDetail => pull_request_detail::handle_key(app, key),
     }
 }
 
