@@ -40,8 +40,7 @@ pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'stati
         Some(BuildResult::Succeeded) => ("✓", Color::Green),
         Some(BuildResult::Failed) => ("✗", Color::Red),
         Some(BuildResult::PartiallySucceeded) => ("◐", Color::Yellow),
-        Some(BuildResult::Canceled) => ("⊘", Color::DarkGray),
-        Some(BuildResult::Skipped) => ("⊘", Color::DarkGray),
+        Some(BuildResult::Canceled | BuildResult::Skipped) => ("⊘", Color::DarkGray),
         _ => ("○", Color::DarkGray),
     }
 }
@@ -82,11 +81,10 @@ pub fn timeline_status_icon(
         Some(BuildResult::Succeeded) => ("✓", Color::Green),
         Some(BuildResult::Failed) => ("✗", Color::Red),
         Some(BuildResult::PartiallySucceeded) => ("◐", Color::Yellow),
-        Some(BuildResult::Canceled) | Some(BuildResult::Skipped) => ("⊘", Color::DarkGray),
+        Some(BuildResult::Canceled | BuildResult::Skipped) => ("⊘", Color::DarkGray),
         _ => match state {
             Some(TaskState::InProgress) => ("●", Color::Yellow),
             Some(TaskState::Completed) => ("✓", Color::Green),
-            Some(TaskState::Pending) => ("○", Color::DarkGray),
             _ => ("○", Color::DarkGray),
         },
     }
@@ -99,9 +97,8 @@ pub fn checkpoint_status_icon(
 ) -> (&'static str, Color) {
     match result {
         Some(BuildResult::Succeeded) => ("✓", Color::Green),
-        Some(BuildResult::Failed) | Some(BuildResult::Canceled) => ("✗", Color::Red),
+        Some(BuildResult::Failed | BuildResult::Canceled) => ("✗", Color::Red),
         _ => match state {
-            Some(TaskState::InProgress) | Some(TaskState::Pending) => ("◆", Color::Magenta),
             Some(TaskState::Completed) => ("✓", Color::Green),
             _ => ("◆", Color::Magenta),
         },
@@ -117,7 +114,7 @@ pub fn build_elapsed(build: &Build) -> String {
             let elapsed = Utc::now().signed_duration_since(start);
             let mins = elapsed.num_minutes();
             if mins < 60 {
-                return format!("running {}m", mins);
+                return format!("running {mins}m");
             }
             let hours = elapsed.num_hours();
             if hours < 24 {
@@ -135,9 +132,8 @@ pub fn build_elapsed(build: &Build) -> String {
             return format!("{}m ago", ago.num_minutes());
         } else if ago.num_hours() < 24 {
             return format!("{}h ago", ago.num_hours());
-        } else {
-            return format!("{}d ago", ago.num_days());
         }
+        return format!("{}d ago", ago.num_days());
     }
 
     String::new()

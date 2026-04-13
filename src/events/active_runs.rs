@@ -20,8 +20,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('c') => navigation::handle_cancel_request(app),
-        KeyCode::Right => handle_enter_active_runs(app),
-        KeyCode::Enter => handle_enter_active_runs(app),
+        KeyCode::Right | KeyCode::Enter => handle_enter_active_runs(app),
         KeyCode::Char('o') => navigation::handle_open_in_browser(app),
         _ => Action::None,
     }

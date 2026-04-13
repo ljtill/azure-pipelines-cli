@@ -210,7 +210,7 @@ impl App {
             running: true,
             show_help: false,
             show_settings: false,
-            org_project_label: format!("{} / {}", organization, project),
+            org_project_label: format!("{organization} / {project}"),
             endpoints: Endpoints::new(organization, project),
             config_path,
             filters: FilterConfig {
@@ -289,16 +289,13 @@ impl App {
                 // Preserve generation across resets to invalidate stale messages.
                 self.log_viewer.set_generation(next_gen);
 
-                match return_to {
-                    View::BuildHistory => {
-                        self.view = View::BuildHistory;
-                    }
-                    _ => {
-                        self.view = return_to;
-                        self.build_history.selected_definition = None;
-                        self.build_history.builds.clear();
-                        self.build_history.nav.reset();
-                    }
+                if return_to == View::BuildHistory {
+                    self.view = View::BuildHistory;
+                } else {
+                    self.view = return_to;
+                    self.build_history.selected_definition = None;
+                    self.build_history.builds.clear();
+                    self.build_history.nav.reset();
                 }
             }
             View::BuildHistory => {
@@ -429,7 +426,7 @@ mod tests {
             PathBuf::from("/tmp/test.toml"),
         );
         let def = make_definition(1, "My Pipeline", "\\");
-        app.navigate_to_build_history(def.clone());
+        app.navigate_to_build_history(def);
         assert_eq!(app.view, View::BuildHistory);
         assert_eq!(app.build_history.return_to, Some(View::Dashboard));
         assert_eq!(

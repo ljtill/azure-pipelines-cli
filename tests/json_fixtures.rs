@@ -1,8 +1,8 @@
 use azure_pipelines_cli::client::models::*;
 
 fn load_fixture(name: &str) -> String {
-    std::fs::read_to_string(format!("tests/fixtures/{}", name))
-        .unwrap_or_else(|e| panic!("Failed to load fixture {}: {}", name, e))
+    std::fs::read_to_string(format!("tests/fixtures/{name}"))
+        .unwrap_or_else(|e| panic!("Failed to load fixture {name}: {e}"))
 }
 
 #[test]

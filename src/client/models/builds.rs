@@ -110,7 +110,7 @@ impl Build {
                     .unwrap_or("")
                     .strip_prefix("refs/pull/")
             })
-            .unwrap_or(self.source_branch.as_deref().unwrap_or(""))
+            .unwrap_or_else(|| self.source_branch.as_deref().unwrap_or(""))
             .to_string()
     }
 
@@ -118,8 +118,7 @@ impl Build {
     pub fn requestor(&self) -> &str {
         self.requested_for
             .as_ref()
-            .map(|r| r.display_name.as_str())
-            .unwrap_or("Unknown")
+            .map_or("Unknown", |r| r.display_name.as_str())
     }
 
     /// Returns `true` if this build was triggered by a pull request.
@@ -133,14 +132,14 @@ impl Build {
     pub fn pr_title(&self) -> Option<&str> {
         self.trigger_info
             .as_ref()
-            .and_then(|ti| ti.get("pr.title").map(|s| s.as_str()))
+            .and_then(|ti| ti.get("pr.title").map(std::string::String::as_str))
     }
 
     /// Returns the pull request number from trigger info, if available.
     pub fn pr_number(&self) -> Option<&str> {
         self.trigger_info
             .as_ref()
-            .and_then(|ti| ti.get("pr.number").map(|s| s.as_str()))
+            .and_then(|ti| ti.get("pr.number").map(std::string::String::as_str))
     }
 
     /// Returns the user-facing branch or PR description for list views.
@@ -152,9 +151,9 @@ impl Build {
             && let Some(number) = self.pr_number()
         {
             if let Some(title) = self.pr_title() {
-                return format!("PR #{} · {}", number, title);
+                return format!("PR #{number} · {title}");
             }
-            return format!("PR #{}", number);
+            return format!("PR #{number}");
         }
         self.short_branch()
     }

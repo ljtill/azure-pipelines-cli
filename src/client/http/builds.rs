@@ -3,7 +3,7 @@
 use anyhow::Result;
 
 use super::encode_continuation_token;
-use crate::client::models::*;
+use crate::client::models::{Build, BuildListResponse, BuildTimeline, PipelineRun};
 
 impl super::AdoClient {
     /// Fetches the most recent builds across all pipelines in the project.

@@ -320,10 +320,10 @@ definition_ids = [42, 99]
 
     #[test]
     fn parse_config_missing_azure_devops_fails() {
-        let toml = r#"
+        let toml = r"
 [filters]
 folders = []
-"#;
+";
         let result: Result<Config, _> = toml::from_str(toml);
         assert!(result.is_err());
     }

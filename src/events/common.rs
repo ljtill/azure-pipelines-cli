@@ -10,7 +10,7 @@ use crate::state::{App, ConfirmAction, InputMode, View};
 /// Handles key input while a confirmation prompt is active.
 pub fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
-        KeyCode::Char('y') | KeyCode::Char('Y') => {
+        KeyCode::Char('y' | 'Y') => {
             let prompt = app.confirm_prompt.take().unwrap();
             match prompt.action {
                 ConfirmAction::CancelBuild { build_id } => Action::CancelBuild(build_id),
@@ -33,7 +33,7 @@ pub fn handle_confirm_key(app: &mut App, key: KeyEvent) -> Action {
                 ConfirmAction::Quit => Action::Quit,
             }
         }
-        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
             app.confirm_prompt = None;
             Action::None
         }

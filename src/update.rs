@@ -477,8 +477,7 @@ mod tests {
         let v = current_version();
         assert!(!v.is_empty());
         // Should be parseable as semver.
-        let parts: Vec<&str> = v.split('.').collect();
-        assert_eq!(parts.len(), 3);
+        assert_eq!(v.split('.').count(), 3);
     }
 
     #[test]

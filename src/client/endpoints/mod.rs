@@ -58,8 +58,8 @@ impl Endpoints {
         let org = encode_path_segment(organization);
         let proj = encode_path_segment(project);
         Self {
-            base_url: format!("https://dev.azure.com/{}/{}/_apis", org, proj),
-            web_base_url: format!("https://dev.azure.com/{}/{}", org, proj),
+            base_url: format!("https://dev.azure.com/{org}/{proj}/_apis"),
+            web_base_url: format!("https://dev.azure.com/{org}/{proj}"),
         }
     }
 }

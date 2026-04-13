@@ -94,7 +94,9 @@ impl Notifications {
     /// Returns the most recent non-expired notification, pruning expired ones.
     #[allow(dead_code)]
     pub fn current(&mut self) -> Option<&Notification> {
-        let cutoff = Instant::now() - std::time::Duration::from_secs(self.ttl_secs);
+        let cutoff = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(self.ttl_secs))
+            .unwrap();
         // Remove expired (non-persistent) from the front.
         while self
             .queue
@@ -108,7 +110,9 @@ impl Notifications {
 
     /// Returns a clone of the most recent non-expired notification (read-only).
     pub fn clone_current(&self) -> Option<Notification> {
-        let cutoff = Instant::now() - std::time::Duration::from_secs(self.ttl_secs);
+        let cutoff = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(self.ttl_secs))
+            .unwrap();
         self.queue
             .back()
             .filter(|n| n.persistent || n.created_at >= cutoff)

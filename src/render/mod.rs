@@ -27,7 +27,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         crate::state::View::ActiveRuns => app.active_runs.draw_with_app(f, app, chunks[1]),
         crate::state::View::BuildHistory => app.build_history.draw_with_app(f, app, chunks[1]),
         crate::state::View::LogViewer => {
-            crate::components::log_viewer::draw_log_viewer(f, app, chunks[1])
+            crate::components::log_viewer::draw_log_viewer(f, app, chunks[1]);
         }
     }
 

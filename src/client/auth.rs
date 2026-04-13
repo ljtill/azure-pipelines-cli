@@ -31,7 +31,7 @@ pub struct AdoAuth {
 
 impl AdoAuth {
     /// Creates a new authenticator backed by `DeveloperToolsCredential`.
-    pub async fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let credential: Arc<dyn TokenCredential> = DeveloperToolsCredential::new(None)?;
         Ok(Self {
             credential,

@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-use crate::client::models::*;
+use crate::client::models::{Approval, ApprovalListResponse};
 
 impl super::AdoClient {
     /// Fetches all pending approvals for the configured project.

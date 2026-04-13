@@ -115,7 +115,7 @@ impl ActiveRuns {
                             Style::new()
                         },
                     ),
-                    Span::styled(format!(" {} ", icon), Style::new().fg(icon_color)),
+                    Span::styled(format!(" {icon} "), Style::new().fg(icon_color)),
                     Span::styled(
                         format!("{:<width$}", label, width = widths[2]),
                         Style::new().fg(icon_color),
@@ -166,14 +166,11 @@ impl ActiveRuns {
         let filtered = self.filtered.len();
         let total = app.data.active_builds.len();
         let title = if sel_count > 0 {
-            format!(
-                " Active Runs ({} / {}) — {} selected ",
-                filtered, total, sel_count
-            )
+            format!(" Active Runs ({filtered} / {total}) — {sel_count} selected ")
         } else if filtered != total {
-            format!(" Active Runs ({} / {}) ", filtered, total)
+            format!(" Active Runs ({filtered} / {total}) ")
         } else {
-            format!(" Active Runs ({}) ", total)
+            format!(" Active Runs ({total}) ")
         };
         let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
 
@@ -188,7 +185,7 @@ impl Component for ActiveRuns {
         Ok(())
     }
 
-    fn footer_hints(&self) -> &str {
+    fn footer_hints(&self) -> &'static str {
         "↑↓ navigate  Space select  c cancel  / filter  →/Enter view logs  o open  1/2/3 tabs  r refresh  , settings  ? help  q/Esc back"
     }
 }

@@ -46,7 +46,7 @@ pub trait Component {
     fn draw(&self, frame: &mut Frame, area: Rect) -> Result<()>;
 
     /// Returns the footer hint text describing this component's keybindings.
-    fn footer_hints(&self) -> &str {
+    fn footer_hints(&self) -> &'static str {
         ""
     }
 }

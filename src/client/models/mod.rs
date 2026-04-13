@@ -43,7 +43,7 @@ impl<'de> Deserialize<'de> for BuildStatus {
         D: de::Deserializer<'de>,
     {
         struct StatusVisitor;
-        impl<'de> Visitor<'de> for StatusVisitor {
+        impl Visitor<'_> for StatusVisitor {
             type Value = BuildStatus;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("a build status string")
@@ -98,7 +98,7 @@ impl<'de> Deserialize<'de> for BuildResult {
         D: de::Deserializer<'de>,
     {
         struct ResultVisitor;
-        impl<'de> Visitor<'de> for ResultVisitor {
+        impl Visitor<'_> for ResultVisitor {
             type Value = BuildResult;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("a build result string")
@@ -142,7 +142,7 @@ impl<'de> Deserialize<'de> for TaskState {
         D: de::Deserializer<'de>,
     {
         struct StateVisitor;
-        impl<'de> Visitor<'de> for StateVisitor {
+        impl Visitor<'_> for StateVisitor {
             type Value = TaskState;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("a timeline state string")

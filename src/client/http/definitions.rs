@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::client::models::*;
+use crate::client::models::PipelineDefinition;
 
 impl super::AdoClient {
     /// Fetches all pipeline definitions in the configured project, following pagination automatically.

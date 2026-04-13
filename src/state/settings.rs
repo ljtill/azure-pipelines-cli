@@ -87,7 +87,7 @@ impl SettingsState {
                     .filters
                     .definition_ids
                     .iter()
-                    .map(|id| id.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", "),
                 hint: "comma-separated",
@@ -193,17 +193,14 @@ impl SettingsState {
     /// Inserts a character at the cursor position for the active field.
     pub fn insert_char(&mut self, c: char) {
         let field = &mut self.fields[self.selected];
-        match field.kind {
-            FieldKind::Number => {
-                if c.is_ascii_digit() {
-                    field.value.insert(self.cursor, c);
-                    self.cursor += 1;
-                }
-            }
-            _ => {
+        if field.kind == FieldKind::Number {
+            if c.is_ascii_digit() {
                 field.value.insert(self.cursor, c);
                 self.cursor += 1;
             }
+        } else {
+            field.value.insert(self.cursor, c);
+            self.cursor += 1;
         }
     }
 
@@ -242,8 +239,7 @@ impl SettingsState {
             self.fields
                 .iter()
                 .find(|f| f.label == label)
-                .map(|f| f.value.as_str())
-                .unwrap_or("")
+                .map_or("", |f| f.value.as_str())
         };
 
         let parse_bool = |label: &str| -> bool { get(label) == "true" };

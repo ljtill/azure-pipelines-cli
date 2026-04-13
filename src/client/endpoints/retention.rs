@@ -13,7 +13,7 @@ impl Endpoints {
 
     /// Constructs the URL for deleting retention leases by their IDs.
     pub fn retention_leases_delete(&self, ids: &[u32]) -> String {
-        let ids_str: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let ids_str: Vec<String> = ids.iter().map(std::string::ToString::to_string).collect();
         format!(
             "{}/build/retention/leases?ids={}&api-version={API_VERSION}",
             self.base_url,

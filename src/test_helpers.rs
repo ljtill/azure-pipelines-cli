@@ -2,7 +2,10 @@
 
 use std::path::PathBuf;
 
-use crate::client::models::*;
+use crate::client::models::{
+    Build, BuildDefinitionRef, BuildResult, BuildStatus, BuildTimeline, LogReference,
+    PipelineDefinition, TaskState, TimelineRecord,
+};
 use crate::config::{
     AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
     UpdateConfig,
@@ -13,7 +16,7 @@ use crate::state::App;
 pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
     Build {
         id,
-        build_number: format!("{}", id),
+        build_number: format!("{id}"),
         status,
         result,
         queue_time: None,
@@ -53,7 +56,7 @@ pub fn make_timeline_record(
 ) -> TimelineRecord {
     TimelineRecord {
         id: id.to_string(),
-        parent_id: parent_id.map(|s| s.to_string()),
+        parent_id: parent_id.map(std::string::ToString::to_string),
         name: name.to_string(),
         identifier: None,
         record_type: record_type.to_string(),
@@ -197,7 +200,7 @@ pub fn make_app() -> App {
     let def1 = make_definition(1, "CI Pipeline", "\\");
     let def2 = make_definition(2, "Deploy Pipeline", "\\Infra");
     let def3 = make_definition(3, "Infra Lint", "\\Infra");
-    app.data.definitions = vec![def1.clone(), def2.clone(), def3.clone()];
+    app.data.definitions = vec![def1, def2, def3];
 
     // Creates 3 recent builds, one per definition.
     let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
@@ -265,19 +268,21 @@ mod tests {
         let tl = make_simple_timeline();
         assert_eq!(tl.records.len(), 8);
 
-        let stages: Vec<_> = tl
-            .records
-            .iter()
-            .filter(|r| r.record_type == "Stage")
-            .collect();
-        assert_eq!(stages.len(), 2);
+        assert_eq!(
+            tl.records
+                .iter()
+                .filter(|r| r.record_type == "Stage")
+                .count(),
+            2
+        );
 
-        let phases: Vec<_> = tl
-            .records
-            .iter()
-            .filter(|r| r.record_type == "Phase")
-            .collect();
-        assert_eq!(phases.len(), 2);
+        assert_eq!(
+            tl.records
+                .iter()
+                .filter(|r| r.record_type == "Phase")
+                .count(),
+            2
+        );
 
         let tasks: Vec<_> = tl
             .records

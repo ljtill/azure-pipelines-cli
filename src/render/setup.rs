@@ -63,10 +63,10 @@ fn handle_key(state: &mut SetupState, code: KeyCode) -> Outcome {
                 Outcome::Continue
             }
             Field::Project => {
-                if !state.project.trim().is_empty() {
-                    Outcome::Complete
-                } else {
+                if state.project.trim().is_empty() {
                     Outcome::Continue
+                } else {
+                    Outcome::Complete
                 }
             }
         },

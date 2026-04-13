@@ -109,7 +109,7 @@ impl Component for Pipelines {
         Ok(())
     }
 
-    fn footer_hints(&self) -> &str {
+    fn footer_hints(&self) -> &'static str {
         "↑↓ navigate  →/Enter drill-in  Q queue  o open  / search  1/2/3 tabs  r refresh  , settings  ? help  q/Esc back"
     }
 }

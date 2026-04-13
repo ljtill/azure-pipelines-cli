@@ -57,8 +57,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.go_back();
             Action::None
         }
-        KeyCode::Right => handle_enter_build_history(app),
-        KeyCode::Enter => handle_enter_build_history(app),
+        KeyCode::Right | KeyCode::Enter => handle_enter_build_history(app),
         KeyCode::Char('o') => navigation::handle_open_in_browser(app),
         _ => Action::None,
     }

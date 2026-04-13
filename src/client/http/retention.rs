@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::client::models::*;
+use crate::client::models::RetentionLease;
 
 impl super::AdoClient {
     /// Fetches retention leases for a single pipeline definition.

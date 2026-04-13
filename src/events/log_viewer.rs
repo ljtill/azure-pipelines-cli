@@ -39,7 +39,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Right => {
             let idx = app.log_viewer.nav().index();
             match app.log_viewer.timeline_row_kind(idx) {
-                Some("stage") | Some("job") => {
+                Some("stage" | "job") => {
                     app.log_viewer.expand_timeline_node(idx);
                 }
                 Some("task") => {
@@ -71,7 +71,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 fn handle_enter_log_viewer(app: &mut App) -> Action {
     let idx = app.log_viewer.nav().index();
     match app.log_viewer.timeline_row_kind(idx) {
-        Some("stage") | Some("job") => {
+        Some("stage" | "job") => {
             app.log_viewer.toggle_timeline_node(idx);
             Action::None
         }
@@ -121,14 +121,12 @@ fn handle_retry_request(app: &mut App) -> Action {
         _ => None,
     };
 
-    let stage_idx = match stage_idx {
-        Some(i) => i,
-        None => return Action::None,
+    let Some(stage_idx) = stage_idx else {
+        return Action::None;
     };
 
-    let stage_ref_name = match app.log_viewer.timeline_stage_ref_name(stage_idx) {
-        Some(name) => name,
-        None => return Action::None,
+    let Some(stage_ref_name) = app.log_viewer.timeline_stage_ref_name(stage_idx) else {
+        return Action::None;
     };
     let build_id = match app.log_viewer.selected_build() {
         Some(b) => b.id,
@@ -137,18 +135,14 @@ fn handle_retry_request(app: &mut App) -> Action {
     let build_number = app
         .log_viewer
         .selected_build()
-        .map(|b| b.build_number.as_str())
-        .unwrap_or("?");
+        .map_or("?", |b| b.build_number.as_str());
     let stage_name = match app.log_viewer.timeline_rows().get(stage_idx) {
         Some(TimelineRow::Stage { name, .. }) => name.clone(),
         _ => stage_ref_name.clone(),
     };
 
     app.confirm_prompt = Some(crate::state::ConfirmPrompt {
-        message: format!(
-            "Retry stage \"{}\" in build #{}?  [y/N]",
-            stage_name, build_number
-        ),
+        message: format!("Retry stage \"{stage_name}\" in build #{build_number}?  [y/N]"),
         action: crate::state::ConfirmAction::RetryStage {
             build_id,
             stage_ref_name,
@@ -163,16 +157,15 @@ fn handle_approve_request(app: &mut App) -> Action {
     if app.log_viewer.timeline_row_kind(idx) != Some("checkpoint") {
         return Action::None;
     }
-    let approval_id = match app.log_viewer.timeline_approval_id(idx) {
-        Some(id) => id,
-        None => return Action::None,
+    let Some(approval_id) = app.log_viewer.timeline_approval_id(idx) else {
+        return Action::None;
     };
     let name = match app.log_viewer.timeline_rows().get(idx) {
         Some(crate::state::TimelineRow::Checkpoint { name, .. }) => name.clone(),
         _ => "check".to_string(),
     };
     app.confirm_prompt = Some(crate::state::ConfirmPrompt {
-        message: format!("Approve \"{}\"?  [y/N]", name),
+        message: format!("Approve \"{name}\"?  [y/N]"),
         action: crate::state::ConfirmAction::ApproveCheck { approval_id },
     });
     Action::None
@@ -184,16 +177,15 @@ fn handle_reject_request(app: &mut App) -> Action {
     if app.log_viewer.timeline_row_kind(idx) != Some("checkpoint") {
         return Action::None;
     }
-    let approval_id = match app.log_viewer.timeline_approval_id(idx) {
-        Some(id) => id,
-        None => return Action::None,
+    let Some(approval_id) = app.log_viewer.timeline_approval_id(idx) else {
+        return Action::None;
     };
     let name = match app.log_viewer.timeline_rows().get(idx) {
         Some(crate::state::TimelineRow::Checkpoint { name, .. }) => name.clone(),
         _ => "check".to_string(),
     };
     app.confirm_prompt = Some(crate::state::ConfirmPrompt {
-        message: format!("Reject \"{}\"?  [y/N]", name),
+        message: format!("Reject \"{name}\"?  [y/N]"),
         action: crate::state::ConfirmAction::RejectCheck { approval_id },
     });
     Action::None

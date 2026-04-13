@@ -36,10 +36,7 @@ pub fn handle_open_in_browser(app: &App) -> Action {
             .map(|b| app.endpoints_web_build(b.id)),
     };
 
-    match url {
-        Some(url) => Action::OpenInBrowser(url),
-        None => Action::None,
-    }
+    url.map_or(Action::None, Action::OpenInBrowser)
 }
 
 /// Prompts the user to confirm cancellation of one or more builds.
@@ -49,7 +46,7 @@ pub fn handle_cancel_request(app: &mut App) -> Action {
         let count = app.active_runs.selected.len();
         let build_ids: Vec<u32> = app.active_runs.selected.iter().copied().collect();
         app.confirm_prompt = Some(ConfirmPrompt {
-            message: format!("Cancel {} selected build(s)?  [y/N]", count),
+            message: format!("Cancel {count} selected build(s)?  [y/N]"),
             action: ConfirmAction::CancelBuilds { build_ids },
         });
         return Action::None;
@@ -104,7 +101,7 @@ pub fn handle_queue_request(app: &mut App) -> Action {
     };
 
     app.confirm_prompt = Some(ConfirmPrompt {
-        message: format!("Queue new run of \"{}\"?  [y/N]", def_name),
+        message: format!("Queue new run of \"{def_name}\"?  [y/N]"),
         action: ConfirmAction::QueuePipeline {
             definition_id: def_id,
         },
@@ -134,7 +131,7 @@ pub fn handle_delete_build_leases_request(app: &mut App) -> Action {
         }
         let count = lease_ids.len();
         app.confirm_prompt = Some(ConfirmPrompt {
-            message: format!("Delete {} lease(s) for selected builds?  [y/N]", count),
+            message: format!("Delete {count} lease(s) for selected builds?  [y/N]"),
             action: ConfirmAction::DeleteBuildLeases { lease_ids },
         });
         return Action::None;

@@ -37,7 +37,7 @@ pub async fn run(
         config,
         config_path,
     );
-    let mut last_data_fetch = Instant::now() - app.refresh_interval; // Trigger immediate fetch.
+    let mut last_data_fetch = Instant::now().checked_sub(app.refresh_interval).unwrap(); // Trigger immediate fetch.
     let mut last_log_fetch: Option<Instant> = None;
 
     let (tx, mut rx) = mpsc::channel::<AppMessage>(64);
@@ -72,9 +72,7 @@ pub async fn run(
             && app.log_viewer.selected_build().is_some()
             && !app.log_refresh.in_flight
             && app.log_refresh.backoff_elapsed()
-            && last_log_fetch
-                .map(|t| t.elapsed() >= app.log_refresh_interval)
-                .unwrap_or(true);
+            && last_log_fetch.is_none_or(|t| t.elapsed() >= app.log_refresh_interval);
 
         if should_refresh_data && spawn_data_refresh(&mut app, &client, &tx) {
             last_data_fetch = Instant::now();

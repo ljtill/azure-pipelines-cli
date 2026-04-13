@@ -40,3 +40,25 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+# Nursery lints worth enabling individually.
+redundant_clone = "warn"
+or_fun_call = "warn"
+needless_collect = "warn"
+option_if_let_else = "warn"
+
+# Suppress noisy pedantic lints that don't fit this codebase.
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+doc_markdown = "allow"
+too_many_lines = "allow"
+struct_excessive_bools = "allow"
+items_after_statements = "allow"
