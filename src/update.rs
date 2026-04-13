@@ -34,7 +34,7 @@ pub fn is_newer(remote: &str, current: &str) -> bool {
     }
 }
 
-/// Returns the expected GitHub Release artifact name for the current platform.
+/// Returns the expected GitHub Release archive name for the current platform.
 pub fn platform_artifact_name() -> Result<String> {
     let os = if cfg!(target_os = "linux") {
         "linux"
@@ -55,9 +55,9 @@ pub fn platform_artifact_name() -> Result<String> {
     };
 
     let name = if cfg!(target_os = "windows") {
-        format!("pipelines-{os}-{arch}.exe")
+        format!("pipelines-{os}-{arch}.zip")
     } else {
-        format!("pipelines-{os}-{arch}")
+        format!("pipelines-{os}-{arch}.tar.gz")
     };
 
     Ok(name)
@@ -251,6 +251,43 @@ pub struct UpdateResult {
     pub path: PathBuf,
 }
 
+/// Extracts the binary from a `.tar.gz` archive into the given directory.
+#[cfg(unix)]
+fn extract_archive(archive_path: &std::path::Path, dest_dir: &std::path::Path) -> Result<()> {
+    let status = std::process::Command::new("tar")
+        .args(["xzf"])
+        .arg(archive_path)
+        .arg("-C")
+        .arg(dest_dir)
+        .status()
+        .context("Failed to execute tar")?;
+    if !status.success() {
+        bail!("tar exited with status {status}");
+    }
+    Ok(())
+}
+
+/// Extracts the binary from a `.zip` archive into the given directory.
+#[cfg(windows)]
+fn extract_archive(archive_path: &std::path::Path, dest_dir: &std::path::Path) -> Result<()> {
+    let status = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                archive_path.display(),
+                dest_dir.display()
+            ),
+        ])
+        .status()
+        .context("Failed to execute Expand-Archive")?;
+    if !status.success() {
+        bail!("Expand-Archive exited with status {status}");
+    }
+    Ok(())
+}
+
 /// Downloads the latest release, installs to the versioned directory, updates the symlink, and prunes old versions.
 pub async fn self_update() -> Result<UpdateResult> {
     let latest = fetch_latest_version().await?;
@@ -281,10 +318,10 @@ pub async fn self_update() -> Result<UpdateResult> {
         "pipelines"
     };
     let binary_path = version_dir.join(binary_name);
-    let temp_path = version_dir.join(format!("{binary_name}.download"));
+    let archive_path = version_dir.join(&artifact);
 
-    // Downloads the binary.
-    tracing::info!(url = &*download_url, "downloading binary");
+    // Downloads the archive.
+    tracing::info!(url = &*download_url, "downloading archive");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .build()?;
@@ -312,32 +349,48 @@ pub async fn self_update() -> Result<UpdateResult> {
 
     let bytes = resp.bytes().await?;
     tracing::debug!(size_bytes = bytes.len(), "download complete");
-    if temp_path.exists() {
-        std::fs::remove_file(&temp_path)
-            .with_context(|| format!("Failed to remove stale {}", temp_path.display()))?;
+    if archive_path.exists() {
+        std::fs::remove_file(&archive_path)
+            .with_context(|| format!("Failed to remove stale {}", archive_path.display()))?;
     }
-    std::fs::write(&temp_path, &bytes)
-        .with_context(|| format!("Failed to write binary to {}", temp_path.display()))?;
-    if let Err(err) = verify_sha256(&temp_path, &expected_sha256) {
+    std::fs::write(&archive_path, &bytes)
+        .with_context(|| format!("Failed to write archive to {}", archive_path.display()))?;
+    if let Err(err) = verify_sha256(&archive_path, &expected_sha256) {
         tracing::warn!(error = %err, "SHA256 verification failed");
-        let _ = std::fs::remove_file(&temp_path);
+        let _ = std::fs::remove_file(&archive_path);
         return Err(err);
     }
     tracing::debug!("SHA256 verification passed");
+
+    // Extracts the binary from the archive.
+    tracing::debug!("extracting archive");
+    extract_archive(&archive_path, &version_dir)?;
+    let _ = std::fs::remove_file(&archive_path);
+
+    // Removes the platform-named binary left by extraction (e.g. pipelines-darwin-arm64).
+    let extracted_name = if cfg!(target_os = "windows") {
+        artifact.strip_suffix(".zip").unwrap_or(&artifact)
+    } else {
+        artifact.strip_suffix(".tar.gz").unwrap_or(&artifact)
+    };
+    let extracted_path = version_dir.join(extracted_name);
+    if extracted_path.exists() && extracted_path != binary_path {
+        std::fs::rename(&extracted_path, &binary_path).with_context(|| {
+            format!(
+                "Failed to rename {} to {}",
+                extracted_path.display(),
+                binary_path.display()
+            )
+        })?;
+    }
 
     // Sets executable permission (Unix).
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755))?;
     }
 
-    if binary_path.exists() {
-        std::fs::remove_file(&binary_path)
-            .with_context(|| format!("Failed to remove existing {}", binary_path.display()))?;
-    }
-    std::fs::rename(&temp_path, &binary_path)
-        .with_context(|| format!("Failed to install binary to {}", binary_path.display()))?;
     tracing::info!(path = %binary_path.display(), "binary installed");
 
     // Updates the symlink.
@@ -485,6 +538,14 @@ mod tests {
         let name = platform_artifact_name().unwrap();
         assert!(name.starts_with("pipelines-"));
         assert!(name.contains("amd64") || name.contains("arm64"));
+        let path = std::path::Path::new(&name);
+        // Archive must be .tar.gz or .zip.
+        assert!(
+            name.ends_with(".tar.gz")
+                || path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+        );
     }
 
     #[test]
@@ -504,10 +565,10 @@ mod tests {
     #[test]
     fn parse_checksum_manifest_returns_matching_hash() {
         let manifest = "\
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  pipelines-linux-amd64
-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-windows-amd64.exe
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  pipelines-linux-amd64.tar.gz
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-windows-amd64.zip
 ";
-        let hash = parse_checksum_manifest(manifest, "pipelines-windows-amd64.exe").unwrap();
+        let hash = parse_checksum_manifest(manifest, "pipelines-windows-amd64.zip").unwrap();
         assert_eq!(
             hash,
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -516,8 +577,8 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-wind
 
     #[test]
     fn parse_checksum_manifest_rejects_missing_artifact() {
-        let manifest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  pipelines-linux-amd64";
-        let err = parse_checksum_manifest(manifest, "pipelines-darwin-arm64").unwrap_err();
+        let manifest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  pipelines-linux-amd64.tar.gz";
+        let err = parse_checksum_manifest(manifest, "pipelines-darwin-arm64.tar.gz").unwrap_err();
         assert!(err.to_string().contains("not found"));
     }
 

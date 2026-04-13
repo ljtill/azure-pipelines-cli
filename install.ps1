@@ -12,7 +12,8 @@ $ErrorActionPreference = 'Stop'
 $Repo = 'ljtill/azure-pipelines-cli'
 $BinaryName = 'pipelines'
 $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
-$Artifact = "$BinaryName-windows-$Arch.exe"
+$InnerBinary = "$BinaryName-windows-$Arch.exe"
+$Artifact = "$BinaryName-windows-$Arch.zip"
 
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
 
@@ -44,6 +45,7 @@ if (-not (Test-Path $InstallDir)) {
 
 $Dest = Join-Path $InstallDir "$BinaryName.exe"
 $Temp = [System.IO.Path]::GetTempFileName()
+$TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("pipelines-extract-" + [System.IO.Path]::GetRandomFileName())
 $RawContent = (Invoke-WebRequest -Uri $ChecksumsUrl -UseBasicParsing).Content
 $ChecksumBody = if ($RawContent -is [byte[]]) {
     [System.Text.Encoding]::UTF8.GetString($RawContent)
@@ -69,11 +71,16 @@ try {
         throw "Checksum mismatch for $Artifact"
     }
 
-    Move-Item -Force $Temp $Dest
+    New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+    Expand-Archive -Path $Temp -DestinationPath $TempDir -Force
+    Move-Item -Force (Join-Path $TempDir $InnerBinary) $Dest
 }
 finally {
     if (Test-Path $Temp) {
         Remove-Item -Force $Temp -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $TempDir) {
+        Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
     }
 }
 

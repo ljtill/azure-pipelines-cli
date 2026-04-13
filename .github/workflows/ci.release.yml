@@ -199,27 +199,33 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            artifact: pipelines-linux-amd64
+            binary: pipelines-linux-amd64
+            archive: pipelines-linux-amd64.tar.gz
             cross: false
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
-            artifact: pipelines-linux-arm64
+            binary: pipelines-linux-arm64
+            archive: pipelines-linux-arm64.tar.gz
             cross: true
           - target: x86_64-apple-darwin
             runner: macos-latest
-            artifact: pipelines-darwin-amd64
+            binary: pipelines-darwin-amd64
+            archive: pipelines-darwin-amd64.tar.gz
             cross: false
           - target: aarch64-apple-darwin
             runner: macos-latest
-            artifact: pipelines-darwin-arm64
+            binary: pipelines-darwin-arm64
+            archive: pipelines-darwin-arm64.tar.gz
             cross: false
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            artifact: pipelines-windows-amd64.exe
+            binary: pipelines-windows-amd64.exe
+            archive: pipelines-windows-amd64.zip
             cross: false
           - target: aarch64-pc-windows-msvc
             runner: windows-11-arm
-            artifact: pipelines-windows-arm64.exe
+            binary: pipelines-windows-arm64.exe
+            archive: pipelines-windows-arm64.zip
             cross: false
 
     steps:
@@ -263,17 +269,28 @@ jobs:
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'
-        run: cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} ${{ matrix.artifact }}
+        run: cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} ${{ matrix.binary }}
 
       - name: Rename binary (Windows)
         if: runner.os == 'Windows'
-        run: cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe ${{ matrix.artifact }}
+        run: cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe ${{ matrix.binary }}
+
+      - name: Package archive (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x ${{ matrix.binary }}
+          tar czf ${{ matrix.archive }} ${{ matrix.binary }}
+
+      - name: Package archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path ${{ matrix.binary }} -DestinationPath ${{ matrix.archive }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
           if-no-files-found: error
 
   release:
@@ -295,7 +312,7 @@ jobs:
         run: |
           (
             cd artifacts
-            sha256sum pipelines-* > SHA256SUMS
+            sha256sum pipelines-*.tar.gz pipelines-*.zip > SHA256SUMS
           )
           cat artifacts/SHA256SUMS
 
@@ -312,7 +329,8 @@ jobs:
             --title "${{ needs.version.outputs.tag }}" \
             --notes-file artifacts/release-notes.md \
             $DRAFT_FLAG \
-            artifacts/pipelines-* \
+            artifacts/pipelines-*.tar.gz \
+            artifacts/pipelines-*.zip \
             artifacts/SHA256SUMS
 
   commit-version:

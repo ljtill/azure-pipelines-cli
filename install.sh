@@ -70,7 +70,8 @@ case "$ARCH" in
   *)                  die "Unsupported architecture: $ARCH" ;;
 esac
 
-ARTIFACT="${BINARY_NAME}-${os}-${arch}"
+INNER_BINARY="${BINARY_NAME}-${os}-${arch}"
+ARTIFACT="${INNER_BINARY}.tar.gz"
 
 # --- resolve version --------------------------------------------------------
 
@@ -101,7 +102,8 @@ echo "Installing ${BINARY_NAME} ${TAG} (${os}/${arch})..."
 mkdir -p "$INSTALL_DIR"
 
 TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+TMP_DIR="$(mktemp -d)"
+trap 'rm -f "$TMP"; rm -rf "$TMP_DIR"' EXIT
 
 download "$URL" "$TMP"
 CHECKSUMS="$(download_text "$CHECKSUMS_URL")"
@@ -109,8 +111,9 @@ EXPECTED="$(printf '%s\n' "$CHECKSUMS" | awk -v artifact="$ARTIFACT" '$2 == arti
 [ -n "$EXPECTED" ] || die "Could not find checksum for ${ARTIFACT}"
 ACTUAL="$(compute_sha256 "$TMP")"
 [ "$ACTUAL" = "$EXPECTED" ] || die "Checksum mismatch for ${ARTIFACT}"
-chmod +x "$TMP"
-mv "$TMP" "${INSTALL_DIR}/${BINARY_NAME}"
+tar xzf "$TMP" -C "$TMP_DIR"
+chmod +x "${TMP_DIR}/${INNER_BINARY}"
+mv "${TMP_DIR}/${INNER_BINARY}" "${INSTALL_DIR}/${BINARY_NAME}"
 
 echo "Installed to ${INSTALL_DIR}/${BINARY_NAME}"
 
