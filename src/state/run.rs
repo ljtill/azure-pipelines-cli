@@ -14,7 +14,9 @@ use crate::config::Config;
 use crate::events::{handle_key, handle_mouse};
 use crate::render;
 
-use super::actions::spawn::{spawn_fetch_dashboard_pull_requests, spawn_fetch_user_identity};
+use super::actions::spawn::{
+    spawn_fetch_dashboard_pull_requests, spawn_fetch_pull_requests, spawn_fetch_user_identity,
+};
 use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_log_refresh};
 use super::messages::AppMessage;
 use super::{App, View};
@@ -83,6 +85,11 @@ pub async fn run(
             // Fetch dashboard PRs alongside the data refresh (only once identity resolution is attempted).
             if app.view == View::Dashboard && app.identity_resolved {
                 spawn_fetch_dashboard_pull_requests(&app, &client, &tx);
+            }
+            // Refresh PR view data alongside the data refresh.
+            if app.view == View::PullRequests {
+                let generation = app.pull_requests.next_generation();
+                spawn_fetch_pull_requests(&app, &client, &tx, generation);
             }
         }
 

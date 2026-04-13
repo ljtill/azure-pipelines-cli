@@ -36,6 +36,10 @@ pub fn handle_action(
             if app.view == View::BuildHistory {
                 spawn_build_history_refresh(app, client, tx, None);
             }
+            if app.view == View::PullRequests {
+                let generation = app.pull_requests.next_generation();
+                spawn_fetch_pull_requests(app, client, tx, generation);
+            }
         }
         Action::FetchBuildHistory(def_id) => {
             spawn_api(
@@ -212,7 +216,8 @@ pub fn handle_action(
             );
         }
         Action::FetchPullRequests => {
-            spawn_fetch_pull_requests(app, client, tx);
+            let generation = app.pull_requests.next_generation();
+            spawn_fetch_pull_requests(app, client, tx, generation);
         }
         Action::FetchPullRequestDetail { repo_id, pr_id } => {
             spawn_fetch_pr_detail(client, tx, repo_id, pr_id);

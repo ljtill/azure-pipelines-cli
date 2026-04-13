@@ -374,14 +374,28 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
 }
 
 /// Spawns an async task that fetches pull requests from the Azure DevOps REST API.
-pub fn spawn_fetch_pull_requests(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
+pub fn spawn_fetch_pull_requests(
+    app: &App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    generation: u64,
+) {
     use crate::components::pull_requests::PrViewMode;
 
     let mode = app.pull_requests.mode;
     let user_id = app.user_id.clone();
+
+    // Warn when a filtered mode cannot actually filter.
+    if user_id.is_none() && matches!(mode, PrViewMode::CreatedByMe | PrViewMode::AssignedToMe) {
+        tracing::warn!(
+            ?mode,
+            "user identity not resolved — PR filter will be unscoped"
+        );
+    }
+
     let client = client.clone();
     let tx = tx.clone();
-    let span = tracing::info_span!("fetch_pull_requests", ?mode);
+    let span = tracing::info_span!("fetch_pull_requests", ?mode, generation);
     tokio::spawn(
         async move {
             let (status, creator_id, reviewer_id) = match mode {
@@ -393,7 +407,10 @@ pub fn spawn_fetch_pull_requests(app: &App, client: &AdoClient, tx: &mpsc::Sende
                 .list_pull_requests(status, creator_id, reviewer_id)
                 .await
             {
-                Ok(prs) => AppMessage::PullRequestsLoaded { pull_requests: prs },
+                Ok(prs) => AppMessage::PullRequestsLoaded {
+                    pull_requests: prs,
+                    generation,
+                },
                 Err(e) => AppMessage::Error(format!("Fetch pull requests: {e}")),
             };
             let _ = tx.send(msg).await;

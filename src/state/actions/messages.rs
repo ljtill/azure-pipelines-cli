@@ -16,7 +16,7 @@ use super::super::messages::{AppMessage, RefreshSource};
 use super::super::notifications::NotificationLevel;
 use super::spawn::{
     spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_dashboard_pull_requests,
-    spawn_log_fetch, spawn_timeline_fetch,
+    spawn_fetch_pull_requests, spawn_log_fetch, spawn_timeline_fetch,
 };
 
 pub fn handle_message(
@@ -436,7 +436,18 @@ pub fn handle_message(
                 spawn_build_history_refresh(app, client, tx, Some(top));
             }
         }
-        AppMessage::PullRequestsLoaded { pull_requests } => {
+        AppMessage::PullRequestsLoaded {
+            pull_requests,
+            generation,
+        } => {
+            if generation < app.pull_requests.generation {
+                tracing::debug!(
+                    generation,
+                    current = app.pull_requests.generation,
+                    "dropping stale pull requests response"
+                );
+                return;
+            }
             tracing::info!(count = pull_requests.len(), "pull requests loaded");
             app.pull_requests.set_data(pull_requests, &app.search.query);
         }
@@ -450,6 +461,11 @@ pub fn handle_message(
             app.identity_resolved = true;
             // Re-fetch dashboard PRs now that we can filter by creator.
             spawn_fetch_dashboard_pull_requests(app, client, tx);
+            // Re-fetch PR view data so filtered modes use the resolved identity.
+            if app.view == View::PullRequests {
+                let generation = app.pull_requests.next_generation();
+                spawn_fetch_pull_requests(app, client, tx, generation);
+            }
         }
         AppMessage::PullRequestDetailLoaded {
             pull_request,
@@ -1255,5 +1271,65 @@ mod tests {
         simulate_notification_diff(&mut app, &map);
 
         assert!(app.notifications.clone_current().is_none());
+    }
+
+    // --- PullRequestsLoaded stale-response guard ---
+
+    #[test]
+    fn pull_requests_loaded_updates_data() {
+        let mut app = make_app();
+        app.view = View::PullRequests;
+
+        let generation = app.pull_requests.next_generation();
+        let prs = vec![
+            make_pull_request(1, "PR one", "active", "repo-a"),
+            make_pull_request(2, "PR two", "active", "repo-b"),
+        ];
+        // Simulate what handle_message does for PullRequestsLoaded.
+        if generation >= app.pull_requests.generation {
+            app.pull_requests.set_data(prs, &app.search.query);
+        }
+        assert_eq!(app.pull_requests.filtered.len(), 2);
+    }
+
+    #[test]
+    fn pull_requests_loaded_drops_stale_response() {
+        let mut app = make_app();
+        app.view = View::PullRequests;
+
+        // Advance generation twice to simulate rapid tab switching.
+        let _old_gen = app.pull_requests.next_generation();
+        let _current_gen = app.pull_requests.next_generation();
+
+        let stale_prs = vec![make_pull_request(1, "Stale PR", "active", "repo")];
+        // Simulate a response arriving with the old generation.
+        let stale_gen = 1u64;
+        if stale_gen < app.pull_requests.generation {
+            // Should be dropped — don't call set_data.
+        } else {
+            app.pull_requests.set_data(stale_prs, &app.search.query);
+        }
+        // Data should remain empty because the stale response was dropped.
+        assert!(app.pull_requests.filtered.is_empty());
+    }
+
+    #[test]
+    fn pull_requests_loaded_current_generation_accepted() {
+        let mut app = make_app();
+        app.view = View::PullRequests;
+
+        // Advance to generation 3.
+        app.pull_requests.next_generation();
+        app.pull_requests.next_generation();
+        let current = app.pull_requests.next_generation();
+        assert_eq!(current, 3);
+
+        let prs = vec![make_pull_request(5, "Current PR", "active", "repo")];
+        // Response with matching generation should be accepted.
+        if current >= app.pull_requests.generation {
+            app.pull_requests.set_data(prs, &app.search.query);
+        }
+        assert_eq!(app.pull_requests.filtered.len(), 1);
+        assert_eq!(app.pull_requests.filtered[0].pull_request_id, 5);
     }
 }

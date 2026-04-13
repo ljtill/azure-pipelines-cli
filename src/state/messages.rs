@@ -71,6 +71,7 @@ pub enum AppMessage {
     },
     PullRequestsLoaded {
         pull_requests: Vec<PullRequest>,
+        generation: u64,
     },
     UserIdentity {
         user_id: String,

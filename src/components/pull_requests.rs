@@ -57,9 +57,17 @@ pub struct PullRequests {
     pub filtered: Vec<crate::client::models::PullRequest>,
     pub nav: ListNav,
     pub mode: PrViewMode,
+    /// Monotonic counter incremented on each fetch request to discard stale responses.
+    pub generation: u64,
 }
 
 impl PullRequests {
+    /// Increments the generation counter and returns the new value.
+    pub fn next_generation(&mut self) -> u64 {
+        self.generation += 1;
+        self.generation
+    }
+
     /// Replaces the underlying data and rebuilds the filtered list.
     pub fn set_data(
         &mut self,
@@ -328,5 +336,20 @@ mod tests {
         let data = vec![make_pull_request(1, "Add feature", "active", "frontend")];
         prs.set_data(data, "nonexistent");
         assert_eq!(prs.filtered.len(), 0);
+    }
+
+    #[test]
+    fn default_generation_is_zero() {
+        let prs = PullRequests::default();
+        assert_eq!(prs.generation, 0);
+    }
+
+    #[test]
+    fn next_generation_increments() {
+        let mut prs = PullRequests::default();
+        assert_eq!(prs.next_generation(), 1);
+        assert_eq!(prs.next_generation(), 2);
+        assert_eq!(prs.next_generation(), 3);
+        assert_eq!(prs.generation, 3);
     }
 }

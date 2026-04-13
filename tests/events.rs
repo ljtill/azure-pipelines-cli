@@ -645,6 +645,15 @@ fn q_on_pull_requests_goes_to_dashboard() {
 }
 
 #[test]
+fn r_on_pull_requests_triggers_force_refresh() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+
+    let action = handle_key(&mut app, key(KeyCode::Char('r')));
+    assert!(matches!(action, Action::ForceRefresh));
+}
+
+#[test]
 fn esc_on_pull_requests_goes_to_dashboard() {
     let mut app = test_app();
     app.view = View::PullRequests;
