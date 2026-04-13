@@ -52,6 +52,7 @@ pub struct BuildDefinitionRef {
 /// Represents an identity reference with a display name.
 #[derive(Debug, Clone, Deserialize)]
 pub struct IdentityRef {
+    pub id: Option<String>,
     #[serde(rename = "displayName")]
     pub display_name: String,
 }

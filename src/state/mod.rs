@@ -172,6 +172,7 @@ pub struct App {
     pub pull_requests: crate::components::pull_requests::PullRequests,
     pub pull_request_detail: crate::components::pull_request_detail::PullRequestDetail,
     pub user_id: Option<String>,
+    pub user_display_name: Option<String>,
     pub identity_resolved: bool,
     pub dashboard_pull_requests: Vec<crate::client::models::PullRequest>,
 
@@ -247,6 +248,7 @@ impl App {
             pull_request_detail: crate::components::pull_request_detail::PullRequestDetail::default(
             ),
             user_id: None,
+            user_display_name: None,
             identity_resolved: false,
             dashboard_pull_requests: Vec::new(),
 

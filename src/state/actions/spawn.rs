@@ -403,21 +403,20 @@ pub fn spawn_fetch_pull_requests(app: &App, client: &AdoClient, tx: &mpsc::Sende
 }
 
 /// Spawns an async task that fetches "Created by me" PRs for the Dashboard.
+///
+/// Fetches all active PRs; client-side filtering by the current user's identity
+/// is applied when the response arrives (in the `DashboardPullRequests` handler).
 pub fn spawn_fetch_dashboard_pull_requests(
-    app: &App,
+    _app: &App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
 ) {
-    let user_id = app.user_id.clone();
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_dashboard_prs");
     tokio::spawn(
         async move {
-            let msg = match client
-                .list_pull_requests("active", user_id.as_deref(), None)
-                .await
-            {
+            let msg = match client.list_pull_requests("active", None, None).await {
                 Ok(prs) => AppMessage::DashboardPullRequests { pull_requests: prs },
                 Err(e) => {
                     tracing::debug!(error = %e, "dashboard PR fetch failed (non-fatal)");
@@ -474,9 +473,14 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
             match client.get_connection_data().await {
                 Ok(cd) => {
                     if let Some(id) = cd.user_id() {
+                        let display_name = cd
+                            .authenticated_user
+                            .as_ref()
+                            .and_then(|u| u.provider_display_name.clone());
                         let _ = tx
                             .send(AppMessage::UserIdentity {
                                 user_id: id.to_string(),
+                                display_name,
                             })
                             .await;
                     } else {

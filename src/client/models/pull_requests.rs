@@ -233,6 +233,7 @@ mod tests {
             description: None,
             status: "active".to_string(),
             created_by: Some(IdentityRef {
+                id: None,
                 display_name: "Alice".to_string(),
             }),
             creation_date: None,

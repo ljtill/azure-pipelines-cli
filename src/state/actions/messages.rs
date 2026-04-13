@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::client::http::AdoClient;
 use crate::client::models;
+use crate::client::models::PullRequest;
 use crate::components::log_viewer::ActiveTaskResult;
 
 use super::super::App;
@@ -439,9 +440,13 @@ pub fn handle_message(
             tracing::info!(count = pull_requests.len(), "pull requests loaded");
             app.pull_requests.set_data(pull_requests, &app.search.query);
         }
-        AppMessage::UserIdentity { user_id } => {
+        AppMessage::UserIdentity {
+            user_id,
+            display_name,
+        } => {
             tracing::info!("user identity resolved");
             app.user_id = Some(user_id);
+            app.user_display_name = display_name;
             app.identity_resolved = true;
             // Re-fetch dashboard PRs now that we can filter by creator.
             spawn_fetch_dashboard_pull_requests(app, client, tx);
@@ -464,7 +469,37 @@ pub fn handle_message(
         }
         AppMessage::DashboardPullRequests { pull_requests } => {
             tracing::info!(count = pull_requests.len(), "dashboard PRs loaded");
-            app.dashboard_pull_requests = pull_requests;
+            // Client-side filter: keep only active PRs created by the current user.
+            let filtered: Vec<_> = if app.user_id.is_some() || app.user_display_name.is_some() {
+                pull_requests
+                    .into_iter()
+                    .filter(|pr| {
+                        if !pr.is_active() {
+                            return false;
+                        }
+                        let Some(creator) = &pr.created_by else {
+                            return false;
+                        };
+                        // Primary match: compare identity GUIDs.
+                        if let (Some(creator_id), Some(user_id)) = (&creator.id, &app.user_id) {
+                            return creator_id.eq_ignore_ascii_case(user_id);
+                        }
+                        // Fallback: compare display names.
+                        if let Some(user_name) = &app.user_display_name {
+                            return creator.display_name.eq_ignore_ascii_case(user_name);
+                        }
+                        false
+                    })
+                    .collect()
+            } else {
+                // Identity unknown — show all active PRs as a fallback.
+                pull_requests
+                    .into_iter()
+                    .filter(PullRequest::is_active)
+                    .collect()
+            };
+            tracing::info!(filtered = filtered.len(), "dashboard PRs after filter");
+            app.dashboard_pull_requests = filtered;
             app.rebuild_dashboard();
         }
         AppMessage::UserIdentityFailed => {

@@ -74,6 +74,7 @@ pub enum AppMessage {
     },
     UserIdentity {
         user_id: String,
+        display_name: Option<String>,
     },
     PullRequestDetailLoaded {
         pull_request: PullRequest,
