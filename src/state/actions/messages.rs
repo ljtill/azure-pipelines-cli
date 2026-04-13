@@ -21,27 +21,23 @@ const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
     "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
 
 fn exact_identity_matches(author: &IdentityRef, user: &ExactUserIdentity) -> bool {
-    let mut shared_field = false;
-
     for (author_value, user_value) in [
         (author.id.as_deref(), user.id.as_deref()),
-        (author.unique_name.as_deref(), user.unique_name.as_deref()),
         (author.descriptor.as_deref(), user.descriptor.as_deref()),
+        (author.unique_name.as_deref(), user.unique_name.as_deref()),
     ] {
         if let (Some(author_value), Some(user_value)) = (author_value, user_value) {
-            shared_field = true;
-            if !author_value.eq_ignore_ascii_case(user_value) {
-                return false;
-            }
+            return author_value.eq_ignore_ascii_case(user_value);
         }
     }
 
-    shared_field
+    false
 }
 
-fn exact_dashboard_pull_request_state(
+fn dashboard_pull_request_state(
     pull_requests: Vec<PullRequest>,
     current_user: &ExactUserIdentity,
+    creator_scoped_by_id: bool,
 ) -> DashboardPullRequestsState {
     if !current_user.is_known() {
         return DashboardPullRequestsState::Unavailable(
@@ -53,6 +49,19 @@ fn exact_dashboard_pull_request_state(
         .into_iter()
         .filter(PullRequest::is_active)
         .filter(|pr| {
+            if creator_scoped_by_id {
+                return pr
+                    .created_by
+                    .as_ref()
+                    .and_then(|author| author.id.as_deref())
+                    .is_none_or(|author_id| {
+                        current_user
+                            .id
+                            .as_deref()
+                            .is_some_and(|user_id| author_id.eq_ignore_ascii_case(user_id))
+                    });
+            }
+
             pr.created_by
                 .as_ref()
                 .is_some_and(|author| exact_identity_matches(author, current_user))
@@ -525,10 +534,16 @@ pub fn handle_message(
             let section_count = app.pull_request_detail.section_count();
             app.pull_request_detail.nav.set_len(section_count);
         }
-        AppMessage::DashboardPullRequests { pull_requests } => {
+        AppMessage::DashboardPullRequests {
+            pull_requests,
+            creator_scoped_by_id,
+        } => {
             tracing::info!(count = pull_requests.len(), "dashboard PRs loaded");
-            app.dashboard_pull_requests =
-                exact_dashboard_pull_request_state(pull_requests, &app.current_user);
+            app.dashboard_pull_requests = dashboard_pull_request_state(
+                pull_requests,
+                &app.current_user,
+                creator_scoped_by_id,
+            );
             app.rebuild_dashboard();
         }
         AppMessage::DashboardPullRequestsFailed { message } => {
@@ -574,7 +589,24 @@ mod tests {
     }
 
     #[test]
-    fn exact_dashboard_pull_request_state_keeps_only_exact_active_matches() {
+    fn exact_identity_matches_prefers_id_over_weaker_conflicts() {
+        let author = IdentityRef {
+            id: Some("same-id".to_string()),
+            unique_name: Some("author@contoso.com".to_string()),
+            descriptor: None,
+            display_name: "Author".to_string(),
+        };
+        let current_user = ExactUserIdentity {
+            id: Some("same-id".to_string()),
+            unique_name: Some("different@contoso.com".to_string()),
+            descriptor: None,
+        };
+
+        assert!(exact_identity_matches(&author, &current_user));
+    }
+
+    #[test]
+    fn dashboard_pull_request_state_keeps_only_exact_active_matches() {
         let mut matching_active = make_pull_request(1, "Mine", "active", "repo");
         matching_active.created_by.as_mut().unwrap().id = Some("me".to_string());
 
@@ -586,7 +618,7 @@ mod tests {
 
         let missing_identifier = make_pull_request(4, "Unknown author", "active", "repo");
 
-        let state = exact_dashboard_pull_request_state(
+        let state = dashboard_pull_request_state(
             vec![
                 matching_active,
                 other_users,
@@ -598,6 +630,7 @@ mod tests {
                 unique_name: None,
                 descriptor: None,
             },
+            false,
         );
 
         match state {
@@ -610,27 +643,53 @@ mod tests {
     }
 
     #[test]
-    fn exact_dashboard_pull_request_state_returns_empty_verified_when_no_exact_matches() {
+    fn dashboard_pull_request_state_keeps_creator_scoped_results_without_author_id() {
+        let mut my_pr = make_pull_request(1, "Mine", "active", "repo");
+        my_pr.created_by.as_mut().unwrap().id = None;
+
+        let state = dashboard_pull_request_state(
+            vec![my_pr],
+            &ExactUserIdentity {
+                id: Some("me".to_string()),
+                unique_name: Some("me@contoso.com".to_string()),
+                descriptor: None,
+            },
+            true,
+        );
+
+        match state {
+            DashboardPullRequestsState::Ready(prs) => {
+                assert_eq!(prs.len(), 1);
+                assert_eq!(prs[0].pull_request_id, 1);
+            }
+            other => panic!("expected Ready state, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dashboard_pull_request_state_returns_empty_verified_when_no_exact_matches() {
         let mut pr = make_pull_request(1, "Not mine", "active", "repo");
         pr.created_by.as_mut().unwrap().id = Some("someone-else".to_string());
 
-        let state = exact_dashboard_pull_request_state(
+        let state = dashboard_pull_request_state(
             vec![pr],
             &ExactUserIdentity {
                 id: Some("me".to_string()),
                 unique_name: None,
                 descriptor: None,
             },
+            false,
         );
 
         assert!(matches!(state, DashboardPullRequestsState::EmptyVerified));
     }
 
     #[test]
-    fn exact_dashboard_pull_request_state_returns_unavailable_when_identity_unknown() {
-        let state = exact_dashboard_pull_request_state(
+    fn dashboard_pull_request_state_returns_unavailable_when_identity_unknown() {
+        let state = dashboard_pull_request_state(
             vec![make_pull_request(1, "Mine", "active", "repo")],
             &ExactUserIdentity::default(),
+            false,
         );
 
         assert!(matches!(state, DashboardPullRequestsState::Unavailable(_)));

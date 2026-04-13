@@ -486,13 +486,20 @@ pub fn spawn_fetch_dashboard_pull_requests(
     app.dashboard_pull_requests = DashboardPullRequestsState::Loading;
     app.rebuild_dashboard();
 
+    let creator_id = app.current_user.id.clone();
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_dashboard_prs");
     tokio::spawn(
         async move {
-            let msg = match client.list_pull_requests("active", None, None).await {
-                Ok(prs) => AppMessage::DashboardPullRequests { pull_requests: prs },
+            let msg = match client
+                .list_pull_requests("active", creator_id.as_deref(), None)
+                .await
+            {
+                Ok(prs) => AppMessage::DashboardPullRequests {
+                    pull_requests: prs,
+                    creator_scoped_by_id: creator_id.is_some(),
+                },
                 Err(e) => {
                     tracing::debug!(error = %e, "dashboard PR fetch failed (non-fatal)");
                     AppMessage::DashboardPullRequestsFailed {

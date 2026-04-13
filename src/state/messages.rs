@@ -84,6 +84,7 @@ pub enum AppMessage {
     },
     DashboardPullRequests {
         pull_requests: Vec<PullRequest>,
+        creator_scoped_by_id: bool,
     },
     DashboardPullRequestsFailed {
         message: String,
