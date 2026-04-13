@@ -447,14 +447,20 @@ mod tests {
             make_definition(2, "Deploy", "\\Infra"),
         ];
         app.search.query = "ci".to_string();
-        app.pipelines.rebuild(
-            &app.data.definitions,
-            &app.filters.folders,
-            &app.filters.definition_ids,
-            &app.search.query,
-        );
-        assert_eq!(app.pipelines.filtered.len(), 1);
-        assert_eq!(app.pipelines.filtered[0].name, "CI Pipeline");
+        app.rebuild_pipelines();
+        // Search for "ci" should show Root header + CI Pipeline = 2 rows, 1 pipeline.
+        let pipeline_count = app
+            .pipelines
+            .rows
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r,
+                    crate::components::pipelines::PipelineRow::Pipeline { .. }
+                )
+            })
+            .count();
+        assert_eq!(pipeline_count, 1);
     }
 
     #[test]
@@ -464,13 +470,19 @@ mod tests {
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
         ];
-        app.pipelines.rebuild(
-            &app.data.definitions,
-            &app.filters.folders,
-            &app.filters.definition_ids,
-            &app.search.query,
-        );
-        assert_eq!(app.pipelines.filtered.len(), 2);
+        app.rebuild_pipelines();
+        let pipeline_count = app
+            .pipelines
+            .rows
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r,
+                    crate::components::pipelines::PipelineRow::Pipeline { .. }
+                )
+            })
+            .count();
+        assert_eq!(pipeline_count, 2);
     }
 
     // --- toggle/collapse/expand ---

@@ -117,6 +117,7 @@ pub fn handle_settings_save(app: &mut App) -> Action {
                 // Apply runtime-relevant changes.
                 app.filters.folders = config.filters.folders;
                 app.filters.definition_ids = config.filters.definition_ids.clone();
+                app.filters.pinned_definition_ids = config.filters.pinned_definition_ids.clone();
                 app.notifications_enabled = config.notifications.enabled;
 
                 // Apply display settings live.
@@ -131,12 +132,7 @@ pub fn handle_settings_save(app: &mut App) -> Action {
                     &app.filters.folders,
                     &app.filters.definition_ids,
                 );
-                app.pipelines.rebuild(
-                    &app.data.definitions,
-                    &app.filters.folders,
-                    &app.filters.definition_ids,
-                    &app.search.query,
-                );
+                app.rebuild_pipelines();
                 app.active_runs.rebuild(
                     &app.data.active_builds,
                     &app.filters.definition_ids,
@@ -196,12 +192,7 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) -> Action {
 pub fn rebuild_search_results(app: &mut App) {
     match app.view {
         View::Pipelines => {
-            app.pipelines.rebuild(
-                &app.data.definitions,
-                &app.filters.folders,
-                &app.filters.definition_ids,
-                &app.search.query,
-            );
+            app.rebuild_pipelines();
             app.pipelines.nav.set_index(0);
         }
         View::ActiveRuns => {

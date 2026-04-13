@@ -132,12 +132,7 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             tracing::info!(from = ?app.view, to = ?View::Pipelines, "view switch");
             app.search.query.clear();
             app.view = View::Pipelines;
-            app.pipelines.rebuild(
-                &app.data.definitions,
-                &app.filters.folders,
-                &app.filters.definition_ids,
-                &app.search.query,
-            );
+            app.rebuild_pipelines();
             Some(Action::None)
         }
         KeyCode::Char('3') => {

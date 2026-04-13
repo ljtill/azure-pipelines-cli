@@ -17,8 +17,7 @@ pub fn handle_open_in_browser(app: &App) -> Action {
         }
         View::Pipelines => app
             .pipelines
-            .filtered
-            .get(app.pipelines.nav.index())
+            .definition_at(app.pipelines.nav.index())
             .map(|def| app.endpoints_web_definition(def.id)),
         View::ActiveRuns => app
             .active_runs
@@ -108,7 +107,7 @@ pub fn handle_queue_request(app: &mut App) -> Action {
             }
         }
         View::Pipelines => {
-            if let Some(def) = app.pipelines.filtered.get(app.pipelines.nav.index()) {
+            if let Some(def) = app.pipelines.definition_at(app.pipelines.nav.index()) {
                 (def.id, def.name.clone())
             } else {
                 return Action::None;

@@ -289,12 +289,7 @@ pub fn make_app() -> App {
         &app.filters.folders,
         &app.filters.definition_ids,
     );
-    app.pipelines.rebuild(
-        &app.data.definitions,
-        &app.filters.folders,
-        &app.filters.definition_ids,
-        &app.search.query,
-    );
+    app.rebuild_pipelines();
 
     app
 }
@@ -363,7 +358,7 @@ mod tests {
         assert_eq!(app.data.definitions.len(), 3);
         assert_eq!(app.data.recent_builds.len(), 3);
         assert!(!app.dashboard.rows.is_empty());
-        assert!(!app.pipelines.filtered.is_empty());
+        assert!(!app.pipelines.rows.is_empty());
     }
 
     #[test]

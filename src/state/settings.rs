@@ -92,6 +92,19 @@ impl SettingsState {
                     .join(", "),
                 hint: "comma-separated",
             },
+            SettingsField {
+                label: "Pinned definition IDs",
+                section: "Filters",
+                kind: FieldKind::IntList,
+                value: config
+                    .filters
+                    .pinned_definition_ids
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                hint: "comma-separated",
+            },
             // --- Display ---
             SettingsField {
                 label: "Refresh interval (secs)",
@@ -276,6 +289,7 @@ impl SettingsState {
             filters: FiltersConfig {
                 folders: parse_string_list("Filter folders"),
                 definition_ids: parse_u32_list("Filter definition IDs"),
+                pinned_definition_ids: parse_u32_list("Pinned definition IDs"),
             },
             update: UpdateConfig {
                 check_for_updates: parse_bool("Check for updates"),
@@ -317,7 +331,7 @@ mod tests {
     #[test]
     fn field_count() {
         let s = make_settings();
-        assert_eq!(s.field_count(), 9);
+        assert_eq!(s.field_count(), 10);
     }
 
     #[test]
@@ -349,30 +363,30 @@ mod tests {
     #[test]
     fn toggle_field() {
         let mut s = make_settings();
-        // "Check for updates" is now index 8.
-        s.selected = 8;
-        assert_eq!(s.fields[8].kind, FieldKind::Toggle);
-        assert_eq!(s.fields[8].value, "true");
+        // "Check for updates" is at index 9.
+        s.selected = 9;
+        assert_eq!(s.fields[9].kind, FieldKind::Toggle);
+        assert_eq!(s.fields[9].value, "true");
         s.start_edit();
-        assert_eq!(s.fields[8].value, "false");
+        assert_eq!(s.fields[9].value, "false");
         assert!(!s.editing); // Toggle doesn't enter edit mode.
         s.start_edit();
-        assert_eq!(s.fields[8].value, "true");
+        assert_eq!(s.fields[9].value, "true");
     }
 
     #[test]
     fn cycle_field() {
         let mut s = make_settings();
-        // "Log level" is now index 7.
-        s.selected = 7;
-        assert_eq!(s.fields[7].kind, FieldKind::Cycle);
-        assert_eq!(s.fields[7].value, "info");
+        // "Log level" is at index 8.
+        s.selected = 8;
+        assert_eq!(s.fields[8].kind, FieldKind::Cycle);
+        assert_eq!(s.fields[8].value, "info");
         s.start_edit(); // Info -> warn.
-        assert_eq!(s.fields[7].value, "warn");
+        assert_eq!(s.fields[8].value, "warn");
         s.start_edit(); // Warn -> error.
-        assert_eq!(s.fields[7].value, "error");
+        assert_eq!(s.fields[8].value, "error");
         s.start_edit(); // Error -> trace (wraps).
-        assert_eq!(s.fields[7].value, "trace");
+        assert_eq!(s.fields[8].value, "trace");
     }
 
     #[test]
@@ -391,14 +405,14 @@ mod tests {
     #[test]
     fn number_field_rejects_non_digits() {
         let mut s = make_settings();
-        // "Refresh interval (secs)" is now index 4.
-        s.selected = 4;
+        // "Refresh interval (secs)" is at index 5.
+        s.selected = 5;
         s.start_edit();
-        let before = s.fields[4].value.clone();
+        let before = s.fields[5].value.clone();
         s.insert_char('a');
-        assert_eq!(s.fields[4].value, before); // Unchanged.
+        assert_eq!(s.fields[5].value, before); // Unchanged.
         s.insert_char('5');
-        assert!(s.fields[4].value.ends_with('5'));
+        assert!(s.fields[5].value.ends_with('5'));
     }
 
     #[test]

@@ -35,6 +35,9 @@ pub struct FiltersConfig {
     /// Shows only these specific definition IDs. Defaults to all when empty.
     #[serde(default)]
     pub definition_ids: Vec<u32>,
+    /// Pipeline definition IDs pinned to the Dashboard.
+    #[serde(default)]
+    pub pinned_definition_ids: Vec<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

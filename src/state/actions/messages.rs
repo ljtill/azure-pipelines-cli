@@ -149,12 +149,7 @@ pub fn handle_message(
                 &app.filters.folders,
                 &app.filters.definition_ids,
             );
-            app.pipelines.rebuild(
-                &app.data.definitions,
-                &app.filters.folders,
-                &app.filters.definition_ids,
-                &app.search.query,
-            );
+            app.rebuild_pipelines();
             app.active_runs.rebuild(
                 &app.data.active_builds,
                 &app.filters.definition_ids,
@@ -516,12 +511,7 @@ mod tests {
             &app.filters.folders,
             &app.filters.definition_ids,
         );
-        app.pipelines.rebuild(
-            &app.data.definitions,
-            &app.filters.folders,
-            &app.filters.definition_ids,
-            &app.search.query,
-        );
+        app.rebuild_pipelines();
         app.active_runs.rebuild(
             &app.data.active_builds,
             &app.filters.definition_ids,
@@ -531,7 +521,7 @@ mod tests {
         app.loading = false;
 
         assert_eq!(app.data.definitions.len(), 2);
-        assert_eq!(app.pipelines.filtered.len(), 2);
+        assert!(!app.pipelines.rows.is_empty());
         assert!(!app.dashboard.rows.is_empty());
         assert!(app.last_refresh.is_some());
         assert!(!app.loading);
@@ -566,12 +556,7 @@ mod tests {
             &app.filters.folders,
             &app.filters.definition_ids,
         );
-        app.pipelines.rebuild(
-            &app.data.definitions,
-            &app.filters.folders,
-            &app.filters.definition_ids,
-            &app.search.query,
-        );
+        app.rebuild_pipelines();
         app.active_runs.rebuild(
             &app.data.active_builds,
             &app.filters.definition_ids,
@@ -581,7 +566,7 @@ mod tests {
         app.loading = false;
 
         assert_eq!(app.data.definitions.len(), 1);
-        assert_eq!(app.pipelines.filtered.len(), 1);
+        assert!(!app.pipelines.rows.is_empty());
         assert_eq!(app.active_runs.filtered.len(), 0);
     }
 

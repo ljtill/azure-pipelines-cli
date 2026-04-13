@@ -43,7 +43,7 @@ fn key_2_switches_to_pipelines() {
     app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     let action = handle_key(&mut app, key(KeyCode::Char('2')));
     assert_eq!(app.view, View::Pipelines);
-    assert!(!app.pipelines.filtered.is_empty());
+    assert!(!app.pipelines.rows.is_empty());
     assert!(matches!(action, Action::None));
 }
 
@@ -253,13 +253,9 @@ fn enter_on_pipelines_fetches_history() {
     let mut app = test_app();
     app.view = View::Pipelines;
     app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
-    app.pipelines.rebuild(
-        &app.data.definitions,
-        &app.filters.folders,
-        &app.filters.definition_ids,
-        &app.search.query,
-    );
-    app.pipelines.nav.set_len(app.pipelines.filtered.len());
+    app.rebuild_pipelines();
+    // Navigate past the folder header to the first pipeline.
+    app.pipelines.nav.set_index(1);
 
     let action = handle_key(&mut app, key(KeyCode::Enter));
     assert!(
@@ -486,14 +482,9 @@ fn arrow_keys_navigate_list() {
         make_definition(2, "Pipeline 2", "\\"),
         make_definition(3, "Pipeline 3", "\\"),
     ];
-    app.pipelines.rebuild(
-        &app.data.definitions,
-        &app.filters.folders,
-        &app.filters.definition_ids,
-        &app.search.query,
-    );
-    app.pipelines.nav.set_len(app.pipelines.filtered.len());
+    app.rebuild_pipelines();
 
+    // Rows: folder header (0) + 3 pipelines (1,2,3).
     handle_key(&mut app, key(KeyCode::Down));
     assert_eq!(app.pipelines.nav.index(), 1);
 
@@ -513,16 +504,11 @@ fn home_and_end_keys() {
         make_definition(2, "Pipeline 2", "\\"),
         make_definition(3, "Pipeline 3", "\\"),
     ];
-    app.pipelines.rebuild(
-        &app.data.definitions,
-        &app.filters.folders,
-        &app.filters.definition_ids,
-        &app.search.query,
-    );
-    app.pipelines.nav.set_len(app.pipelines.filtered.len());
+    app.rebuild_pipelines();
 
+    // Rows: folder header (0) + 3 pipelines (1,2,3) = 4 rows.
     handle_key(&mut app, key(KeyCode::End));
-    assert_eq!(app.pipelines.nav.index(), 2);
+    assert_eq!(app.pipelines.nav.index(), 3);
 
     handle_key(&mut app, key(KeyCode::Home));
     assert_eq!(app.pipelines.nav.index(), 0);

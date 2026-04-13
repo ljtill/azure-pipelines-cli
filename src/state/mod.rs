@@ -68,6 +68,7 @@ pub struct CoreData {
 pub struct FilterConfig {
     pub folders: Vec<String>,
     pub definition_ids: Vec<u32>,
+    pub pinned_definition_ids: Vec<u32>,
 }
 
 /// Represents the active view in the application.
@@ -223,6 +224,7 @@ impl App {
             filters: FilterConfig {
                 folders: config.filters.folders.clone(),
                 definition_ids: config.filters.definition_ids.clone(),
+                pinned_definition_ids: config.filters.pinned_definition_ids.clone(),
             },
 
             data: CoreData::default(),
@@ -268,6 +270,18 @@ impl App {
         }
     }
 
+    /// Rebuilds the Pipelines view from current state.
+    pub fn rebuild_pipelines(&mut self) {
+        self.pipelines.rebuild(
+            &self.data.definitions,
+            &self.data.latest_builds_by_def,
+            &self.filters.folders,
+            &self.filters.definition_ids,
+            &self.filters.pinned_definition_ids,
+            &self.search.query,
+        );
+    }
+
     pub fn go_back(&mut self) {
         if self.show_settings {
             tracing::debug!("closing settings");
@@ -284,12 +298,7 @@ impl App {
             tracing::debug!(query = &*self.search.query, "exiting search mode");
             self.search.mode = InputMode::Normal;
             self.search.query.clear();
-            self.pipelines.rebuild(
-                &self.data.definitions,
-                &self.filters.folders,
-                &self.filters.definition_ids,
-                &self.search.query,
-            );
+            self.rebuild_pipelines();
             return;
         }
         match self.view {
@@ -409,6 +418,7 @@ impl App {
             filters: crate::config::FiltersConfig {
                 folders: self.filters.folders.clone(),
                 definition_ids: self.filters.definition_ids.clone(),
+                pinned_definition_ids: self.filters.pinned_definition_ids.clone(),
             },
             update: crate::config::UpdateConfig::default(),
             logging: crate::config::LoggingConfig::default(),
