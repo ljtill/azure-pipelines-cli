@@ -45,7 +45,7 @@ fn dashboard_pull_request_state(
         );
     }
 
-    let filtered: Vec<PullRequest> = pull_requests
+    let mut filtered: Vec<PullRequest> = pull_requests
         .into_iter()
         .filter(PullRequest::is_active)
         .filter(|pr| {
@@ -67,6 +67,8 @@ fn dashboard_pull_request_state(
                 .is_some_and(|author| exact_identity_matches(author, current_user))
         })
         .collect();
+
+    filtered.sort_by_key(|pr| pr.is_draft);
 
     if filtered.is_empty() {
         DashboardPullRequestsState::EmptyVerified
@@ -661,6 +663,35 @@ mod tests {
             DashboardPullRequestsState::Ready(prs) => {
                 assert_eq!(prs.len(), 1);
                 assert_eq!(prs[0].pull_request_id, 1);
+            }
+            other => panic!("expected Ready state, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dashboard_pull_request_state_orders_non_drafts_before_drafts() {
+        let mut draft_pr = make_pull_request(1, "Draft", "active", "repo");
+        draft_pr.is_draft = true;
+        draft_pr.created_by.as_mut().unwrap().id = Some("me".to_string());
+
+        let mut active_pr = make_pull_request(2, "Active", "active", "repo");
+        active_pr.created_by.as_mut().unwrap().id = Some("me".to_string());
+
+        let state = dashboard_pull_request_state(
+            vec![draft_pr, active_pr],
+            &ExactUserIdentity {
+                id: Some("me".to_string()),
+                unique_name: None,
+                descriptor: None,
+            },
+            true,
+        );
+
+        match state {
+            DashboardPullRequestsState::Ready(prs) => {
+                assert_eq!(prs.len(), 2);
+                assert_eq!(prs[0].pull_request_id, 2);
+                assert_eq!(prs[1].pull_request_id, 1);
             }
             other => panic!("expected Ready state, got {other:?}"),
         }
