@@ -16,7 +16,7 @@ use reqwest::{Client, Url};
 
 use super::auth::AdoAuth;
 use super::endpoints::Endpoints;
-use super::models::*;
+use super::models::ListResponse;
 
 /// Authenticated HTTP client for the Azure DevOps REST API.
 #[derive(Clone)]
@@ -28,8 +28,8 @@ pub struct AdoClient {
 
 impl AdoClient {
     /// Creates a new client configured for the given organization and project.
-    pub async fn new(organization: &str, project: &str) -> Result<Self> {
-        let auth = AdoAuth::new().await?;
+    pub fn new(organization: &str, project: &str) -> Result<Self> {
+        let auth = AdoAuth::new()?;
         let http = Client::builder()
             .user_agent(concat!("pipelines/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(30))
@@ -91,7 +91,7 @@ impl AdoClient {
             .get("x-ms-continuationtoken")
             .and_then(|v| v.to_str().ok())
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         let body = resp.json::<T>().await?;
         tracing::debug!(
             method = "GET",
@@ -131,7 +131,7 @@ impl AdoClient {
                 .headers()
                 .get("x-ms-continuationtoken")
                 .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             let page: ListResponse<T> = resp.json().await?;
             all_items.extend(page.value);
@@ -278,15 +278,15 @@ fn url_without_query(url: &str) -> &str {
 
 /// Percent-encodes a continuation token for safe inclusion in a URL query string.
 pub(crate) fn encode_continuation_token(token: &str) -> String {
-    let dummy = format!("https://x?t={}", token);
-    if let Ok(url) = Url::parse(&dummy) {
-        url.query_pairs()
-            .find(|(k, _)| k == "t")
-            .map(|(_, v)| v.into_owned())
-            .unwrap_or_else(|| token.to_string())
-    } else {
-        token.to_string()
-    }
+    let dummy = format!("https://x?t={token}");
+    Url::parse(&dummy).map_or_else(
+        |_| token.to_string(),
+        |url| {
+            url.query_pairs()
+                .find(|(k, _)| k == "t")
+                .map_or_else(|| token.to_string(), |(_, v)| v.into_owned())
+        },
+    )
 }
 
 #[cfg(test)]

@@ -78,6 +78,7 @@ impl LogViewer {
         // Walk up the ancestor chain to expand all parent nodes.
         if let Some(timeline) = self.build_timeline.as_ref() {
             let records = &timeline.records;
+            #[allow(clippy::redundant_clone)] // Used in closure on line ~110.
             let mut current_id = parent_job_id.clone();
             while let Some(cid) = &current_id {
                 if let Some(rec) = records.iter().find(|r| r.id == *cid) {
@@ -141,14 +142,17 @@ impl LogViewer {
             tasks
                 .iter()
                 .rev()
-                .find(|r| r.state.is_some_and(|s| s.is_in_progress()))
-                .or(tasks.last())
+                .find(|r| {
+                    r.state
+                        .is_some_and(crate::client::models::TaskState::is_in_progress)
+                })
+                .or_else(|| tasks.last())
         } else {
             tasks
                 .iter()
                 .rev()
                 .find(|r| r.result == Some(BuildResult::Failed))
-                .or(tasks.last())
+                .or_else(|| tasks.last())
         };
 
         let best = best?;
@@ -162,13 +166,11 @@ impl LogViewer {
     /// Updates `selected_build` status/result from timeline records.
     /// Called on each timeline refresh so the log viewer header stays current.
     pub fn refresh_build_status_from_timeline(&mut self) {
-        let timeline = match &self.build_timeline {
-            Some(t) => t,
-            None => return,
+        let Some(timeline) = &self.build_timeline else {
+            return;
         };
-        let build = match &mut self.selected_build {
-            Some(b) => b,
-            None => return,
+        let Some(build) = &mut self.selected_build else {
+            return;
         };
 
         let stages: Vec<_> = timeline

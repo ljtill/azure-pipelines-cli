@@ -72,15 +72,11 @@ async fn main() -> Result<()> {
     // Uses the configured level as default; RUST_LOG env var overrides.
     let log_level = early_config
         .as_ref()
-        .map(|c| c.logging.level.as_str())
-        .unwrap_or("info");
+        .map_or("info", |c| c.logging.level.as_str());
     let log_dir_override = early_config
         .as_ref()
         .and_then(|c| c.logging.log_directory.as_deref());
-    let max_log_files = early_config
-        .as_ref()
-        .map(|c| c.logging.max_log_files)
-        .unwrap_or(5);
+    let max_log_files = early_config.as_ref().map_or(5, |c| c.logging.max_log_files);
     init_tracing(log_level, log_dir_override, max_log_files);
 
     // ratatui::init() sets up raw mode, alternate screen, and a panic hook.
@@ -88,31 +84,28 @@ async fn main() -> Result<()> {
     execute!(std::io::stdout(), EnableMouseCapture)?;
     let _guard = MouseGuard;
 
-    let mut config = match early_config {
-        Some(c) => {
-            tracing::info!(
-                org = c.azure_devops.organization,
-                project = c.azure_devops.project,
-                "app starting"
-            );
-            c
-        }
-        None => {
-            // No config file — run interactive setup inside the TUI.
-            let result = azure_pipelines_cli::render::setup::run_setup(&mut terminal, &config_path);
+    let mut config = if let Some(c) = early_config {
+        tracing::info!(
+            org = c.azure_devops.organization,
+            project = c.azure_devops.project,
+            "app starting"
+        );
+        c
+    } else {
+        // No config file — run interactive setup inside the TUI.
+        let result = azure_pipelines_cli::render::setup::run_setup(&mut terminal, &config_path);
 
-            match result {
-                Ok(Some(config)) => {
-                    tracing::info!(
-                        org = config.azure_devops.organization,
-                        project = config.azure_devops.project,
-                        "config created via setup"
-                    );
-                    config
-                }
-                Ok(None) => return Ok(()),
-                Err(e) => return Err(e),
+        match result {
+            Ok(Some(config)) => {
+                tracing::info!(
+                    org = config.azure_devops.organization,
+                    project = config.azure_devops.project,
+                    "config created via setup"
+                );
+                config
             }
+            Ok(None) => return Ok(()),
+            Err(e) => return Err(e),
         }
     };
 
@@ -120,8 +113,7 @@ async fn main() -> Result<()> {
         let client = AdoClient::new(
             &config.azure_devops.organization,
             &config.azure_devops.project,
-        )
-        .await?;
+        )?;
 
         tracing::info!("api client connected");
 
@@ -185,14 +177,11 @@ fn init_tracing(level: &str, log_dir_override: Option<&str>, max_log_files: usiz
 
     let log_dir = if let Some(dir) = log_dir_override {
         std::path::PathBuf::from(dir)
+    } else if let Some(h) = dirs::home_dir() {
+        h.join(".local/state/pipelines")
     } else {
-        match dirs::home_dir() {
-            Some(h) => h.join(".local/state/pipelines"),
-            None => {
-                eprintln!("warning: could not determine home directory; file logging disabled");
-                return;
-            }
-        }
+        eprintln!("warning: could not determine home directory; file logging disabled");
+        return;
     };
 
     if let Err(e) = std::fs::create_dir_all(&log_dir) {

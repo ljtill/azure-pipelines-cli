@@ -59,8 +59,7 @@ impl BuildHistory {
         let def_name = self
             .selected_definition
             .as_ref()
-            .map(|d| d.name.as_str())
-            .unwrap_or("Unknown");
+            .map_or("Unknown", |d| d.name.as_str());
 
         let header = Paragraph::new(Line::from(vec![
             Span::styled(" ← ", theme::MUTED),
@@ -114,7 +113,7 @@ impl BuildHistory {
                             Style::new()
                         },
                     ),
-                    Span::styled(format!(" {} ", icon), Style::new().fg(icon_color)),
+                    Span::styled(format!(" {icon} "), Style::new().fg(icon_color)),
                     Span::styled(
                         format!("{:<width$}", label, width = widths[2]),
                         Style::new().fg(icon_color),
@@ -168,9 +167,9 @@ impl BuildHistory {
         let sel_count = self.selected.len();
         let total = self.builds.len();
         let title = if sel_count > 0 {
-            format!(" Builds ({}) — {} selected ", total, sel_count)
+            format!(" Builds ({total}) — {sel_count} selected ")
         } else {
-            format!(" Builds ({}) ", total)
+            format!(" Builds ({total}) ")
         };
         let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
 
@@ -185,7 +184,7 @@ impl Component for BuildHistory {
         Ok(())
     }
 
-    fn footer_hints(&self) -> &str {
+    fn footer_hints(&self) -> &'static str {
         "↑↓ navigate  →/Enter view logs  ←/q/Esc back  Space select  d delete leases  c cancel  Q queue  o open  r refresh  ? help"
     }
 }

@@ -52,12 +52,9 @@ impl LogViewer {
     /// ADO timeline hierarchy: Stage → Phase → Job → Task
     /// We display: Stage → Phase (as "Job" row) → Task
     pub fn rebuild_timeline_rows(&mut self) {
-        let timeline = match &self.build_timeline {
-            Some(t) => t,
-            None => {
-                self.timeline_rows.clear();
-                return;
-            }
+        let Some(timeline) = &self.build_timeline else {
+            self.timeline_rows.clear();
+            return;
         };
 
         let mut children_of: HashMap<String, Vec<&crate::client::models::TimelineRecord>> =
@@ -113,11 +110,11 @@ impl LogViewer {
 
             // Insert checkpoint rows (approval gates) before jobs.
             if let Some(stage_children) = children_of.get(&stage.id) {
-                for child in stage_children.iter() {
+                for child in stage_children {
                     if child.record_type == "Checkpoint"
                         && let Some(cp_children) = children_of.get(&child.id)
                     {
-                        for cp_child in cp_children.iter() {
+                        for cp_child in cp_children {
                             if cp_child.record_type.starts_with("Checkpoint.Approval") {
                                 rows.push(TimelineRow::Checkpoint {
                                     name: cp_child.name.clone(),

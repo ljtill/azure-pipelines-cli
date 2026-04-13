@@ -111,8 +111,9 @@ pub fn handle_message(
                         );
                         let level = match build.result {
                             Some(models::BuildResult::Succeeded) => NotificationLevel::Success,
-                            Some(models::BuildResult::Failed)
-                            | Some(models::BuildResult::Canceled) => NotificationLevel::Error,
+                            Some(models::BuildResult::Failed | models::BuildResult::Canceled) => {
+                                NotificationLevel::Error
+                            }
                             _ => NotificationLevel::Info,
                         };
                         tracing::info!(
@@ -137,7 +138,7 @@ pub fn handle_message(
             app.data.active_builds = active_builds;
             app.data.pending_approval_build_ids = pending_approvals
                 .iter()
-                .filter_map(|a| a.build_id())
+                .filter_map(crate::client::models::approvals::Approval::build_id)
                 .collect();
             app.data.pending_approvals = pending_approvals;
 
@@ -296,7 +297,7 @@ pub fn handle_message(
                 return;
             }
             tracing::debug!(bytes = content.len(), "log content received");
-            app.log_viewer.set_log_content(content);
+            app.log_viewer.set_log_content(&content);
         }
         AppMessage::LogRefreshFinished { had_failure } => {
             tracing::debug!(had_failure, "log refresh finished");
@@ -422,7 +423,7 @@ mod tests {
             id: 10,
             name: "Alpha".into(),
         };
-        let recent = vec![b1.clone()];
+        let recent = vec![b1];
 
         // Apply the same mutations handle_message(DataRefresh) would.
         app.data.definitions = defs;
@@ -737,7 +738,7 @@ mod tests {
             BuildStatus::Completed,
             Some(BuildResult::Succeeded),
         ));
-        app.log_viewer.set_log_content("line1\nline2\nline3".into());
+        app.log_viewer.set_log_content("line1\nline2\nline3");
 
         assert_eq!(app.log_viewer.log_content().len(), 3);
         assert_eq!(app.log_viewer.log_content()[0], "line1");
@@ -753,7 +754,7 @@ mod tests {
             BuildStatus::Completed,
             Some(BuildResult::Succeeded),
         ));
-        app.log_viewer.set_log_content(String::new());
+        app.log_viewer.set_log_content("");
         // "".lines() yields nothing, so vec should be empty.
         assert!(app.log_viewer.log_content().is_empty());
     }
@@ -770,7 +771,7 @@ mod tests {
         assert!(app.log_viewer.log_scroll_offset() > 0);
 
         // Setting new log content resets scroll.
-        app.log_viewer.set_log_content("fresh\nlog".into());
+        app.log_viewer.set_log_content("fresh\nlog");
         assert_eq!(app.log_viewer.log_scroll_offset(), 0);
         assert!(app.log_viewer.log_auto_scroll());
     }
@@ -830,7 +831,7 @@ mod tests {
         // Simulate the stale guard: only apply content if generation matches.
         let content = "should not appear".to_string();
         if stale_gen == app.log_viewer.generation() {
-            app.log_viewer.set_log_content(content);
+            app.log_viewer.set_log_content(&content);
         }
         // Content should remain empty because the generation didn't match.
         assert!(app.log_viewer.log_content().is_empty());
@@ -979,7 +980,7 @@ mod tests {
                     };
                     let level = match build.result {
                         Some(BuildResult::Succeeded) => NotificationLevel::Success,
-                        Some(BuildResult::Failed) | Some(BuildResult::Canceled) => {
+                        Some(BuildResult::Failed | BuildResult::Canceled) => {
                             NotificationLevel::Error
                         }
                         _ => NotificationLevel::Info,
@@ -1131,7 +1132,7 @@ mod tests {
             name: "CI".into(),
         };
         let mut map = BTreeMap::new();
-        map.insert(1u32, b.clone());
+        map.insert(1u32, b);
         simulate_notification_diff(&mut app, &map);
 
         // Same build again.

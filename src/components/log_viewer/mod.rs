@@ -23,11 +23,10 @@ use crate::state::App;
 /// because it needs `&mut App` (for `set_layout_areas` mouse hit-testing state)
 /// while the component is itself a field of `App`.
 pub fn draw_log_viewer(f: &mut Frame, app: &mut App, area: Rect) {
-    let build_label = app
-        .log_viewer
-        .selected_build()
-        .map(|b| format!("{} #{}", b.definition.name, b.build_number))
-        .unwrap_or_else(|| "Build".to_string());
+    let build_label = app.log_viewer.selected_build().map_or_else(
+        || "Build".to_string(),
+        |b| format!("{} #{}", b.definition.name, b.build_number),
+    );
 
     let chunks = Layout::vertical([
         Constraint::Length(2), // build info header
@@ -57,7 +56,7 @@ impl Component for LogViewer {
         Ok(())
     }
 
-    fn footer_hints(&self) -> &str {
+    fn footer_hints(&self) -> &'static str {
         "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  q/Esc back"
     }
 }
@@ -93,8 +92,8 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let arrow = if *collapsed { "▸" } else { "▾" };
                     let (icon, icon_color) = timeline_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
-                        Span::styled(format!("{} ", arrow), theme::ARROW),
-                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(format!("{arrow} "), theme::ARROW),
+                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), theme::STAGE),
                     ]))
                     .style(if selected {
@@ -114,8 +113,8 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let (icon, icon_color) = timeline_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
-                        Span::styled(format!("{} ", arrow), theme::JOB_ARROW),
-                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(format!("{arrow} "), theme::JOB_ARROW),
+                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), theme::JOB),
                     ]))
                     .style(if selected {
@@ -135,7 +134,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let log_indicator = if log_id.is_some() { "" } else { " ·" };
                     ListItem::new(Line::from(vec![
                         Span::raw("      "),
-                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), theme::JOB),
                         Span::styled(log_indicator, theme::MUTED),
                     ]))
@@ -154,7 +153,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let (icon, icon_color) = checkpoint_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
-                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), Style::new().fg(icon_color)),
                     ]))
                     .style(if selected {
@@ -191,7 +190,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             .timeline_rows()
             .get(app.log_viewer.nav().index())
         {
-            format!(" Log Output — {} ", name)
+            format!(" Log Output — {name} ")
         } else {
             " Log Output ".to_string()
         }
@@ -213,7 +212,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             .collect();
 
         let total_lines = lines.len() as u32;
-        let visible_height = area.height.saturating_sub(2) as u32;
+        let visible_height = u32::from(area.height.saturating_sub(2));
         let max_scroll = total_lines.saturating_sub(visible_height);
 
         let scroll_offset_u32 = if app.log_viewer.log_auto_scroll() {
@@ -221,7 +220,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         } else {
             app.log_viewer.log_scroll_offset().min(max_scroll)
         };
-        let scroll_offset = scroll_offset_u32.min(u16::MAX as u32) as u16;
+        let scroll_offset = scroll_offset_u32.min(u32::from(u16::MAX)) as u16;
 
         let title_style = if app.log_viewer.is_following() {
             theme::FOLLOW_TITLE
@@ -271,7 +270,7 @@ mod tests {
 
     /// Builds a simple timeline: 1 stage -> 1 phase -> N tasks.
     fn simple_timeline(
-        tasks: Vec<(&str, Option<TaskState>, Option<BuildResult>, u32)>,
+        tasks: &[(&str, Option<TaskState>, Option<BuildResult>, u32)],
     ) -> BuildTimeline {
         let mut records = vec![
             make_record(
@@ -395,7 +394,7 @@ mod tests {
     fn set_log_content_splits_lines_and_resets_scroll() {
         let mut state = LogViewer::default();
         state.scroll_down(10);
-        state.set_log_content("line1\nline2\nline3".to_string());
+        state.set_log_content("line1\nline2\nline3");
         assert_eq!(state.log_content(), &["line1", "line2", "line3"]);
         assert!(state.log_auto_scroll());
         assert_eq!(state.log_scroll_offset(), 0);
@@ -404,7 +403,7 @@ mod tests {
     #[test]
     fn clear_log_empties_content() {
         let mut state = LogViewer::default();
-        state.set_log_content("some log\ndata".to_string());
+        state.set_log_content("some log\ndata");
         assert!(!state.log_content().is_empty());
         state.clear_log();
         assert!(state.log_content().is_empty());
@@ -422,7 +421,7 @@ mod tests {
 
     #[test]
     fn rebuild_timeline_basic_structure() {
-        let timeline = simple_timeline(vec![
+        let timeline = simple_timeline(&[
             (
                 "Task A",
                 Some(TaskState::Completed),
@@ -508,7 +507,7 @@ mod tests {
 
     #[test]
     fn rebuild_timeline_pre_collapses_on_first_load() {
-        let timeline = simple_timeline(vec![(
+        let timeline = simple_timeline(&[(
             "Task A",
             Some(TaskState::Completed),
             Some(BuildResult::Succeeded),
@@ -528,7 +527,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_collapse_stage() {
-        let timeline = simple_timeline(vec![(
+        let timeline = simple_timeline(&[(
             "Task A",
             Some(TaskState::Completed),
             Some(BuildResult::Succeeded),
@@ -552,7 +551,7 @@ mod tests {
 
     #[test]
     fn find_timeline_parent_index_task_to_job() {
-        let timeline = simple_timeline(vec![(
+        let timeline = simple_timeline(&[(
             "Task A",
             Some(TaskState::Completed),
             Some(BuildResult::Succeeded),
@@ -660,7 +659,7 @@ mod tests {
 
     #[test]
     fn timeline_row_kind_returns_correct_type() {
-        let timeline = simple_timeline(vec![(
+        let timeline = simple_timeline(&[(
             "Task A",
             Some(TaskState::Completed),
             Some(BuildResult::Succeeded),
@@ -675,7 +674,7 @@ mod tests {
 
     #[test]
     fn timeline_task_log_id_returns_correct_id() {
-        let timeline = simple_timeline(vec![(
+        let timeline = simple_timeline(&[(
             "Task A",
             Some(TaskState::Completed),
             Some(BuildResult::Succeeded),
@@ -689,7 +688,7 @@ mod tests {
 
     #[test]
     fn timeline_nav_length_synced_after_rebuild() {
-        let timeline = simple_timeline(vec![
+        let timeline = simple_timeline(&[
             (
                 "Task A",
                 Some(TaskState::Completed),
@@ -883,7 +882,7 @@ mod tests {
 
     #[test]
     fn auto_select_picks_in_progress_task_for_running_build() {
-        let timeline = simple_timeline(vec![
+        let timeline = simple_timeline(&[
             (
                 "Init",
                 Some(TaskState::Completed),
@@ -906,7 +905,7 @@ mod tests {
 
     #[test]
     fn auto_select_picks_failed_task_for_completed_build() {
-        let timeline = simple_timeline(vec![
+        let timeline = simple_timeline(&[
             (
                 "Init",
                 Some(TaskState::Completed),
@@ -939,7 +938,7 @@ mod tests {
 
     #[test]
     fn find_active_task_returns_in_progress() {
-        let timeline = simple_timeline(vec![
+        let timeline = simple_timeline(&[
             (
                 "Init",
                 Some(TaskState::Completed),

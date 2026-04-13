@@ -104,7 +104,6 @@ fn format_field_value(kind: FieldKind, value: &str) -> String {
                 "○ off".to_string()
             }
         }
-        FieldKind::Cycle => value.to_string(),
         _ => value.to_string(),
     }
 }

@@ -143,7 +143,7 @@ impl LogViewer {
         self.build_timeline = Some(timeline);
     }
 
-    pub fn set_log_content(&mut self, content: String) {
+    pub fn set_log_content(&mut self, content: &str) {
         self.log_content = content.lines().map(String::from).collect();
         self.log_auto_scroll = true;
         self.log_scroll_offset = 0;

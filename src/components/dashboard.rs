@@ -225,8 +225,8 @@ impl Dashboard {
                 DashboardRow::FolderHeader { path, collapsed } => {
                     let icon = if *collapsed { "▸" } else { "▾" };
                     ListItem::new(Line::from(vec![
-                        Span::styled(format!(" {} ", icon), theme::ARROW),
-                        Span::styled(path.to_string(), theme::FOLDER),
+                        Span::styled(format!(" {icon} "), theme::ARROW),
+                        Span::styled(path.clone(), theme::FOLDER),
                     ]))
                     .style(if i == self.nav.index() {
                         theme::SELECTED
@@ -244,57 +244,53 @@ impl Dashboard {
                         Style::new()
                     };
 
-                    let (icon, icon_color) = match latest_build {
-                        Some(b) => {
+                    let (icon, icon_color) =
+                        latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
                             let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
                             effective_status_icon(b.status, b.result, awaiting)
-                        }
-                        None => ("○", Color::DarkGray),
-                    };
-                    let label = match latest_build {
-                        Some(b) => {
-                            let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
-                            effective_status_label(b.status, b.result, awaiting)
-                        }
-                        None => "",
-                    };
+                        });
+                    let label = latest_build.as_ref().map_or("", |b| {
+                        let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
+                        effective_status_label(b.status, b.result, awaiting)
+                    });
 
-                    let build_spans = if let Some(b) = latest_build {
-                        let branch = b.branch_display();
-                        let elapsed = build_elapsed(b);
-                        vec![
-                            Span::styled(
-                                format!(
-                                    "#{:<width$}",
-                                    truncate(&b.build_number, widths[4] - 1),
-                                    width = widths[4] - 1
+                    let build_spans = latest_build.as_ref().map_or_else(
+                        || vec![Span::styled("no builds", theme::MUTED)],
+                        |b| {
+                            let branch = b.branch_display();
+                            let elapsed = build_elapsed(b);
+                            vec![
+                                Span::styled(
+                                    format!(
+                                        "#{:<width$}",
+                                        truncate(&b.build_number, widths[4] - 1),
+                                        width = widths[4] - 1
+                                    ),
+                                    theme::MUTED,
                                 ),
-                                theme::MUTED,
-                            ),
-                            Span::styled(
-                                format!(
-                                    "{:<width$} ",
-                                    truncate(&branch, widths[5].saturating_sub(1)),
-                                    width = widths[5].saturating_sub(1)
+                                Span::styled(
+                                    format!(
+                                        "{:<width$} ",
+                                        truncate(&branch, widths[5].saturating_sub(1)),
+                                        width = widths[5].saturating_sub(1)
+                                    ),
+                                    theme::BRANCH,
                                 ),
-                                theme::BRANCH,
-                            ),
-                            Span::styled(
-                                format!(
-                                    "{:<width$} ",
-                                    truncate(b.requestor(), widths[6].saturating_sub(1)),
-                                    width = widths[6].saturating_sub(1)
+                                Span::styled(
+                                    format!(
+                                        "{:<width$} ",
+                                        truncate(b.requestor(), widths[6].saturating_sub(1)),
+                                        width = widths[6].saturating_sub(1)
+                                    ),
+                                    theme::MUTED,
                                 ),
-                                theme::MUTED,
-                            ),
-                            Span::styled(
-                                format!("{:>width$}", elapsed, width = widths[7]),
-                                theme::MUTED,
-                            ),
-                        ]
-                    } else {
-                        vec![Span::styled("no builds", theme::MUTED)]
-                    };
+                                Span::styled(
+                                    format!("{:>width$}", elapsed, width = widths[7]),
+                                    theme::MUTED,
+                                ),
+                            ]
+                        },
+                    );
 
                     let name_style = if latest_build.is_some() {
                         theme::TEXT
@@ -304,7 +300,7 @@ impl Dashboard {
 
                     let mut spans = vec![
                         Span::raw("    "),
-                        Span::styled(format!("{} ", icon), Style::new().fg(icon_color)),
+                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(
                             format!("{:<width$}", label, width = widths[2]),
                             Style::new().fg(icon_color),
@@ -343,7 +339,7 @@ impl Component for Dashboard {
         Ok(())
     }
 
-    fn footer_hints(&self) -> &str {
+    fn footer_hints(&self) -> &'static str {
         "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Q queue  o open  1/2/3 tabs  r refresh  , settings  ? help  q quit"
     }
 }

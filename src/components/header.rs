@@ -57,13 +57,13 @@ impl Header {
             Span::raw("")
         };
 
-        let approvals_span = if !app.data.pending_approvals.is_empty() {
+        let approvals_span = if app.data.pending_approvals.is_empty() {
+            Span::raw("")
+        } else {
             Span::styled(
                 format!("  ⏸ {} pending", app.data.pending_approvals.len()),
                 theme::APPROVAL,
             )
-        } else {
-            Span::raw("")
         };
 
         let title = Paragraph::new(Line::from(vec![

@@ -39,8 +39,7 @@ impl RefreshState {
     /// Checks whether the backoff period has elapsed (or was never set).
     pub fn backoff_elapsed(&self) -> bool {
         self.backoff_until
-            .map(|until| Instant::now() >= until)
-            .unwrap_or(true)
+            .is_none_or(|until| Instant::now() >= until)
     }
 }
 
