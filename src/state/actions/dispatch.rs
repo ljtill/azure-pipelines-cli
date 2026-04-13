@@ -75,9 +75,11 @@ pub fn handle_action(
         }
         Action::FollowLatest => {
             // Switch to follow mode: jump cursor to active task and fetch its log.
-            if let Some((idx, maybe_log_id)) = app.log_viewer.auto_select_log_entry() {
-                let task_name = if let Some(TimelineRow::Task { name, .. }) =
-                    app.log_viewer.timeline_rows().get(idx)
+            if let Some((_idx, maybe_log_id)) = app.log_viewer.auto_select_log_entry() {
+                let task_name = if let Some(TimelineRow::Task { name, .. }) = app
+                    .log_viewer
+                    .timeline_rows()
+                    .get(app.log_viewer.nav().index())
                 {
                     name.clone()
                 } else {

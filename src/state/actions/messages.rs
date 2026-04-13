@@ -277,6 +277,7 @@ pub fn handle_message(
 
                         if task_changed {
                             tracing::debug!(build_id, log_id, "follow mode: task changed");
+                            app.log_viewer.jump_to_followed_task();
                             app.log_viewer.clear_log();
                             spawn_log_fetch(
                                 client,
@@ -296,6 +297,7 @@ pub fn handle_message(
                             "follow mode: task pending log"
                         );
                         app.log_viewer.set_followed_pending(name);
+                        app.log_viewer.jump_to_followed_task();
                         app.log_viewer.clear_log();
                     }
                     ActiveTaskResult::None => {

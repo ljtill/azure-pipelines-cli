@@ -1124,6 +1124,197 @@ mod tests {
         assert_eq!(state.followed_log_id(), None);
     }
 
+    #[test]
+    fn find_active_task_picks_first_stage_in_parallel_build() {
+        // Two parallel stages, each with an InProgress task.
+        let timeline = BuildTimeline {
+            records: vec![
+                make_record(
+                    "s1",
+                    None,
+                    "Build",
+                    "Stage",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "p1",
+                    Some("s1"),
+                    "Build Job",
+                    "Phase",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "t1",
+                    Some("p1"),
+                    "Compile",
+                    "Task",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    Some(10),
+                ),
+                make_record(
+                    "s2",
+                    None,
+                    "Deploy",
+                    "Stage",
+                    2,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "p2",
+                    Some("s2"),
+                    "Deploy Job",
+                    "Phase",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "t2",
+                    Some("p2"),
+                    "Deploy Step",
+                    "Task",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    Some(20),
+                ),
+            ],
+        };
+        let build = make_test_build(BuildStatus::InProgress, None);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
+        state.set_build_timeline(timeline);
+
+        // Should pick the first stage's task (Compile, log_id=10), not the second.
+        assert_eq!(
+            state.find_active_task(),
+            ActiveTaskResult::Found {
+                name: "Compile".to_string(),
+                log_id: 10
+            }
+        );
+    }
+
+    #[test]
+    fn auto_select_picks_first_stage_in_parallel_build() {
+        let timeline = BuildTimeline {
+            records: vec![
+                make_record(
+                    "s1",
+                    None,
+                    "Build",
+                    "Stage",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "p1",
+                    Some("s1"),
+                    "Build Job",
+                    "Phase",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "t1",
+                    Some("p1"),
+                    "Compile",
+                    "Task",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    Some(10),
+                ),
+                make_record(
+                    "s2",
+                    None,
+                    "Deploy",
+                    "Stage",
+                    2,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "p2",
+                    Some("s2"),
+                    "Deploy Job",
+                    "Phase",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    None,
+                ),
+                make_record(
+                    "t2",
+                    Some("p2"),
+                    "Deploy Step",
+                    "Task",
+                    1,
+                    Some(TaskState::InProgress),
+                    None,
+                    Some(20),
+                ),
+            ],
+        };
+        let build = make_test_build(BuildStatus::InProgress, None);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
+        state.set_build_timeline(timeline);
+        state.rebuild_timeline_rows();
+
+        let result = state.auto_select_log_entry();
+        assert!(result.is_some());
+        let (_, log_id) = result.unwrap();
+        // Should pick the first stage's task (log_id=10).
+        assert_eq!(log_id, Some(10));
+    }
+
+    #[test]
+    fn jump_to_followed_task_expands_parents_and_positions_cursor() {
+        let timeline = simple_timeline(&[
+            (
+                "Init",
+                Some(TaskState::Completed),
+                Some(BuildResult::Succeeded),
+                10,
+            ),
+            ("Build", Some(TaskState::InProgress), None, 11),
+        ]);
+        let build = make_test_build(BuildStatus::InProgress, None);
+        let mut state = LogViewer::new_for_build(build, View::BuildHistory, 1);
+        state.set_build_timeline(timeline);
+        state.rebuild_timeline_rows();
+
+        // Everything is collapsed after first rebuild.
+        assert!(state.is_stage_collapsed("s1"));
+
+        // Set followed and jump.
+        state.set_followed("Build".to_string(), 11);
+        state.jump_to_followed_task();
+
+        // Stage should be expanded and cursor should be on the "Build" task.
+        assert!(!state.is_stage_collapsed("s1"));
+        let idx = state.nav().index();
+        assert!(matches!(
+            state.timeline_rows().get(idx),
+            Some(TimelineRow::Task { name, .. }) if name == "Build"
+        ));
+    }
+
     // --- Group 5: Checkpoint tests ---
 
     #[test]

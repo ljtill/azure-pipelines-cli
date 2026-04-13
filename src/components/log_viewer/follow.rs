@@ -18,10 +18,8 @@ pub enum ActiveTaskResult {
 
 /// A task record extracted from the timeline for auto-selection.
 struct TaskCandidate {
-    name: String,
     state: Option<TaskState>,
     result: Option<BuildResult>,
-    parent_id: Option<String>,
     log_id: u32,
 }
 
@@ -53,7 +51,7 @@ impl LogViewer {
     /// Picks the most relevant timeline task to auto-show logs for.
     /// Returns `(row_index, Some(log_id))` for tasks with logs, or
     /// `(row_index, None)` for in-progress tasks whose log hasn't appeared yet.
-    /// Ensures parent stage/job are expanded.
+    /// Ensures parent stage/job are expanded and the cursor is positioned.
     pub fn auto_select_log_entry(&mut self) -> Option<(usize, Option<u32>)> {
         let timeline = self.build_timeline.as_ref()?;
 
@@ -63,10 +61,8 @@ impl LogViewer {
             .iter()
             .filter(|r| r.record_type == "Task" && r.log.is_some())
             .map(|r| TaskCandidate {
-                name: r.name.clone(),
                 state: r.state,
                 result: r.result,
-                parent_id: r.parent_id.clone(),
                 log_id: r.log.as_ref().unwrap().id,
             })
             .collect();
@@ -77,11 +73,11 @@ impl LogViewer {
             .is_some_and(|b| b.status.is_in_progress());
 
         // For running builds, also check for InProgress tasks without logs.
+        // Forward search: prefer the first stage's task.
         let pending_task = if is_running {
             timeline
                 .records
                 .iter()
-                .rev()
                 .find(|r| {
                     r.record_type == "Task"
                         && r.log.is_none()
@@ -93,12 +89,14 @@ impl LogViewer {
         };
 
         // Determine the best task among candidates with logs.
+        // Forward search: for running builds, find the first InProgress task
+        // (first stage when parallel stages are active).
         let best_with_log = if tasks.is_empty() {
             Option::None
         } else if is_running {
             tasks
                 .iter()
-                .rposition(|t| t.state == Some(TaskState::InProgress))
+                .position(|t| t.state == Some(TaskState::InProgress))
                 .or(Some(tasks.len() - 1))
         } else {
             tasks
@@ -109,67 +107,32 @@ impl LogViewer {
 
         // Prefer an InProgress task with a log; fall back to a pending InProgress
         // task; then fall back to the best completed task.
-        let (best_name, parent_job_id, log_id) = if let Some(idx) =
-            best_with_log.filter(|&i| tasks[i].state == Some(TaskState::InProgress))
-        {
-            let t = &tasks[idx];
-            (t.name.clone(), t.parent_id.clone(), Some(t.log_id))
-        } else if let Some((name, parent_id)) = pending_task {
-            (name, parent_id, Option::None)
-        } else if let Some(idx) = best_with_log {
-            let t = &tasks[idx];
-            (t.name.clone(), t.parent_id.clone(), Some(t.log_id))
-        } else {
-            return Option::None;
-        };
-
-        // Walk up the ancestor chain to expand all parent nodes.
-        if let Some(timeline) = self.build_timeline.as_ref() {
-            let records = &timeline.records;
-            #[allow(clippy::redundant_clone)] // Used in closure below.
-            let mut current_id = parent_job_id.clone();
-            while let Some(cid) = &current_id {
-                if let Some(rec) = records.iter().find(|r| r.id == *cid) {
-                    match rec.record_type.as_str() {
-                        "Stage" => {
-                            self.collapsed_stages.remove(cid.as_str());
-                            break;
-                        }
-                        "Phase" | "Job" => {
-                            self.collapsed_jobs.remove(cid.as_str());
-                        }
-                        _ => {}
-                    }
-                    current_id = rec.parent_id.clone();
-                } else {
-                    break;
-                }
+        let in_progress_log = best_with_log
+            .filter(|&i| tasks[i].state == Some(TaskState::InProgress))
+            .map(|i| tasks[i].log_id);
+        let log_id = in_progress_log.or_else(|| {
+            if pending_task.is_some() {
+                // Pending task: no log yet, wait for it to appear.
+                return Option::None;
             }
-        }
-
-        self.rebuild_timeline_rows();
-
-        // Find the row by log_id first, then by name + parent.
-        let row_idx = if let Some(lid) = log_id {
-            self.timeline_rows.iter().position(
-                |row| matches!(row, TimelineRow::Task { log_id: Some(id), .. } if *id == lid),
-            )
-        } else {
-            Option::None
-        }
-        .or_else(|| {
-            self.timeline_rows.iter().position(|row| {
-                matches!(row, TimelineRow::Task { name, parent_job_id: pjid, .. }
-                    if parent_job_id.as_ref().is_some_and(|pid| pid == pjid) && *name == best_name)
-            })
+            best_with_log.map(|idx| tasks[idx].log_id)
         });
 
-        if let Some(idx) = row_idx {
-            self.log_entries_nav.set_index(idx);
-            Some((idx, log_id))
-        } else {
-            Option::None
+        if log_id.is_none() && pending_task.is_none() && best_with_log.is_none() {
+            return Option::None;
         }
+
+        // Set followed state and jump cursor.
+        if let Some(lid) = log_id {
+            // Temporarily set followed so jump_to_followed_task can find the row.
+            self.followed_log_id = Some(lid);
+        } else {
+            self.followed_log_id = None;
+        }
+        self.jump_to_followed_task();
+
+        let idx = self.log_entries_nav.index();
+        Some((idx, log_id))
     }
 
     /// Finds the currently active task without moving cursor or changing state.
@@ -190,10 +153,9 @@ impl LogViewer {
             .is_some_and(|b| b.status.is_in_progress());
 
         if is_running {
-            // First, look for an InProgress task that already has a log.
+            // Forward search: find the first InProgress task (first stage).
             if let Some(best) = tasks_with_logs
                 .iter()
-                .rev()
                 .find(|r| r.state.is_some_and(TaskState::is_in_progress))
             {
                 let log_id = best.log.as_ref().unwrap().id;
@@ -204,7 +166,7 @@ impl LogViewer {
             }
 
             // No InProgress task with a log — check if one exists without a log.
-            if let Some(pending) = timeline.records.iter().rev().find(|r| {
+            if let Some(pending) = timeline.records.iter().find(|r| {
                 r.record_type == "Task"
                     && r.log.is_none()
                     && r.state.is_some_and(TaskState::is_in_progress)
@@ -239,6 +201,79 @@ impl LogViewer {
                     log_id,
                 }
             })
+        }
+    }
+}
+
+// --- Cursor positioning ---
+impl LogViewer {
+    /// Expands parent nodes of the followed task and positions the cursor
+    /// on its row in the Pipeline Stages tree.
+    pub fn jump_to_followed_task(&mut self) {
+        let Some(timeline) = &self.build_timeline else {
+            return;
+        };
+
+        // Find the raw record matching the followed task.
+        let followed_name = &self.followed_task_name;
+        let record = self.followed_log_id.map_or_else(
+            || {
+                // Pending task: match by name + InProgress state.
+                timeline.records.iter().find(|r| {
+                    r.record_type == "Task"
+                        && r.name == *followed_name
+                        && r.state == Some(TaskState::InProgress)
+                })
+            },
+            |log_id| {
+                timeline
+                    .records
+                    .iter()
+                    .find(|r| r.log.as_ref().is_some_and(|l| l.id == log_id))
+            },
+        );
+
+        let Some(record) = record else { return };
+        let mut current_id = record.parent_id.clone();
+
+        // Walk up the ancestor chain to expand all parent nodes.
+        while let Some(cid) = &current_id {
+            if let Some(rec) = timeline.records.iter().find(|r| r.id == *cid) {
+                match rec.record_type.as_str() {
+                    "Stage" => {
+                        self.collapsed_stages.remove(cid.as_str());
+                        break;
+                    }
+                    "Phase" | "Job" => {
+                        self.collapsed_jobs.remove(cid.as_str());
+                    }
+                    _ => {}
+                }
+                current_id = rec.parent_id.clone();
+            } else {
+                break;
+            }
+        }
+
+        self.rebuild_timeline_rows();
+
+        // Find the row by log_id first, then by name + InProgress state.
+        let row_idx = if let Some(log_id) = self.followed_log_id {
+            self.timeline_rows.iter().position(
+                |row| matches!(row, TimelineRow::Task { log_id: Some(id), .. } if *id == log_id),
+            )
+        } else {
+            self.timeline_rows.iter().position(|row| {
+                matches!(
+                    row,
+                    TimelineRow::Task { name, state: Some(TaskState::InProgress), .. }
+                    if *name == self.followed_task_name
+                )
+            })
+        };
+
+        if let Some(idx) = row_idx {
+            self.log_entries_nav.set_index(idx);
         }
     }
 }
