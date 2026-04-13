@@ -14,7 +14,8 @@ use super::super::View;
 use super::super::messages::{AppMessage, RefreshSource};
 use super::super::notifications::NotificationLevel;
 use super::spawn::{
-    spawn_build_history_refresh, spawn_data_refresh, spawn_log_fetch, spawn_timeline_fetch,
+    spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_dashboard_pull_requests,
+    spawn_log_fetch, spawn_timeline_fetch,
 };
 
 pub fn handle_message(
@@ -441,6 +442,8 @@ pub fn handle_message(
         AppMessage::UserIdentity { user_id } => {
             tracing::info!("user identity resolved");
             app.user_id = Some(user_id);
+            // Re-fetch dashboard PRs now that we can filter by creator.
+            spawn_fetch_dashboard_pull_requests(app, client, tx);
         }
         AppMessage::PullRequestDetailLoaded {
             pull_request,
