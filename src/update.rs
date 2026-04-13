@@ -12,6 +12,16 @@ const CHECKSUMS_FILE_NAME: &str = "SHA256SUMS";
 /// Defines the number of old versions to keep when pruning.
 const VERSIONS_TO_KEEP: usize = 3;
 
+/// Returns a GitHub token from the environment, if available.
+///
+/// Checks `GITHUB_TOKEN` first, then falls back to `GH_TOKEN`.
+fn github_token() -> Option<String> {
+    std::env::var("GITHUB_TOKEN")
+        .or_else(|_| std::env::var("GH_TOKEN"))
+        .ok()
+        .filter(|t| !t.is_empty())
+}
+
 /// Returns the compiled-in version from `Cargo.toml`.
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -226,13 +236,16 @@ async fn fetch_latest_version() -> Result<String> {
         .timeout(std::time::Duration::from_secs(5))
         .build()?;
 
-    let resp = client
+    let mut request = client
         .get(&url)
         .header("User-Agent", format!("pipelines/{}", current_version()))
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await?
-        .error_for_status()?;
+        .header("Accept", "application/vnd.github+json");
+
+    if let Some(token) = github_token() {
+        request = request.header("Authorization", format!("token {token}"));
+    }
+
+    let resp = request.send().await?.error_for_status()?;
 
     let body: serde_json::Value = resp.json().await?;
     let tag = body["tag_name"]
@@ -326,18 +339,28 @@ pub async fn self_update() -> Result<UpdateResult> {
         .timeout(std::time::Duration::from_secs(60))
         .build()?;
 
-    let resp = client
+    let token = github_token();
+
+    let mut archive_req = client
         .get(&download_url)
-        .header("User-Agent", format!("pipelines/{}", current_version()))
+        .header("User-Agent", format!("pipelines/{}", current_version()));
+    if let Some(ref token) = token {
+        archive_req = archive_req.header("Authorization", format!("token {token}"));
+    }
+    let resp = archive_req
         .send()
         .await?
         .error_for_status()
         .with_context(|| format!("Failed to download {download_url}"))?;
 
     tracing::debug!(url = &*checksums_url, "downloading checksums");
-    let checksums = client
+    let mut checksums_req = client
         .get(&checksums_url)
-        .header("User-Agent", format!("pipelines/{}", current_version()))
+        .header("User-Agent", format!("pipelines/{}", current_version()));
+    if let Some(ref token) = token {
+        checksums_req = checksums_req.header("Authorization", format!("token {token}"));
+    }
+    let checksums = checksums_req
         .send()
         .await?
         .error_for_status()
@@ -393,9 +416,9 @@ pub async fn self_update() -> Result<UpdateResult> {
 
     tracing::info!(path = %binary_path.display(), "binary installed");
 
-    // Updates the symlink.
-    update_symlink(&binary_path)?;
-    tracing::debug!(target = %binary_path.display(), "symlink updated");
+    // Updates the binary in the user's PATH.
+    install_to_bin(&binary_path)?;
+    tracing::debug!(target = %binary_path.display(), "binary link updated");
 
     // Prunes old versions.
     if let Err(e) = prune_old_versions(VERSIONS_TO_KEEP) {
@@ -408,35 +431,59 @@ pub async fn self_update() -> Result<UpdateResult> {
     })
 }
 
-/// Removes the existing symlink (if any) and creates a new one pointing to `target`.
-/// Uses atomic replacement via a temporary symlink to avoid TOCTOU races.
-fn update_symlink(target: &std::path::Path) -> Result<()> {
-    let link = symlink_path()?;
+/// Installs the updated binary into the user's PATH.
+///
+/// On Unix this creates an atomic symlink swap. On Windows, symlinks require
+/// elevated privileges so we copy the binary directly, renaming any existing
+/// file out of the way first (Windows allows renaming a running executable).
+fn install_to_bin(target: &std::path::Path) -> Result<()> {
+    let dest = symlink_path()?;
 
     // Ensures the parent directory exists.
-    if let Some(parent) = link.parent() {
+    if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    let tmp_link = link.with_extension("tmp");
-
-    // Cleans up any stale temp symlink.
-    let _ = std::fs::remove_file(&tmp_link);
-
-    // Creates symlink at temp path, then atomically renames over the real path.
     #[cfg(unix)]
-    std::os::unix::fs::symlink(target, &tmp_link)
-        .with_context(|| format!("Failed to create temp symlink at {}", tmp_link.display()))?;
+    {
+        let tmp_link = dest.with_extension("tmp");
+
+        // Cleans up any stale temp symlink.
+        let _ = std::fs::remove_file(&tmp_link);
+
+        // Creates symlink at temp path, then atomically renames over the real path.
+        std::os::unix::fs::symlink(target, &tmp_link)
+            .with_context(|| format!("Failed to create temp symlink at {}", tmp_link.display()))?;
+
+        std::fs::rename(&tmp_link, &dest).with_context(|| {
+            let _ = std::fs::remove_file(&tmp_link);
+            format!("Failed to rename symlink to {}", dest.display())
+        })?;
+    }
 
     #[cfg(windows)]
-    std::os::windows::fs::symlink_file(target, &tmp_link)
-        .with_context(|| format!("Failed to create temp symlink at {}", tmp_link.display()))?;
+    {
+        // Rename the existing binary out of the way (Windows allows renaming
+        // a running executable even though it cannot delete one).
+        let old_path = dest.with_extension("exe.old");
+        if dest.exists() {
+            let _ = std::fs::remove_file(&old_path);
+            std::fs::rename(&dest, &old_path).with_context(|| {
+                format!(
+                    "Failed to rename {} to {}",
+                    dest.display(),
+                    old_path.display()
+                )
+            })?;
+        }
 
-    std::fs::rename(&tmp_link, &link).with_context(|| {
-        // Cleans up temp symlink on rename failure.
-        let _ = std::fs::remove_file(&tmp_link);
-        format!("Failed to rename symlink to {}", link.display())
-    })?;
+        std::fs::copy(target, &dest).with_context(|| {
+            format!("Failed to copy {} to {}", target.display(), dest.display())
+        })?;
+
+        // Best-effort cleanup of the old binary.
+        let _ = std::fs::remove_file(&old_path);
+    }
 
     Ok(())
 }
@@ -595,5 +642,43 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-wind
         assert!(
             path.ends_with(".local/bin/pipelines") || path.ends_with(".local/bin/pipelines.exe")
         );
+    }
+
+    #[test]
+    fn github_token_reads_github_token_env() {
+        // SAFETY: This test runs serially (single-threaded test harness) and
+        // saves/restores env vars before returning.
+        unsafe {
+            let saved_gh = std::env::var("GITHUB_TOKEN").ok();
+            let saved_cli = std::env::var("GH_TOKEN").ok();
+
+            std::env::set_var("GITHUB_TOKEN", "test-token-123");
+            std::env::remove_var("GH_TOKEN");
+            assert_eq!(github_token().as_deref(), Some("test-token-123"));
+
+            // Falls back to GH_TOKEN when GITHUB_TOKEN is absent.
+            std::env::remove_var("GITHUB_TOKEN");
+            std::env::set_var("GH_TOKEN", "gh-token-456");
+            assert_eq!(github_token().as_deref(), Some("gh-token-456"));
+
+            // Returns None when neither is set.
+            std::env::remove_var("GITHUB_TOKEN");
+            std::env::remove_var("GH_TOKEN");
+            assert_eq!(github_token(), None);
+
+            // Empty string is treated as absent.
+            std::env::set_var("GITHUB_TOKEN", "");
+            assert_eq!(github_token(), None);
+
+            // Restore.
+            match saved_gh {
+                Some(v) => std::env::set_var("GITHUB_TOKEN", v),
+                None => std::env::remove_var("GITHUB_TOKEN"),
+            }
+            match saved_cli {
+                Some(v) => std::env::set_var("GH_TOKEN", v),
+                None => std::env::remove_var("GH_TOKEN"),
+            }
+        }
     }
 }

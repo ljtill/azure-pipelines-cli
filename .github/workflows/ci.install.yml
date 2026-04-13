@@ -215,6 +215,8 @@ jobs:
           echo "$INSTALLED" | grep -q "$EXPECTED"
 
       - name: Run pipelines update
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: pipelines update
 
       - name: Verify updated to latest version
@@ -273,6 +275,8 @@ jobs:
 
       - name: Run pipelines update
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: pipelines update
 
       - name: Verify updated to latest version
