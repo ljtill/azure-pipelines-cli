@@ -36,6 +36,11 @@ pub enum DashboardRow {
     },
 }
 
+/// Returns a string of `n` spaces for column padding.
+fn pad(n: usize) -> String {
+    " ".repeat(n)
+}
+
 /// Renders the personalised dashboard with pinned pipelines and pull requests.
 #[derive(Debug, Default)]
 pub struct Dashboard {
@@ -122,171 +127,170 @@ impl Dashboard {
 
     /// Renders the dashboard using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
+        // Shared column grid for both Pinned Pipeline and PR rows.
         let rects = Layout::horizontal([
-            Constraint::Length(4),
-            Constraint::Length(3),
-            Constraint::Length(12),
-            Constraint::Fill(2),
-            Constraint::Length(18),
-            Constraint::Fill(2),
-            Constraint::Fill(2),
-            Constraint::Length(15),
+            Constraint::Length(3),  // col 0: indent
+            Constraint::Length(2),  // col 1: status icon
+            Constraint::Length(11), // col 2: status label / PR id
+            Constraint::Fill(2),    // col 3: name / title
+            Constraint::Length(16), // col 4: build number / repo
+            Constraint::Fill(1),    // col 5: branch
+            Constraint::Fill(1),    // col 6: requestor / votes
+            Constraint::Length(12), // col 7: elapsed
         ])
         .split(area);
-        let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
-        widths[3] = widths[3].min(40);
-        widths[5] = widths[5].min(35);
-        widths[6] = widths[6].min(35);
+        let w: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
 
         let items: Vec<ListItem> = self
             .rows
             .iter()
             .enumerate()
-            .map(|(i, row)| match row {
-                DashboardRow::SectionHeader { title } => ListItem::new(Line::from(vec![
-                    Span::raw(" "),
-                    Span::styled(title.clone(), theme::SECTION_HEADER),
-                ]))
-                .style(if i == self.nav.index() {
+            .map(|(i, row)| {
+                let selected = i == self.nav.index();
+                let sel_style = if selected {
                     theme::SELECTED
                 } else {
                     Style::new()
-                }),
-                DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
-                    Span::raw("    "),
-                    Span::styled(message.clone(), theme::MUTED),
-                ]))
-                .style(if i == self.nav.index() {
-                    theme::SELECTED
-                } else {
-                    Style::new()
-                }),
-                DashboardRow::PinnedPipeline {
-                    definition,
-                    latest_build,
-                } => {
-                    let row_style = if i == self.nav.index() {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    };
+                };
 
-                    let (icon, icon_color) =
-                        latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
+                match row {
+                    DashboardRow::SectionHeader { title } => ListItem::new(Line::from(vec![
+                        Span::raw(pad(w[0])),
+                        Span::styled(title.clone(), theme::SECTION_HEADER),
+                    ]))
+                    .style(sel_style),
+
+                    DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
+                        Span::raw(pad(w[0])),
+                        Span::raw(pad(w[1])),
+                        Span::styled(message.clone(), theme::MUTED),
+                    ]))
+                    .style(sel_style),
+
+                    DashboardRow::PinnedPipeline {
+                        definition,
+                        latest_build,
+                    } => {
+                        let (icon, icon_color) =
+                            latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
+                                let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
+                                effective_status_icon(b.status, b.result, awaiting)
+                            });
+                        let label = latest_build.as_ref().map_or("", |b| {
                             let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
-                            effective_status_icon(b.status, b.result, awaiting)
+                            effective_status_label(b.status, b.result, awaiting)
                         });
-                    let label = latest_build.as_ref().map_or("", |b| {
-                        let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
-                        effective_status_label(b.status, b.result, awaiting)
-                    });
+                        let name_style = if latest_build.is_some() {
+                            theme::TEXT
+                        } else {
+                            theme::MUTED
+                        };
 
-                    let build_spans = latest_build.as_ref().map_or_else(
-                        || vec![Span::styled("no builds", theme::MUTED)],
-                        |b| {
+                        let mut spans = vec![
+                            Span::raw(pad(w[0])),
+                            Span::styled(
+                                format!("{:<w$}", icon, w = w[1]),
+                                Style::new().fg(icon_color),
+                            ),
+                            Span::styled(
+                                format!("{:<w$}", label, w = w[2]),
+                                Style::new().fg(icon_color),
+                            ),
+                            Span::styled(
+                                format!("{:<w$}", truncate(&definition.name, w[3]), w = w[3]),
+                                name_style,
+                            ),
+                        ];
+
+                        if let Some(b) = latest_build {
                             let branch = b.branch_display();
                             let elapsed = build_elapsed(b);
-                            vec![
+                            spans.extend([
                                 Span::styled(
                                     format!(
-                                        "#{:<width$}",
-                                        truncate(&b.build_number, widths[4] - 1),
-                                        width = widths[4] - 1
+                                        "{:<w$}",
+                                        format!(
+                                            "#{}",
+                                            truncate(&b.build_number, w[4].saturating_sub(2))
+                                        ),
+                                        w = w[4]
                                     ),
                                     theme::MUTED,
                                 ),
                                 Span::styled(
-                                    format!(
-                                        "{:<width$} ",
-                                        truncate(&branch, widths[5].saturating_sub(1)),
-                                        width = widths[5].saturating_sub(1)
-                                    ),
+                                    format!("{:<w$}", truncate(&branch, w[5]), w = w[5]),
                                     theme::BRANCH,
                                 ),
                                 Span::styled(
+                                    format!("{:<w$}", truncate(b.requestor(), w[6]), w = w[6]),
+                                    theme::MUTED,
+                                ),
+                                Span::styled(format!("{:>w$}", elapsed, w = w[7]), theme::MUTED),
+                            ]);
+                        } else {
+                            spans.push(Span::styled("no builds", theme::MUTED));
+                        }
+
+                        ListItem::new(Line::from(spans)).style(sel_style)
+                    }
+
+                    DashboardRow::DashboardPullRequest { pull_request } => {
+                        let (icon, color) =
+                            pr_status_icon(&pull_request.status, pull_request.is_draft);
+                        let (approved, rejected, waiting, _) = pull_request.vote_summary();
+                        let vote_summary = if pull_request.reviewers.is_empty() {
+                            String::new()
+                        } else {
+                            format!("✓{approved} ✗{rejected} ●{waiting}")
+                        };
+                        let draft_marker = if pull_request.is_draft {
+                            " [draft]"
+                        } else {
+                            ""
+                        };
+                        let title_text = format!(
+                            "#{} {}{}",
+                            pull_request.pull_request_id, pull_request.title, draft_marker
+                        );
+
+                        ListItem::new(Line::from(vec![
+                            Span::raw(pad(w[0])),
+                            Span::styled(format!("{:<w$}", icon, w = w[1]), Style::new().fg(color)),
+                            // PR id + title span across col 2 + col 3.
+                            Span::styled(
+                                format!(
+                                    "{:<w$}",
+                                    truncate(&title_text, w[2] + w[3]),
+                                    w = w[2] + w[3]
+                                ),
+                                theme::TEXT,
+                            ),
+                            Span::styled(
+                                format!(
+                                    "{:<w$}",
+                                    truncate(pull_request.repo_name(), w[4]),
+                                    w = w[4]
+                                ),
+                                theme::MUTED,
+                            ),
+                            Span::styled(
+                                format!(
+                                    "{:<w$}",
                                     format!(
-                                        "{:<width$} ",
-                                        truncate(b.requestor(), widths[6].saturating_sub(1)),
-                                        width = widths[6].saturating_sub(1)
+                                        "→ {}",
+                                        truncate(
+                                            pull_request.short_target_branch(),
+                                            w[5].saturating_sub(2)
+                                        )
                                     ),
-                                    theme::MUTED,
+                                    w = w[5]
                                 ),
-                                Span::styled(
-                                    format!("{:>width$}", elapsed, width = widths[7]),
-                                    theme::MUTED,
-                                ),
-                            ]
-                        },
-                    );
-
-                    let name_style = if latest_build.is_some() {
-                        theme::TEXT
-                    } else {
-                        theme::MUTED
-                    };
-
-                    let mut spans = vec![
-                        Span::raw("    "),
-                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
-                        Span::styled(
-                            format!("{:<width$}", label, width = widths[2]),
-                            Style::new().fg(icon_color),
-                        ),
-                        Span::styled(
-                            format!(
-                                "{:<width$} ",
-                                truncate(&definition.name, widths[3].saturating_sub(1),),
-                                width = widths[3].saturating_sub(1)
+                                theme::BRANCH,
                             ),
-                            name_style,
-                        ),
-                    ];
-                    spans.extend(build_spans);
-
-                    ListItem::new(Line::from(spans)).style(row_style)
-                }
-                DashboardRow::DashboardPullRequest { pull_request } => {
-                    let row_style = if i == self.nav.index() {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    };
-                    let (icon, color) = pr_status_icon(&pull_request.status, pull_request.is_draft);
-                    let (approved, rejected, waiting, _) = pull_request.vote_summary();
-                    let vote_summary = if pull_request.reviewers.is_empty() {
-                        String::new()
-                    } else {
-                        format!("✓{approved} ✗{rejected} ●{waiting}")
-                    };
-                    let draft_marker = if pull_request.is_draft {
-                        " [draft]"
-                    } else {
-                        ""
-                    };
-
-                    ListItem::new(Line::from(vec![
-                        Span::raw("    "),
-                        Span::styled(format!("{icon} "), Style::new().fg(color)),
-                        Span::styled(
-                            format!(
-                                "#{} {}{}  ",
-                                pull_request.pull_request_id,
-                                truncate(&pull_request.title, 30),
-                                draft_marker,
-                            ),
-                            theme::TEXT,
-                        ),
-                        Span::styled(
-                            format!("{}  ", truncate(pull_request.repo_name(), 15)),
-                            theme::MUTED,
-                        ),
-                        Span::styled(
-                            format!("→ {}  ", pull_request.short_target_branch()),
-                            theme::BRANCH,
-                        ),
-                        Span::styled(vote_summary, theme::MUTED),
-                    ]))
-                    .style(row_style)
+                            Span::styled(format!("{:<w$}", vote_summary, w = w[6]), theme::MUTED),
+                        ]))
+                        .style(sel_style)
+                    }
                 }
             })
             .collect();
