@@ -5,7 +5,7 @@ edition = "2024"
 description = "A terminal dashboard for monitoring Azure DevOps pipelines"
 repository = "https://github.com/ljtill/azure-pipelines-cli"
 readme = "README.md"
-rust-version = "1.85"
+rust-version = "1.94"
 
 [[bin]]
 name = "pipelines"

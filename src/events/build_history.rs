@@ -22,16 +22,15 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             if app.build_history.nav.is_at_bottom()
                 && app.build_history.has_more
                 && !app.build_history.loading_more
-            {
-                if let (Some(def), Some(token)) = (
+                && let (Some(def), Some(token)) = (
                     &app.build_history.selected_definition,
                     &app.build_history.continuation_token,
-                ) {
-                    return Action::FetchMoreBuilds {
-                        definition_id: def.id,
-                        continuation_token: token.clone(),
-                    };
-                }
+                )
+            {
+                return Action::FetchMoreBuilds {
+                    definition_id: def.id,
+                    continuation_token: token.clone(),
+                };
             }
             app.current_nav_mut().down();
             Action::None
@@ -42,16 +41,15 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             if app.build_history.nav.is_at_bottom()
                 && app.build_history.has_more
                 && !app.build_history.loading_more
-            {
-                if let (Some(def), Some(token)) = (
+                && let (Some(def), Some(token)) = (
                     &app.build_history.selected_definition,
                     &app.build_history.continuation_token,
-                ) {
-                    return Action::FetchMoreBuilds {
-                        definition_id: def.id,
-                        continuation_token: token.clone(),
-                    };
-                }
+                )
+            {
+                return Action::FetchMoreBuilds {
+                    definition_id: def.id,
+                    continuation_token: token.clone(),
+                };
             }
             Action::None
         }

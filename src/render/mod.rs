@@ -37,10 +37,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         let _ = app.help.draw(f, f.area());
     }
 
-    if app.show_settings {
-        if let Some(ref s) = app.settings {
-            app.settings_component.draw_with_state(f, s);
-        }
+    if app.show_settings
+        && let Some(ref s) = app.settings
+    {
+        app.settings_component.draw_with_state(f, s);
     }
 }
 

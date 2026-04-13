@@ -148,13 +148,13 @@ impl Build {
     /// For PR builds with trigger info: `PR #42 · Fix login timeout`
     /// For other builds: the short branch name (e.g. `main`, `feat/widget`).
     pub fn branch_display(&self) -> String {
-        if self.is_pr_build() {
-            if let Some(number) = self.pr_number() {
-                if let Some(title) = self.pr_title() {
-                    return format!("PR #{} · {}", number, title);
-                }
-                return format!("PR #{}", number);
+        if self.is_pr_build()
+            && let Some(number) = self.pr_number()
+        {
+            if let Some(title) = self.pr_title() {
+                return format!("PR #{} · {}", number, title);
             }
+            return format!("PR #{}", number);
         }
         self.short_branch()
     }

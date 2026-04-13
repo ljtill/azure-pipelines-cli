@@ -212,33 +212,31 @@ fn handle_esc_key(app: &mut App) -> Action {
 pub fn handle_mouse(app: &mut App, mouse: MouseEvent) -> Action {
     match mouse.kind {
         MouseEventKind::ScrollUp if app.view == View::LogViewer => {
-            if let Some(tree_area) = app.log_viewer.tree_area() {
-                if mouse.column >= tree_area.x
-                    && mouse.column < tree_area.x + tree_area.width
-                    && mouse.row >= tree_area.y
-                    && mouse.row < tree_area.y + tree_area.height
-                {
-                    for _ in 0..3 {
-                        app.log_viewer.nav_mut().up();
-                    }
-                    return Action::None;
+            if let Some(tree_area) = app.log_viewer.tree_area()
+                && mouse.column >= tree_area.x
+                && mouse.column < tree_area.x + tree_area.width
+                && mouse.row >= tree_area.y
+                && mouse.row < tree_area.y + tree_area.height
+            {
+                for _ in 0..3 {
+                    app.log_viewer.nav_mut().up();
                 }
+                return Action::None;
             }
             app.log_viewer.scroll_up(3);
             Action::None
         }
         MouseEventKind::ScrollDown if app.view == View::LogViewer => {
-            if let Some(tree_area) = app.log_viewer.tree_area() {
-                if mouse.column >= tree_area.x
-                    && mouse.column < tree_area.x + tree_area.width
-                    && mouse.row >= tree_area.y
-                    && mouse.row < tree_area.y + tree_area.height
-                {
-                    for _ in 0..3 {
-                        app.log_viewer.nav_mut().down();
-                    }
-                    return Action::None;
+            if let Some(tree_area) = app.log_viewer.tree_area()
+                && mouse.column >= tree_area.x
+                && mouse.column < tree_area.x + tree_area.width
+                && mouse.row >= tree_area.y
+                && mouse.row < tree_area.y + tree_area.height
+            {
+                for _ in 0..3 {
+                    app.log_viewer.nav_mut().down();
                 }
+                return Action::None;
             }
             app.log_viewer.scroll_down(3);
             Action::None
