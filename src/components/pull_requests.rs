@@ -105,6 +105,7 @@ impl PullRequests {
                 .cloned()
                 .collect();
         }
+        self.filtered.sort_by_key(|pr| pr.is_draft);
         self.nav.set_len(self.filtered.len());
     }
 
@@ -345,6 +346,20 @@ mod tests {
         ];
         prs.set_data(data, "");
         assert_eq!(prs.filtered.len(), 2);
+    }
+
+    #[test]
+    fn rebuild_orders_non_drafts_before_drafts() {
+        let mut prs = PullRequests::default();
+        let mut draft = make_pull_request(1, "Draft", "active", "r");
+        draft.is_draft = true;
+        let active = make_pull_request(2, "Active", "active", "r");
+
+        prs.set_data(vec![draft, active], "");
+
+        assert_eq!(prs.filtered.len(), 2);
+        assert_eq!(prs.filtered[0].pull_request_id, 2);
+        assert_eq!(prs.filtered[1].pull_request_id, 1);
     }
 
     #[test]
