@@ -2,6 +2,9 @@
 
 use super::{API_VERSION, Endpoints};
 
+const CONNECTION_DATA_API_VERSION: &str = "7.2-preview.1";
+const CONNECTION_DATA_CONNECT_OPTIONS_INCLUDE_SERVICES: u8 = 1;
+const CONNECTION_DATA_LAST_CHANGE_ID: i64 = -1;
 const TOP_PULL_REQUESTS: u32 = 100;
 
 impl Endpoints {
@@ -52,12 +55,17 @@ impl Endpoints {
         // Extract the org base URL from the project-scoped base_url.
         // base_url = "https://dev.azure.com/{org}/{proj}/_apis"
         // We need: "https://dev.azure.com/{org}/_apis/connectionData"
+        //
+        // Match the Azure DevOps location clients, which send the connection
+        // options and sentinel lastChangeId values on this call.
         let org_base = self
             .base_url
             .rsplitn(3, '/')
             .nth(2)
             .unwrap_or(&self.base_url);
-        format!("{org_base}/_apis/connectionData?api-version={API_VERSION}")
+        format!(
+            "{org_base}/_apis/connectionData?api-version={CONNECTION_DATA_API_VERSION}&connectOptions={CONNECTION_DATA_CONNECT_OPTIONS_INCLUDE_SERVICES}&lastChangeId={CONNECTION_DATA_LAST_CHANGE_ID}&lastChangeId64={CONNECTION_DATA_LAST_CHANGE_ID}"
+        )
     }
 
     /// Constructs the web portal URL for viewing a pull request.
@@ -129,7 +137,7 @@ mod tests {
         let url = ep().connection_data();
         assert_eq!(
             url,
-            "https://dev.azure.com/myorg/_apis/connectionData?api-version=7.1"
+            "https://dev.azure.com/myorg/_apis/connectionData?api-version=7.2-preview.1&connectOptions=1&lastChangeId=-1&lastChangeId64=-1"
         );
     }
 
