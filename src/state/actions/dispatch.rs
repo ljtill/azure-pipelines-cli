@@ -33,6 +33,9 @@ pub fn handle_action(
             if spawn_data_refresh(app, client, tx) {
                 *last_data_fetch = Instant::now();
             }
+            if app.view == View::Dashboard {
+                spawn_fetch_dashboard_pull_requests(app, client, tx);
+            }
             if app.view == View::BuildHistory {
                 spawn_build_history_refresh(app, client, tx, None);
             }

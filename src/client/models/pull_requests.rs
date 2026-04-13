@@ -185,7 +185,10 @@ pub struct ConnectionData {
 /// Represents the authenticated user within a connection data response.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuthenticatedUser {
-    pub id: String,
+    pub id: Option<String>,
+    #[serde(rename = "uniqueName")]
+    pub unique_name: Option<String>,
+    pub descriptor: Option<String>,
     #[serde(rename = "providerDisplayName")]
     pub provider_display_name: Option<String>,
 }
@@ -193,7 +196,9 @@ pub struct AuthenticatedUser {
 impl ConnectionData {
     /// Extracts the authenticated user's ID.
     pub fn user_id(&self) -> Option<&str> {
-        self.authenticated_user.as_ref().map(|u| u.id.as_str())
+        self.authenticated_user
+            .as_ref()
+            .and_then(|u| u.id.as_deref())
     }
 }
 
@@ -234,6 +239,8 @@ mod tests {
             status: "active".to_string(),
             created_by: Some(IdentityRef {
                 id: None,
+                unique_name: None,
+                descriptor: None,
                 display_name: "Alice".to_string(),
             }),
             creation_date: None,
@@ -446,6 +453,11 @@ mod tests {
         }"#;
         let cd: ConnectionData = serde_json::from_str(json).unwrap();
         assert_eq!(cd.user_id(), Some("user-guid-123"));
+        assert_eq!(
+            cd.authenticated_user.unwrap().id,
+            Some("user-guid-123".to_string())
+        );
+        let cd: ConnectionData = serde_json::from_str(json).unwrap();
         assert_eq!(
             cd.authenticated_user.unwrap().provider_display_name,
             Some("Alice Smith".to_string())

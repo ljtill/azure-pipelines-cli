@@ -5,6 +5,8 @@ use crate::client::models::{
     RetentionLease,
 };
 
+use super::ExactUserIdentity;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefreshSource {
     Data,
@@ -74,8 +76,7 @@ pub enum AppMessage {
         generation: u64,
     },
     UserIdentity {
-        user_id: String,
-        display_name: Option<String>,
+        identity: ExactUserIdentity,
     },
     PullRequestDetailLoaded {
         pull_request: PullRequest,
@@ -84,5 +85,10 @@ pub enum AppMessage {
     DashboardPullRequests {
         pull_requests: Vec<PullRequest>,
     },
-    UserIdentityFailed,
+    DashboardPullRequestsFailed {
+        message: String,
+    },
+    UserIdentityFailed {
+        message: String,
+    },
 }

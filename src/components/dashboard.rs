@@ -15,8 +15,8 @@ use crate::render::helpers::{
     build_elapsed, effective_status_icon, effective_status_label, pr_status_icon, truncate,
 };
 use crate::render::theme;
-use crate::state::App;
 use crate::state::nav::ListNav;
+use crate::state::{App, DashboardPullRequestsState};
 
 /// Represents a row in the dashboard view.
 #[derive(Debug, Clone)]
@@ -55,7 +55,7 @@ impl Dashboard {
         definitions: &[PipelineDefinition],
         latest_builds_by_def: &BTreeMap<u32, Build>,
         pinned_ids: &[u32],
-        dashboard_prs: &[PullRequest],
+        dashboard_prs: &DashboardPullRequestsState,
     ) {
         let mut rows = Vec::new();
 
@@ -93,15 +93,24 @@ impl Dashboard {
             title: "My Pull Requests".to_string(),
         });
 
-        if dashboard_prs.is_empty() {
-            rows.push(DashboardRow::EmptyHint {
-                message: "No pull requests found".to_string(),
-            });
-        } else {
-            for pr in dashboard_prs.iter().take(10) {
-                rows.push(DashboardRow::DashboardPullRequest {
-                    pull_request: Box::new(pr.clone()),
+        match dashboard_prs {
+            DashboardPullRequestsState::Loading => rows.push(DashboardRow::EmptyHint {
+                message: "Loading pull requests...".to_string(),
+            }),
+            DashboardPullRequestsState::Unavailable(message) => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: message.clone(),
                 });
+            }
+            DashboardPullRequestsState::EmptyVerified => rows.push(DashboardRow::EmptyHint {
+                message: "No pull requests found".to_string(),
+            }),
+            DashboardPullRequestsState::Ready(prs) => {
+                for pr in prs.iter().take(10) {
+                    rows.push(DashboardRow::DashboardPullRequest {
+                        pull_request: Box::new(pr.clone()),
+                    });
+                }
             }
         }
 
@@ -328,7 +337,12 @@ mod tests {
             make_definition(3, "Lint", "\\"),
         ];
         let mut d = Dashboard::default();
-        d.rebuild(&defs, &BTreeMap::new(), &[1, 3], &[]);
+        d.rebuild(
+            &defs,
+            &BTreeMap::new(),
+            &[1, 3],
+            &DashboardPullRequestsState::EmptyVerified,
+        );
         // SectionHeader + 2 pinned + SectionHeader + EmptyHint(no PRs) = 5
         assert_eq!(d.rows.len(), 5);
         assert!(
@@ -346,7 +360,12 @@ mod tests {
     fn rebuild_empty_pins_shows_hint() {
         let defs = vec![make_definition(1, "CI", "\\")];
         let mut d = Dashboard::default();
-        d.rebuild(&defs, &BTreeMap::new(), &[], &[]);
+        d.rebuild(
+            &defs,
+            &BTreeMap::new(),
+            &[],
+            &DashboardPullRequestsState::EmptyVerified,
+        );
         // SectionHeader + EmptyHint + SectionHeader + EmptyHint = 4
         assert_eq!(d.rows.len(), 4);
         assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
@@ -360,7 +379,12 @@ mod tests {
             make_pull_request(2, "PR Two", "active", "repo"),
         ];
         let mut d = Dashboard::default();
-        d.rebuild(&defs, &BTreeMap::new(), &[], &prs);
+        d.rebuild(
+            &defs,
+            &BTreeMap::new(),
+            &[],
+            &DashboardPullRequestsState::Ready(prs),
+        );
         // SectionHeader("Pinned") + EmptyHint + SectionHeader("My PRs") + 2 PRs = 5
         assert_eq!(d.rows.len(), 5);
         assert!(
@@ -376,7 +400,12 @@ mod tests {
     fn pinned_definition_at() {
         let defs = vec![make_definition(1, "CI", "\\")];
         let mut d = Dashboard::default();
-        d.rebuild(&defs, &BTreeMap::new(), &[1], &[]);
+        d.rebuild(
+            &defs,
+            &BTreeMap::new(),
+            &[1],
+            &DashboardPullRequestsState::EmptyVerified,
+        );
         assert!(d.pinned_definition_at(0).is_none()); // section header
         assert_eq!(d.pinned_definition_at(1).unwrap().id, 1);
     }
@@ -385,7 +414,12 @@ mod tests {
     fn pull_request_at() {
         let prs = vec![make_pull_request(42, "Test", "active", "repo")];
         let mut d = Dashboard::default();
-        d.rebuild(&[], &BTreeMap::new(), &[], &prs);
+        d.rebuild(
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &DashboardPullRequestsState::Ready(prs),
+        );
         // Row 0 = SectionHeader("Pinned"), 1 = EmptyHint, 2 = SectionHeader("My PRs"), 3 = PR.
         assert!(d.pull_request_at(2).is_none()); // Section header
         assert_eq!(d.pull_request_at(3).unwrap().pull_request_id, 42);
@@ -397,12 +431,47 @@ mod tests {
             .map(|i| make_pull_request(i, &format!("PR {i}"), "active", "repo"))
             .collect();
         let mut d = Dashboard::default();
-        d.rebuild(&[], &BTreeMap::new(), &[], &prs);
+        d.rebuild(
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &DashboardPullRequestsState::Ready(prs),
+        );
         let pr_count = d
             .rows
             .iter()
             .filter(|r| matches!(r, DashboardRow::DashboardPullRequest { .. }))
             .count();
         assert_eq!(pr_count, 10);
+    }
+
+    #[test]
+    fn rebuild_loading_prs_shows_loading_hint() {
+        let mut d = Dashboard::default();
+        d.rebuild(
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &DashboardPullRequestsState::Loading,
+        );
+        assert!(matches!(
+            &d.rows[3],
+            DashboardRow::EmptyHint { message } if message == "Loading pull requests..."
+        ));
+    }
+
+    #[test]
+    fn rebuild_unavailable_prs_shows_unavailable_hint() {
+        let mut d = Dashboard::default();
+        d.rebuild(
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &DashboardPullRequestsState::Unavailable("Unavailable".to_string()),
+        );
+        assert!(matches!(
+            &d.rows[3],
+            DashboardRow::EmptyHint { message } if message == "Unavailable"
+        ));
     }
 }

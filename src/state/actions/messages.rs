@@ -6,18 +6,65 @@ use tokio::sync::mpsc;
 
 use crate::client::http::AdoClient;
 use crate::client::models;
-use crate::client::models::PullRequest;
+use crate::client::models::{IdentityRef, PullRequest};
 use crate::components::log_viewer::ActiveTaskResult;
 
-use super::super::App;
-use super::super::TimelineRow;
-use super::super::View;
 use super::super::messages::{AppMessage, RefreshSource};
 use super::super::notifications::NotificationLevel;
+use super::super::{App, DashboardPullRequestsState, ExactUserIdentity, TimelineRow, View};
 use super::spawn::{
     spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_dashboard_pull_requests,
     spawn_fetch_pull_requests, spawn_log_fetch, spawn_timeline_fetch,
 };
+
+const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
+    "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
+
+fn exact_identity_matches(author: &IdentityRef, user: &ExactUserIdentity) -> bool {
+    let mut shared_field = false;
+
+    for (author_value, user_value) in [
+        (author.id.as_deref(), user.id.as_deref()),
+        (author.unique_name.as_deref(), user.unique_name.as_deref()),
+        (author.descriptor.as_deref(), user.descriptor.as_deref()),
+    ] {
+        if let (Some(author_value), Some(user_value)) = (author_value, user_value) {
+            shared_field = true;
+            if !author_value.eq_ignore_ascii_case(user_value) {
+                return false;
+            }
+        }
+    }
+
+    shared_field
+}
+
+fn exact_dashboard_pull_request_state(
+    pull_requests: Vec<PullRequest>,
+    current_user: &ExactUserIdentity,
+) -> DashboardPullRequestsState {
+    if !current_user.is_known() {
+        return DashboardPullRequestsState::Unavailable(
+            DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
+        );
+    }
+
+    let filtered: Vec<PullRequest> = pull_requests
+        .into_iter()
+        .filter(PullRequest::is_active)
+        .filter(|pr| {
+            pr.created_by
+                .as_ref()
+                .is_some_and(|author| exact_identity_matches(author, current_user))
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        DashboardPullRequestsState::EmptyVerified
+    } else {
+        DashboardPullRequestsState::Ready(filtered)
+    }
+}
 
 pub fn handle_message(
     app: &mut App,
@@ -451,14 +498,9 @@ pub fn handle_message(
             tracing::info!(count = pull_requests.len(), "pull requests loaded");
             app.pull_requests.set_data(pull_requests, &app.search.query);
         }
-        AppMessage::UserIdentity {
-            user_id,
-            display_name,
-        } => {
+        AppMessage::UserIdentity { identity } => {
             tracing::info!("user identity resolved");
-            app.user_id = Some(user_id);
-            app.user_display_name = display_name;
-            app.identity_resolved = true;
+            app.current_user = identity;
             // Re-fetch dashboard PRs now that we can filter by creator.
             spawn_fetch_dashboard_pull_requests(app, client, tx);
             // Re-fetch PR view data so filtered modes use the resolved identity.
@@ -485,48 +527,20 @@ pub fn handle_message(
         }
         AppMessage::DashboardPullRequests { pull_requests } => {
             tracing::info!(count = pull_requests.len(), "dashboard PRs loaded");
-            // Client-side filter: keep only active PRs created by the current user.
-            let filtered: Vec<_> = if app.user_id.is_some() || app.user_display_name.is_some() {
-                pull_requests
-                    .into_iter()
-                    .filter(|pr| {
-                        if !pr.is_active() {
-                            return false;
-                        }
-                        let Some(creator) = &pr.created_by else {
-                            return false;
-                        };
-                        // Primary match: compare identity GUIDs.
-                        if let (Some(creator_id), Some(user_id)) = (&creator.id, &app.user_id) {
-                            return creator_id.eq_ignore_ascii_case(user_id);
-                        }
-                        // Fallback: compare display names.
-                        if let Some(user_name) = &app.user_display_name {
-                            return creator.display_name.eq_ignore_ascii_case(user_name);
-                        }
-                        false
-                    })
-                    .collect()
-            } else {
-                // Identity unknown — show all active PRs as a fallback.
-                pull_requests
-                    .into_iter()
-                    .filter(PullRequest::is_active)
-                    .collect()
-            };
-            tracing::info!(filtered = filtered.len(), "dashboard PRs after filter");
-            app.dashboard_pull_requests = filtered;
+            app.dashboard_pull_requests =
+                exact_dashboard_pull_request_state(pull_requests, &app.current_user);
             app.rebuild_dashboard();
         }
-        AppMessage::UserIdentityFailed => {
-            tracing::warn!("user identity resolution failed, falling back to unfiltered PRs");
-            app.identity_resolved = true;
-            app.notifications.push(
-                NotificationLevel::Info,
-                "Could not resolve user identity — showing all pull requests",
-            );
-            // Fetch unfiltered dashboard PRs as a fallback.
-            spawn_fetch_dashboard_pull_requests(app, client, tx);
+        AppMessage::DashboardPullRequestsFailed { message } => {
+            tracing::warn!(%message, "dashboard pull request fetch failed");
+            app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message);
+            app.rebuild_dashboard();
+        }
+        AppMessage::UserIdentityFailed { message } => {
+            tracing::warn!(%message, "user identity resolution failed");
+            app.current_user = ExactUserIdentity::default();
+            app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message);
+            app.rebuild_dashboard();
         }
     }
 }
@@ -535,9 +549,90 @@ pub fn handle_message(
 mod tests {
     use std::collections::BTreeMap;
 
+    use super::*;
     use crate::client::models::*;
-    use crate::state::View;
+    use crate::state::{DashboardPullRequestsState, ExactUserIdentity, View};
     use crate::test_helpers::*;
+
+    #[test]
+    fn exact_identity_matches_rejects_conflicting_shared_identifiers() {
+        let author = IdentityRef {
+            id: Some("author-id".to_string()),
+            unique_name: Some("same@contoso.com".to_string()),
+            descriptor: None,
+            display_name: "Author".to_string(),
+        };
+        let current_user = ExactUserIdentity {
+            id: Some("different-id".to_string()),
+            unique_name: Some("same@contoso.com".to_string()),
+            descriptor: None,
+        };
+
+        assert!(!exact_identity_matches(&author, &current_user));
+    }
+
+    #[test]
+    fn exact_dashboard_pull_request_state_keeps_only_exact_active_matches() {
+        let mut matching_active = make_pull_request(1, "Mine", "active", "repo");
+        matching_active.created_by.as_mut().unwrap().id = Some("me".to_string());
+
+        let mut other_users = make_pull_request(2, "Not mine", "active", "repo");
+        other_users.created_by.as_mut().unwrap().id = Some("other".to_string());
+
+        let mut matching_completed = make_pull_request(3, "Completed", "completed", "repo");
+        matching_completed.created_by.as_mut().unwrap().id = Some("me".to_string());
+
+        let missing_identifier = make_pull_request(4, "Unknown author", "active", "repo");
+
+        let state = exact_dashboard_pull_request_state(
+            vec![
+                matching_active,
+                other_users,
+                matching_completed,
+                missing_identifier,
+            ],
+            &ExactUserIdentity {
+                id: Some("me".to_string()),
+                unique_name: None,
+                descriptor: None,
+            },
+        );
+
+        match state {
+            DashboardPullRequestsState::Ready(prs) => {
+                assert_eq!(prs.len(), 1);
+                assert_eq!(prs[0].pull_request_id, 1);
+            }
+            other => panic!("expected Ready state, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn exact_dashboard_pull_request_state_returns_empty_verified_when_no_exact_matches() {
+        let mut pr = make_pull_request(1, "Not mine", "active", "repo");
+        pr.created_by.as_mut().unwrap().id = Some("someone-else".to_string());
+
+        let state = exact_dashboard_pull_request_state(
+            vec![pr],
+            &ExactUserIdentity {
+                id: Some("me".to_string()),
+                unique_name: None,
+                descriptor: None,
+            },
+        );
+
+        assert!(matches!(state, DashboardPullRequestsState::EmptyVerified));
+    }
+
+    #[test]
+    fn exact_dashboard_pull_request_state_returns_unavailable_when_identity_unknown() {
+        let state = exact_dashboard_pull_request_state(
+            vec![make_pull_request(1, "Mine", "active", "repo")],
+            &ExactUserIdentity::default(),
+        );
+
+        assert!(matches!(state, DashboardPullRequestsState::Unavailable(_)));
+    }
 
     // --- DataRefresh ---
 

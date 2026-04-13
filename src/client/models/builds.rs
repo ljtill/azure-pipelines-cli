@@ -53,6 +53,9 @@ pub struct BuildDefinitionRef {
 #[derive(Debug, Clone, Deserialize)]
 pub struct IdentityRef {
     pub id: Option<String>,
+    #[serde(rename = "uniqueName")]
+    pub unique_name: Option<String>,
+    pub descriptor: Option<String>,
     #[serde(rename = "displayName")]
     pub display_name: String,
 }

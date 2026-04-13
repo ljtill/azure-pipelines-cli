@@ -46,7 +46,7 @@ use chrono::{DateTime, Utc};
 
 use crate::client::endpoints::Endpoints;
 use crate::client::models::{
-    Approval, Build, BuildResult, BuildStatus, PipelineDefinition, RetentionLease,
+    Approval, Build, BuildResult, BuildStatus, PipelineDefinition, PullRequest, RetentionLease,
 };
 
 use notifications::Notifications;
@@ -133,6 +133,31 @@ pub struct ConfirmPrompt {
     pub action: ConfirmAction,
 }
 
+/// Stores the exact identity fields used for strict dashboard PR ownership checks.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExactUserIdentity {
+    pub id: Option<String>,
+    pub unique_name: Option<String>,
+    pub descriptor: Option<String>,
+}
+
+impl ExactUserIdentity {
+    /// Returns `true` when at least one exact identity field is available.
+    pub fn is_known(&self) -> bool {
+        self.id.is_some() || self.unique_name.is_some() || self.descriptor.is_some()
+    }
+}
+
+/// Represents the dashboard PR section state.
+#[derive(Debug, Clone, Default)]
+pub enum DashboardPullRequestsState {
+    #[default]
+    Loading,
+    Ready(Vec<PullRequest>),
+    EmptyVerified,
+    Unavailable(String),
+}
+
 /// Holds the central application state, including views, data, and configuration.
 pub struct App {
     pub view: View,
@@ -171,10 +196,8 @@ pub struct App {
     // --- Pull Requests ---
     pub pull_requests: crate::components::pull_requests::PullRequests,
     pub pull_request_detail: crate::components::pull_request_detail::PullRequestDetail,
-    pub user_id: Option<String>,
-    pub user_display_name: Option<String>,
-    pub identity_resolved: bool,
-    pub dashboard_pull_requests: Vec<crate::client::models::PullRequest>,
+    pub current_user: ExactUserIdentity,
+    pub dashboard_pull_requests: DashboardPullRequestsState,
 
     // --- Retention Leases ---
     pub retention_leases: RetentionLeasesState,
@@ -247,10 +270,8 @@ impl App {
             pull_requests: crate::components::pull_requests::PullRequests::default(),
             pull_request_detail: crate::components::pull_request_detail::PullRequestDetail::default(
             ),
-            user_id: None,
-            user_display_name: None,
-            identity_resolved: false,
-            dashboard_pull_requests: Vec::new(),
+            current_user: ExactUserIdentity::default(),
+            dashboard_pull_requests: DashboardPullRequestsState::Loading,
 
             retention_leases: RetentionLeasesState::default(),
 

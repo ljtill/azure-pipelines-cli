@@ -180,6 +180,8 @@ pub fn make_pull_request(id: u32, title: &str, status: &str, repo_name: &str) ->
         status: status.to_string(),
         created_by: Some(crate::client::models::IdentityRef {
             id: None,
+            unique_name: None,
+            descriptor: None,
             display_name: "Test User".to_string(),
         }),
         creation_date: None,

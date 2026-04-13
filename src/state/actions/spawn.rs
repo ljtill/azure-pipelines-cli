@@ -8,8 +8,12 @@ use tracing::Instrument;
 
 use crate::client::http::AdoClient;
 
-use super::super::App;
 use super::super::messages::{AppMessage, RefreshSource};
+use super::super::{App, DashboardPullRequestsState, ExactUserIdentity};
+
+const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
+    "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
+const DASHBOARD_PULL_REQUESTS_UNAVAILABLE_MESSAGE: &str = "Failed to load My Pull Requests";
 
 // --- Drop guard for async refresh tasks ---
 
@@ -383,7 +387,7 @@ pub fn spawn_fetch_pull_requests(
     use crate::components::pull_requests::PrViewMode;
 
     let mode = app.pull_requests.mode;
-    let user_id = app.user_id.clone();
+    let user_id = app.current_user.id.clone();
 
     // Warn when a filtered mode cannot actually filter.
     if user_id.is_none() && matches!(mode, PrViewMode::CreatedByMe | PrViewMode::AssignedToMe) {
@@ -419,15 +423,31 @@ pub fn spawn_fetch_pull_requests(
     );
 }
 
-/// Spawns an async task that fetches "Created by me" PRs for the Dashboard.
+/// Spawns an async task that fetches dashboard PRs once exact identity is known.
 ///
-/// Fetches all active PRs; client-side filtering by the current user's identity
-/// is applied when the response arrives (in the `DashboardPullRequests` handler).
+/// If identity is not yet available, retries identity resolution instead of
+/// fetching unverifiable PR data.
 pub fn spawn_fetch_dashboard_pull_requests(
-    _app: &App,
+    app: &mut App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
 ) {
+    if !app.current_user.is_known() {
+        if matches!(
+            app.dashboard_pull_requests,
+            DashboardPullRequestsState::Loading
+        ) {
+            return;
+        }
+        app.dashboard_pull_requests = DashboardPullRequestsState::Loading;
+        app.rebuild_dashboard();
+        spawn_fetch_user_identity(client, tx);
+        return;
+    }
+
+    app.dashboard_pull_requests = DashboardPullRequestsState::Loading;
+    app.rebuild_dashboard();
+
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_dashboard_prs");
@@ -437,8 +457,8 @@ pub fn spawn_fetch_dashboard_pull_requests(
                 Ok(prs) => AppMessage::DashboardPullRequests { pull_requests: prs },
                 Err(e) => {
                     tracing::debug!(error = %e, "dashboard PR fetch failed (non-fatal)");
-                    AppMessage::DashboardPullRequests {
-                        pull_requests: vec![],
+                    AppMessage::DashboardPullRequestsFailed {
+                        message: format!("{DASHBOARD_PULL_REQUESTS_UNAVAILABLE_MESSAGE}: {e}"),
                     }
                 }
             };
@@ -478,9 +498,6 @@ pub fn spawn_fetch_pr_detail(
 }
 
 /// Spawns a one-shot task to resolve the current user's identity from the ADO Connection Data API.
-///
-/// Sends `UserIdentity` on success or `UserIdentityFailed` on failure so the
-/// dashboard can fall back to an unfiltered PR fetch.
 pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
     let client = client.clone();
     let tx = tx.clone();
@@ -489,25 +506,38 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
         async move {
             match client.get_connection_data().await {
                 Ok(cd) => {
-                    if let Some(id) = cd.user_id() {
-                        let display_name = cd
-                            .authenticated_user
-                            .as_ref()
-                            .and_then(|u| u.provider_display_name.clone());
+                    if let Some(user) = cd.authenticated_user {
+                        let identity = ExactUserIdentity {
+                            id: user.id,
+                            unique_name: user.unique_name,
+                            descriptor: user.descriptor,
+                        };
+                        if identity.is_known() {
+                            let _ = tx.send(AppMessage::UserIdentity { identity }).await;
+                        } else {
+                            tracing::warn!("connection data returned no exact identity fields");
+                            let _ = tx
+                                .send(AppMessage::UserIdentityFailed {
+                                    message: DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
+                                })
+                                .await;
+                        }
+                    } else {
+                        tracing::warn!("connection data returned no authenticated user");
                         let _ = tx
-                            .send(AppMessage::UserIdentity {
-                                user_id: id.to_string(),
-                                display_name,
+                            .send(AppMessage::UserIdentityFailed {
+                                message: DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
                             })
                             .await;
-                    } else {
-                        tracing::warn!("connection data returned no user id");
-                        let _ = tx.send(AppMessage::UserIdentityFailed).await;
                     }
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "failed to resolve user identity");
-                    let _ = tx.send(AppMessage::UserIdentityFailed).await;
+                    let _ = tx
+                        .send(AppMessage::UserIdentityFailed {
+                            message: DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
+                        })
+                        .await;
                 }
             }
         }

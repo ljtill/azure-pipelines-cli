@@ -82,9 +82,11 @@ pub async fn run(
 
         if should_refresh_data && spawn_data_refresh(&mut app, &client, &tx) {
             last_data_fetch = Instant::now();
-            // Fetch dashboard PRs alongside the data refresh (only once identity resolution is attempted).
-            if app.view == View::Dashboard && app.identity_resolved {
-                spawn_fetch_dashboard_pull_requests(&app, &client, &tx);
+            // Refresh dashboard PRs alongside the data refresh. If identity is not
+            // ready yet, this re-attempts identity resolution instead of showing
+            // unverified pull requests.
+            if app.view == View::Dashboard {
+                spawn_fetch_dashboard_pull_requests(&mut app, &client, &tx);
             }
             // Refresh PR view data alongside the data refresh.
             if app.view == View::PullRequests {
