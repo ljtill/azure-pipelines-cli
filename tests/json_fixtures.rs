@@ -79,3 +79,64 @@ fn load_log_fixture() {
     assert!(lines.len() >= 3);
     assert!(lines[0].contains("Starting"));
 }
+
+#[test]
+fn deserialize_pull_requests_fixture() {
+    let json = load_fixture("pull_requests.json");
+    let resp: PullRequestListResponse = serde_json::from_str(&json).unwrap();
+    assert_eq!(resp.count, Some(3));
+    assert_eq!(resp.value.len(), 3);
+
+    let active_pr = &resp.value[0];
+    assert_eq!(active_pr.pull_request_id, 42);
+    assert_eq!(active_pr.title, "Add feature X");
+    assert!(active_pr.is_active());
+    assert!(!active_pr.is_draft);
+    assert_eq!(active_pr.repo_name(), "frontend");
+    assert_eq!(active_pr.short_source_branch(), "feat/x");
+    assert_eq!(active_pr.short_target_branch(), "main");
+    assert_eq!(active_pr.reviewers.len(), 2);
+    assert_eq!(active_pr.reviewers[0].vote, 10);
+    assert!(active_pr.reviewers[0].is_required);
+    assert_eq!(active_pr.labels.len(), 1);
+
+    let draft_pr = &resp.value[1];
+    assert_eq!(draft_pr.pull_request_id, 43);
+    assert!(draft_pr.is_draft);
+    assert_eq!(draft_pr.reviewers[0].vote, -5);
+
+    let completed_pr = &resp.value[2];
+    assert_eq!(completed_pr.pull_request_id, 44);
+    assert!(!completed_pr.is_active());
+}
+
+#[test]
+fn deserialize_pull_request_threads_fixture() {
+    let json = load_fixture("pull_request_threads.json");
+    let resp: PullRequestThreadListResponse = serde_json::from_str(&json).unwrap();
+    assert_eq!(resp.count, Some(3));
+    assert_eq!(resp.value.len(), 3);
+
+    let active_thread = &resp.value[0];
+    assert_eq!(active_thread.id, 1);
+    assert!(active_thread.is_active());
+    assert_eq!(active_thread.comments.len(), 2);
+
+    let closed_thread = &resp.value[1];
+    assert!(!closed_thread.is_active());
+
+    let empty_thread = &resp.value[2];
+    assert!(empty_thread.is_active());
+    assert!(empty_thread.comments.is_empty());
+}
+
+#[test]
+fn deserialize_connection_data_fixture() {
+    let json = load_fixture("connection_data.json");
+    let cd: ConnectionData = serde_json::from_str(&json).unwrap();
+    assert_eq!(cd.user_id(), Some("a1b2c3d4-e5f6-7890-abcd-ef1234567890"));
+    assert_eq!(
+        cd.authenticated_user.unwrap().provider_display_name,
+        Some("Alice Smith".to_string())
+    );
+}

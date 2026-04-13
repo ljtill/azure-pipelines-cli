@@ -41,6 +41,7 @@ pub enum Action {
     RejectCheck(String),
     Reload,
     DeleteRetentionLeases(Vec<u32>),
+    FetchPullRequests,
 }
 
 /// Dispatches a key event to the appropriate view-specific handler.
@@ -85,6 +86,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         View::ActiveRuns => active_runs::handle_key(app, key),
         View::BuildHistory => build_history::handle_key(app, key),
         View::LogViewer => log_viewer::handle_key(app, key),
+        // Pull Request views — no view-specific keys until Phase 2.
+        View::PullRequests | View::PullRequestDetail => Action::None,
     }
 }
 
@@ -105,7 +108,8 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
         KeyCode::Char('x')
             if app.view == View::Dashboard
                 || app.view == View::Pipelines
-                || app.view == View::ActiveRuns =>
+                || app.view == View::ActiveRuns
+                || app.view == View::PullRequests =>
         {
             app.notifications.clear();
             Some(Action::None)
@@ -140,6 +144,12 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
                 &app.search.query,
             );
             Some(Action::None)
+        }
+        KeyCode::Char('4') => {
+            tracing::info!(from = ?app.view, to = ?View::PullRequests, "view switch");
+            app.search.query.clear();
+            app.view = View::PullRequests;
+            Some(Action::FetchPullRequests)
         }
 
         // Navigation.
@@ -178,7 +188,7 @@ fn handle_quit_key(app: &mut App) -> Action {
             });
             Action::None
         }
-        View::Pipelines | View::ActiveRuns => {
+        View::Pipelines | View::ActiveRuns | View::PullRequests => {
             app.search.mode = InputMode::Normal;
             app.search.query.clear();
             app.view = View::Dashboard;
@@ -195,7 +205,7 @@ fn handle_quit_key(app: &mut App) -> Action {
 fn handle_esc_key(app: &mut App) -> Action {
     match app.view {
         View::Dashboard => Action::None,
-        View::Pipelines | View::ActiveRuns => {
+        View::Pipelines | View::ActiveRuns | View::PullRequests => {
             app.search.mode = InputMode::Normal;
             app.search.query.clear();
             app.view = View::Dashboard;

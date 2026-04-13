@@ -12,6 +12,8 @@ pub mod header;
 pub mod help;
 pub mod log_viewer;
 pub mod pipelines;
+pub mod pull_request_detail;
+pub mod pull_requests;
 pub mod settings;
 
 /// Defines a self-contained UI component following the

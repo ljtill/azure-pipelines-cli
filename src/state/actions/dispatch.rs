@@ -210,6 +210,10 @@ pub fn handle_action(
                 |deleted| AppMessage::RetentionLeasesDeleted { deleted, failed: 0 },
             );
         }
+        Action::FetchPullRequests => {
+            // Placeholder — Phase 2 will wire the actual spawn helper.
+            tracing::debug!("fetch pull requests (not yet wired)");
+        }
         Action::None => {}
     }
 }

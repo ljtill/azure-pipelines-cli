@@ -78,6 +78,8 @@ pub enum View {
     ActiveRuns,
     BuildHistory,
     LogViewer,
+    PullRequests,
+    PullRequestDetail,
 }
 
 /// Represents the current input mode.
@@ -165,6 +167,11 @@ pub struct App {
     // --- Pipelines ---
     pub pipelines: crate::components::pipelines::Pipelines,
 
+    // --- Pull Requests ---
+    pub pull_requests: crate::components::pull_requests::PullRequests,
+    pub pull_request_detail: crate::components::pull_request_detail::PullRequestDetail,
+    pub user_id: Option<String>,
+
     // --- Retention Leases ---
     pub retention_leases: RetentionLeasesState,
 
@@ -231,6 +238,11 @@ impl App {
             active_runs: crate::components::active_runs::ActiveRuns::default(),
 
             pipelines: crate::components::pipelines::Pipelines::default(),
+
+            pull_requests: crate::components::pull_requests::PullRequests::default(),
+            pull_request_detail: crate::components::pull_request_detail::PullRequestDetail::default(
+            ),
+            user_id: None,
 
             retention_leases: RetentionLeasesState::default(),
 
@@ -307,6 +319,12 @@ impl App {
                 self.build_history.selected.clear();
                 self.build_history.nav.reset();
             }
+            View::PullRequestDetail => {
+                tracing::info!(from = ?self.view, to = ?View::PullRequests, "navigating back");
+                self.view = View::PullRequests;
+                self.pull_request_detail =
+                    crate::components::pull_request_detail::PullRequestDetail::default();
+            }
             _ => {}
         }
     }
@@ -340,6 +358,8 @@ impl App {
             View::ActiveRuns => &mut self.active_runs.nav,
             View::BuildHistory => &mut self.build_history.nav,
             View::LogViewer => self.log_viewer.nav_mut(),
+            View::PullRequests => &mut self.pull_requests.nav,
+            View::PullRequestDetail => &mut self.pull_request_detail.nav,
         }
     }
 

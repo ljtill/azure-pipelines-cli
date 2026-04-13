@@ -13,6 +13,52 @@ use crate::render::helpers::truncate;
 use crate::render::theme;
 use crate::state::{App, View};
 
+/// Defines a single tab in the header bar.
+pub struct TabDef {
+    pub label: &'static str,
+    pub key: char,
+    pub view: View,
+}
+
+/// Ordered tab definitions for the header bar.
+pub const TABS: &[TabDef] = &[
+    TabDef {
+        label: "Dashboard",
+        key: '1',
+        view: View::Dashboard,
+    },
+    TabDef {
+        label: "Pipelines",
+        key: '2',
+        view: View::Pipelines,
+    },
+    TabDef {
+        label: "Active Runs",
+        key: '3',
+        view: View::ActiveRuns,
+    },
+    TabDef {
+        label: "Pull Requests",
+        key: '4',
+        view: View::PullRequests,
+    },
+];
+
+/// Returns the tab index for the given view, resolving drill-in views to their parent tab.
+fn tab_index_for_view(app: &App) -> usize {
+    match app.view {
+        View::Dashboard => 0,
+        View::Pipelines => 1,
+        View::ActiveRuns => 2,
+        View::PullRequests | View::PullRequestDetail => 3,
+        View::BuildHistory | View::LogViewer => match app.build_history.return_to {
+            Some(View::Pipelines) => 1,
+            Some(View::ActiveRuns) => 2,
+            _ => 0,
+        },
+    }
+}
+
 /// Renders the title, refresh status, notifications, and tab bar.
 /// Always visible at the top of the screen. Not interactive.
 #[derive(Default)]
@@ -76,18 +122,12 @@ impl Header {
         ]));
         f.render_widget(title, chunks[0]);
 
-        // Tab bar.
-        let tab_titles = vec!["[1] Dashboard", "[2] Pipelines", "[3] Active Runs"];
-        let selected = match app.view {
-            View::Dashboard => 0,
-            View::Pipelines => 1,
-            View::ActiveRuns => 2,
-            View::BuildHistory | View::LogViewer => match app.build_history.return_to {
-                Some(View::Pipelines) => 1,
-                Some(View::ActiveRuns) => 2,
-                _ => 0,
-            },
-        };
+        // Tab bar — rendered dynamically from TABS definitions.
+        let tab_titles: Vec<String> = TABS
+            .iter()
+            .map(|t| format!("[{}] {}", t.key, t.label))
+            .collect();
+        let selected = tab_index_for_view(app);
 
         let tabs = Tabs::new(tab_titles)
             .block(Block::new().borders(Borders::BOTTOM))

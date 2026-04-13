@@ -34,6 +34,7 @@ pub fn handle_open_in_browser(app: &App) -> Action {
             .log_viewer
             .selected_build()
             .map(|b| app.endpoints_web_build(b.id)),
+        View::PullRequests | View::PullRequestDetail => None, // TODO: Phase 2/3 will wire PR browser URLs.
     };
 
     url.map_or(Action::None, Action::OpenInBrowser)

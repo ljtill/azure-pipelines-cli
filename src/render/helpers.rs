@@ -203,6 +203,34 @@ pub fn row_style(is_selected: bool) -> Style {
     }
 }
 
+// --- Pull Request helpers ---
+
+/// Returns the status icon and color for a pull request status string.
+pub fn pr_status_icon(status: &str, is_draft: bool) -> (&'static str, Color) {
+    if is_draft {
+        return ("◌", Color::DarkGray);
+    }
+    match status.to_ascii_lowercase().as_str() {
+        "active" => ("●", Color::Green),
+        "completed" => ("✓", Color::Cyan),
+        "abandoned" => ("⊘", Color::Red),
+        _ => ("○", Color::DarkGray),
+    }
+}
+
+/// Returns the icon and color for a reviewer's vote value.
+///
+/// ADO vote values: 10 = approved, 5 = approved with suggestions,
+/// 0 = no vote, -5 = waiting for author, -10 = rejected.
+pub fn reviewer_vote_icon(vote: i32) -> (&'static str, Color) {
+    match vote {
+        10 | 5 => ("✓", Color::Green),
+        -10 => ("✗", Color::Red),
+        -5 => ("●", Color::Yellow),
+        _ => ("○", Color::DarkGray),
+    }
+}
+
 /// Splits an area with an optional search bar at the top. Returns the list area.
 /// Renders the search bar if visible.
 pub fn split_with_search_bar(
@@ -525,5 +553,78 @@ mod tests {
     #[test]
     fn status_label_unknown() {
         assert_eq!(status_label(BuildStatus::Completed, None), "");
+    }
+
+    // --- pr_status_icon tests ---
+
+    #[test]
+    fn pr_status_icon_active() {
+        let (icon, color) = pr_status_icon("active", false);
+        assert_eq!(icon, "●");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn pr_status_icon_draft() {
+        let (icon, color) = pr_status_icon("active", true);
+        assert_eq!(icon, "◌");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    #[test]
+    fn pr_status_icon_completed() {
+        let (icon, color) = pr_status_icon("completed", false);
+        assert_eq!(icon, "✓");
+        assert_eq!(color, Color::Cyan);
+    }
+
+    #[test]
+    fn pr_status_icon_abandoned() {
+        let (icon, color) = pr_status_icon("abandoned", false);
+        assert_eq!(icon, "⊘");
+        assert_eq!(color, Color::Red);
+    }
+
+    #[test]
+    fn pr_status_icon_case_insensitive() {
+        let (icon, _) = pr_status_icon("Active", false);
+        assert_eq!(icon, "●");
+    }
+
+    // --- reviewer_vote_icon tests ---
+
+    #[test]
+    fn reviewer_vote_approved() {
+        let (icon, color) = reviewer_vote_icon(10);
+        assert_eq!(icon, "✓");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn reviewer_vote_approved_with_suggestions() {
+        let (icon, color) = reviewer_vote_icon(5);
+        assert_eq!(icon, "✓");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn reviewer_vote_rejected() {
+        let (icon, color) = reviewer_vote_icon(-10);
+        assert_eq!(icon, "✗");
+        assert_eq!(color, Color::Red);
+    }
+
+    #[test]
+    fn reviewer_vote_waiting() {
+        let (icon, color) = reviewer_vote_icon(-5);
+        assert_eq!(icon, "●");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn reviewer_vote_no_vote() {
+        let (icon, color) = reviewer_vote_icon(0);
+        assert_eq!(icon, "○");
+        assert_eq!(color, Color::DarkGray);
     }
 }

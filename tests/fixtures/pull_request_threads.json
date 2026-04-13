@@ -1,0 +1,47 @@
+{
+    "value": [
+        {
+            "id": 1,
+            "status": "active",
+            "comments": [
+                {
+                    "id": 1,
+                    "author": {"displayName": "Bob"},
+                    "content": "This looks good, but can you add a test?",
+                    "publishedDate": "2024-06-15T13:00:00Z",
+                    "commentType": "text"
+                },
+                {
+                    "id": 2,
+                    "author": {"displayName": "Alice Smith"},
+                    "content": "Sure, I'll add one.",
+                    "publishedDate": "2024-06-15T14:00:00Z",
+                    "commentType": "text"
+                }
+            ],
+            "publishedDate": "2024-06-15T13:00:00Z",
+            "lastUpdatedDate": "2024-06-15T14:00:00Z"
+        },
+        {
+            "id": 2,
+            "status": "closed",
+            "comments": [
+                {
+                    "id": 3,
+                    "author": {"displayName": "Carol"},
+                    "content": "Nit: typo in comment on line 42",
+                    "publishedDate": "2024-06-15T15:00:00Z",
+                    "commentType": "text"
+                }
+            ],
+            "publishedDate": "2024-06-15T15:00:00Z"
+        },
+        {
+            "id": 3,
+            "status": "active",
+            "comments": [],
+            "publishedDate": "2024-06-16T09:00:00Z"
+        }
+    ],
+    "count": 3
+}

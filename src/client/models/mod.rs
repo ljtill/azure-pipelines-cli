@@ -3,11 +3,13 @@
 pub mod approvals;
 pub mod builds;
 pub mod definitions;
+pub mod pull_requests;
 pub mod retention;
 
 pub use approvals::*;
 pub use builds::*;
 pub use definitions::*;
+pub use pull_requests::*;
 pub use retention::*;
 
 use std::fmt;

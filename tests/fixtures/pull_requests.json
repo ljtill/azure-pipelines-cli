@@ -1,0 +1,51 @@
+{
+    "value": [
+        {
+            "pullRequestId": 42,
+            "title": "Add feature X",
+            "description": "This PR adds feature X to the system.",
+            "status": "active",
+            "createdBy": {"displayName": "Alice Smith"},
+            "creationDate": "2024-06-15T12:00:00Z",
+            "sourceRefName": "refs/heads/feat/x",
+            "targetRefName": "refs/heads/main",
+            "repository": {"id": "repo-guid-1", "name": "frontend"},
+            "reviewers": [
+                {"displayName": "Bob", "vote": 10, "isRequired": true, "hasDeclined": false},
+                {"displayName": "Carol", "vote": 0, "isRequired": false, "hasDeclined": false}
+            ],
+            "mergeStatus": "succeeded",
+            "isDraft": false,
+            "labels": [{"name": "feature", "active": true}]
+        },
+        {
+            "pullRequestId": 43,
+            "title": "Fix login timeout",
+            "status": "active",
+            "createdBy": {"displayName": "Dave Jones"},
+            "creationDate": "2024-06-16T09:00:00Z",
+            "sourceRefName": "refs/heads/fix/login",
+            "targetRefName": "refs/heads/main",
+            "repository": {"id": "repo-guid-2", "name": "backend"},
+            "reviewers": [
+                {"displayName": "Alice Smith", "vote": -5, "isRequired": true, "hasDeclined": false}
+            ],
+            "isDraft": true
+        },
+        {
+            "pullRequestId": 44,
+            "title": "Update CI config",
+            "status": "completed",
+            "createdBy": {"displayName": "Eve Wilson"},
+            "creationDate": "2024-06-10T08:00:00Z",
+            "sourceRefName": "refs/heads/chore/ci",
+            "targetRefName": "refs/heads/main",
+            "repository": {"id": "repo-guid-1", "name": "frontend"},
+            "reviewers": [
+                {"displayName": "Alice Smith", "vote": 10, "isRequired": false, "hasDeclined": false}
+            ],
+            "isDraft": false
+        }
+    ],
+    "count": 3
+}

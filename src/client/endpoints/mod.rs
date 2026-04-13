@@ -3,6 +3,7 @@
 pub mod approvals;
 pub mod builds;
 pub mod definitions;
+pub mod pull_requests;
 pub mod retention;
 pub mod web;
 

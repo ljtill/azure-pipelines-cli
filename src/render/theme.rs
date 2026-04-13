@@ -33,3 +33,15 @@ pub const FOLLOW_TITLE: Style = Style::new().fg(Color::Green);
 // --- Misc ---
 pub const SECTION_HEADER: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
 pub const BRANCH: Style = Style::new().fg(Color::Blue);
+
+// --- Pull Requests ---
+pub const PR_ACTIVE: Style = Style::new().fg(Color::Green);
+pub const PR_DRAFT: Style = Style::new().fg(Color::DarkGray);
+pub const PR_COMPLETED: Style = Style::new().fg(Color::Cyan);
+pub const PR_ABANDONED: Style = Style::new().fg(Color::Red);
+pub const VOTE_APPROVED: Style = Style::new().fg(Color::Green);
+pub const VOTE_REJECTED: Style = Style::new().fg(Color::Red);
+pub const VOTE_WAITING: Style = Style::new().fg(Color::Yellow);
+pub const VOTE_NONE: Style = Style::new().fg(Color::DarkGray);
+pub const MODE_ACTIVE: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+pub const MODE_INACTIVE: Style = Style::new().fg(Color::DarkGray);

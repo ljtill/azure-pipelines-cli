@@ -38,6 +38,7 @@ impl Component for Help {
             Line::from("  1              Dashboard (grouped by folder)"),
             Line::from("  2              All Pipelines (flat list)"),
             Line::from("  3              Active Runs"),
+            Line::from("  4              Pull Requests"),
             Line::from(""),
             Line::from(vec![Span::styled("  Actions", theme::SECTION_HEADER)]),
             Line::from(""),

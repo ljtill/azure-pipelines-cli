@@ -7,6 +7,7 @@
 mod approvals;
 mod builds;
 mod definitions;
+mod pull_requests;
 mod retention;
 
 use std::time::{Duration, Instant};

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::client::models::{
     Build, BuildDefinitionRef, BuildResult, BuildStatus, BuildTimeline, LogReference,
-    PipelineDefinition, TaskState, TimelineRecord,
+    PipelineDefinition, PullRequest, PullRequestThread, Reviewer, TaskState, TimelineRecord,
 };
 use crate::config::{
     AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
@@ -171,6 +171,63 @@ pub fn make_simple_timeline() -> BuildTimeline {
     BuildTimeline { records }
 }
 
+/// Creates a [`PullRequest`] with the given id, title, status, and repository name.
+pub fn make_pull_request(id: u32, title: &str, status: &str, repo_name: &str) -> PullRequest {
+    PullRequest {
+        pull_request_id: id,
+        title: title.to_string(),
+        description: None,
+        status: status.to_string(),
+        created_by: Some(crate::client::models::IdentityRef {
+            display_name: "Test User".to_string(),
+        }),
+        creation_date: None,
+        source_ref_name: Some("refs/heads/feat/test".to_string()),
+        target_ref_name: Some("refs/heads/main".to_string()),
+        repository: Some(crate::client::models::GitRepositoryRef {
+            id: format!("repo-{id}"),
+            name: repo_name.to_string(),
+        }),
+        reviewers: vec![],
+        merge_status: None,
+        is_draft: false,
+        url: None,
+        labels: vec![],
+    }
+}
+
+/// Creates a [`Reviewer`] with the given display name and vote.
+pub fn make_reviewer(name: &str, vote: i32) -> Reviewer {
+    Reviewer {
+        id: None,
+        display_name: name.to_string(),
+        unique_name: None,
+        vote,
+        is_required: false,
+        has_declined: false,
+    }
+}
+
+/// Creates a [`PullRequestThread`] with the given id, status, and number of placeholder comments.
+pub fn make_pr_thread(id: u32, status: &str, comment_count: usize) -> PullRequestThread {
+    let comments = (0..comment_count)
+        .map(|i| crate::client::models::PullRequestComment {
+            id: i as u32 + 1,
+            author: None,
+            content: Some(format!("Comment {}", i + 1)),
+            published_date: None,
+            comment_type: Some("text".to_string()),
+        })
+        .collect();
+    PullRequestThread {
+        id,
+        status: Some(status.to_string()),
+        comments,
+        published_date: None,
+        last_updated_date: None,
+    }
+}
+
 /// Creates a minimal [`Config`] with default test values.
 pub fn make_config() -> Config {
     Config {
@@ -307,5 +364,32 @@ mod tests {
         assert_eq!(app.data.recent_builds.len(), 3);
         assert!(!app.dashboard.rows.is_empty());
         assert!(!app.pipelines.filtered.is_empty());
+    }
+
+    #[test]
+    fn make_pull_request_sets_fields() {
+        let pr = make_pull_request(42, "Add feature X", "active", "my-repo");
+        assert_eq!(pr.pull_request_id, 42);
+        assert_eq!(pr.title, "Add feature X");
+        assert_eq!(pr.status, "active");
+        assert_eq!(pr.repo_name(), "my-repo");
+        assert_eq!(pr.author(), "Test User");
+        assert!(pr.is_active());
+    }
+
+    #[test]
+    fn make_reviewer_sets_fields() {
+        let r = make_reviewer("Alice", 10);
+        assert_eq!(r.display_name, "Alice");
+        assert_eq!(r.vote, 10);
+    }
+
+    #[test]
+    fn make_pr_thread_sets_fields() {
+        let t = make_pr_thread(1, "active", 3);
+        assert_eq!(t.id, 1);
+        assert_eq!(t.status.as_deref(), Some("active"));
+        assert_eq!(t.comments.len(), 3);
+        assert!(t.is_active());
     }
 }
