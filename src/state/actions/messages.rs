@@ -533,11 +533,13 @@ pub fn handle_message(
         }
         AppMessage::DashboardPullRequestsFailed { message } => {
             tracing::warn!(%message, "dashboard pull request fetch failed");
+            app.notifications.error_dedup(message.clone());
             app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message);
             app.rebuild_dashboard();
         }
         AppMessage::UserIdentityFailed { message } => {
             tracing::warn!(%message, "user identity resolution failed");
+            app.notifications.error_dedup(message.clone());
             app.current_user = ExactUserIdentity::default();
             app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message);
             app.rebuild_dashboard();
@@ -632,6 +634,58 @@ mod tests {
         );
 
         assert!(matches!(state, DashboardPullRequestsState::Unavailable(_)));
+    }
+
+    #[test]
+    fn dashboard_pull_requests_failed_sets_unavailable_and_notifies() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DashboardPullRequestsFailed {
+                message: "Failed to load My Pull Requests: timeout".to_string(),
+            },
+        );
+
+        assert!(matches!(
+            app.dashboard_pull_requests,
+            DashboardPullRequestsState::Unavailable(_)
+        ));
+        let notification = app.notifications.clone_current().unwrap();
+        assert_eq!(
+            notification.message,
+            "Failed to load My Pull Requests: timeout"
+        );
+    }
+
+    #[test]
+    fn user_identity_failed_sets_unavailable_and_notifies() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::UserIdentityFailed {
+                message: "Unable to verify your Azure DevOps identity — My Pull Requests unavailable: connection data request was unauthorized (401)".to_string(),
+            },
+        );
+
+        assert!(matches!(
+            app.dashboard_pull_requests,
+            DashboardPullRequestsState::Unavailable(_)
+        ));
+        let notification = app.notifications.clone_current().unwrap();
+        assert_eq!(
+            notification.message,
+            "Unable to verify your Azure DevOps identity — My Pull Requests unavailable: connection data request was unauthorized (401)"
+        );
     }
 
     // --- DataRefresh ---

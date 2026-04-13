@@ -15,6 +15,44 @@ const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
     "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
 const DASHBOARD_PULL_REQUESTS_UNAVAILABLE_MESSAGE: &str = "Failed to load My Pull Requests";
 
+fn dashboard_identity_unavailable_message(detail: &str) -> String {
+    format!("{DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE}: {detail}")
+}
+
+fn describe_connection_data_error(error: &anyhow::Error) -> String {
+    let flattened_message = error
+        .to_string()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if flattened_message.starts_with("Authentication failed") {
+        return "authentication failed — run `az login` or `azd auth login`".to_string();
+    }
+
+    if let Some(reqwest_error) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<reqwest::Error>())
+    {
+        if reqwest_error.is_timeout() {
+            return "connection data request timed out".to_string();
+        }
+        if reqwest_error.is_connect() {
+            return "could not reach Azure DevOps".to_string();
+        }
+        if let Some(status) = reqwest_error.status() {
+            return match status.as_u16() {
+                401 => "connection data request was unauthorized (401)".to_string(),
+                403 => "connection data request was forbidden (403)".to_string(),
+                404 => "connection data endpoint was not found (404)".to_string(),
+                code => format!("connection data request failed with HTTP {code}"),
+            };
+        }
+    }
+
+    format!("connection data request failed: {flattened_message}")
+}
+
 // --- Drop guard for async refresh tasks ---
 
 /// Ensures a fallback message is sent if the spawned task exits unexpectedly
@@ -518,7 +556,9 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
                             tracing::warn!("connection data returned no exact identity fields");
                             let _ = tx
                                 .send(AppMessage::UserIdentityFailed {
-                                    message: DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
+                                    message: dashboard_identity_unavailable_message(
+                                        "Azure DevOps did not return id, uniqueName, or descriptor for the signed-in user",
+                                    ),
                                 })
                                 .await;
                         }
@@ -526,7 +566,9 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
                         tracing::warn!("connection data returned no authenticated user");
                         let _ = tx
                             .send(AppMessage::UserIdentityFailed {
-                                message: DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
+                                message: dashboard_identity_unavailable_message(
+                                    "Azure DevOps connection data did not include an authenticated user",
+                                ),
                             })
                             .await;
                     }
@@ -535,7 +577,9 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
                     tracing::warn!(error = %e, "failed to resolve user identity");
                     let _ = tx
                         .send(AppMessage::UserIdentityFailed {
-                            message: DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
+                            message: dashboard_identity_unavailable_message(
+                                &describe_connection_data_error(&e),
+                            ),
                         })
                         .await;
                 }
@@ -574,5 +618,32 @@ pub(super) fn open_url(url: &str) -> std::io::Result<std::process::Child> {
             std::io::ErrorKind::Unsupported,
             "unsupported platform",
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn describe_connection_data_error_shortens_auth_failures() {
+        let error = anyhow::anyhow!(
+            "Authentication failed — ensure you are logged in with `az login` or `azd auth login`.\n\nUnderlying error: boom"
+        );
+
+        assert_eq!(
+            describe_connection_data_error(&error),
+            "authentication failed — run `az login` or `azd auth login`"
+        );
+    }
+
+    #[test]
+    fn describe_connection_data_error_flattens_generic_errors() {
+        let error = anyhow::anyhow!("connection data blew up\nwith extra whitespace");
+
+        assert_eq!(
+            describe_connection_data_error(&error),
+            "connection data request failed: connection data blew up with extra whitespace"
+        );
     }
 }
