@@ -7,7 +7,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState};
+use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::client::models::{Build, PipelineDefinition, PullRequest};
@@ -291,8 +291,7 @@ impl Dashboard {
             })
             .collect();
 
-        let list =
-            List::new(items).block(Block::new().title(" Dashboard ").title_style(theme::TITLE));
+        let list = List::new(items);
 
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
