@@ -3,7 +3,7 @@
 ## Build, test, and lint
 
 - Build: `cargo build`
-- Run locally: `cargo run -- --config ~/.config/pipelines/config.toml`
+- Run locally: `cargo run -- --config ~/.config/devops/config.toml`
 - Install the binary from the repo root: `cargo install --path .`
 - Test all: `cargo test`
 - Run a single test: `cargo test <test_name_substring>`
@@ -21,7 +21,7 @@ A git pre-commit hook (`.githooks/pre-commit`) enforces these same checks. One-t
 
 ## Runtime and configuration
 
-- Config is loaded from `--config <path>` when provided; otherwise `src/config.rs` prefers `$XDG_CONFIG_HOME/pipelines/config.toml` and falls back to `~/.config/pipelines/config.toml`, even on macOS.
+- Config is loaded from `--config <path>` when provided; otherwise `src/config.rs` prefers `$XDG_CONFIG_HOME/devops/config.toml` and falls back to `~/.config/devops/config.toml`, even on macOS.
 - Required config keys are `[azure_devops].organization` and `[azure_devops].project`.
 - Display refresh defaults live in `DisplayConfig`: 15 seconds for main data refresh and 5 seconds for log refresh.
 - Authentication uses `DeveloperToolsCredential` (Azure CLI / Azure Developer CLI chain); local development depends on `az login` or `azd auth login`.

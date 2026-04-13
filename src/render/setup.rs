@@ -99,7 +99,7 @@ fn draw(f: &mut Frame, state: &SetupState) {
     f.render_widget(Clear, area);
 
     let block = Block::bordered()
-        .title(" Welcome to pipelines ")
+        .title(" Welcome to devops ")
         .title_alignment(Alignment::Center)
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(Color::Cyan));
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn write_initial_creates_valid_config() {
-        let dir = std::env::temp_dir().join("pipelines-test-write-config");
+        let dir = std::env::temp_dir().join("devops-test-write-config");
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("config.toml");
 

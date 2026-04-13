@@ -62,7 +62,7 @@ fn default_check_for_updates() -> bool {
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
-    /// Specifies the log file directory. Defaults to `~/.local/state/pipelines`.
+    /// Specifies the log file directory. Defaults to `~/.local/state/devops`.
     #[serde(default)]
     pub log_directory: Option<String>,
     /// Limits the number of daily log files retained. Defaults to 5.
@@ -273,7 +273,7 @@ fn default_config_path_from(
         .or_else(|| home_dir.map(|h| h.join(".config")))
         .context("Could not determine config directory")?;
 
-    Ok(config_dir.join("pipelines").join("config.toml"))
+    Ok(config_dir.join("devops").join("config.toml"))
 }
 
 #[cfg(test)]
@@ -339,9 +339,7 @@ folders = []
         let test_dir = "C:\\test\\custom\\xdg";
 
         let path = default_config_path_from(Some(PathBuf::from(test_dir)), None).unwrap();
-        let expected = PathBuf::from(test_dir)
-            .join("pipelines")
-            .join("config.toml");
+        let expected = PathBuf::from(test_dir).join("devops").join("config.toml");
         assert_eq!(path, expected);
     }
 
@@ -355,7 +353,7 @@ folders = []
         let path = default_config_path_from(None, Some(home.clone())).unwrap();
         assert_eq!(
             path,
-            home.join(".config").join("pipelines").join("config.toml")
+            home.join(".config").join("devops").join("config.toml")
         );
     }
 
@@ -496,7 +494,7 @@ log_refresh_interval_secs = 10
 
     #[test]
     fn config_save_and_reload() {
-        let dir = std::env::temp_dir().join("pipelines-test-save-config");
+        let dir = std::env::temp_dir().join("devops-test-save-config");
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("config.toml");
 

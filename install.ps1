@@ -1,7 +1,7 @@
-# install.ps1 — Install azure-pipelines-cli from GitHub Releases.
+# install.ps1 — Install azure-devops-cli from GitHub Releases.
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.ps1 | iex
 #
 # Environment variables:
 #   VERSION      — Pin to a specific version (e.g., "0.2.0"). Defaults to latest.
@@ -9,8 +9,8 @@
 
 $ErrorActionPreference = 'Stop'
 
-$Repo = 'ljtill/azure-pipelines-cli'
-$BinaryName = 'pipelines'
+$Repo = 'ljtill/azure-devops-cli'
+$BinaryName = 'devops'
 $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
 $InnerBinary = "$BinaryName-windows-$Arch.exe"
 $Artifact = "$BinaryName-windows-$Arch.zip"
@@ -45,7 +45,7 @@ if (-not (Test-Path $InstallDir)) {
 
 $Dest = Join-Path $InstallDir "$BinaryName.exe"
 $Temp = [System.IO.Path]::GetTempFileName()
-$TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("pipelines-extract-" + [System.IO.Path]::GetRandomFileName())
+$TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("devops-extract-" + [System.IO.Path]::GetRandomFileName())
 $RawContent = (Invoke-WebRequest -Uri $ChecksumsUrl -UseBasicParsing).Content
 $ChecksumBody = if ($RawContent -is [byte[]]) {
     [System.Text.Encoding]::UTF8.GetString($RawContent)

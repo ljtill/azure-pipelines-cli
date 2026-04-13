@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  REPO: ljtill/azure-pipelines-cli
+  REPO: ljtill/azure-devops-cli
 
 jobs:
   # ------------------------------------------------------------------
@@ -75,14 +75,14 @@ jobs:
 
       - name: Verify binary exists and is executable
         run: |
-          test -x "$HOME/.local/bin/pipelines"
+          test -x "$HOME/.local/bin/devops"
           echo "Binary exists and is executable"
 
-      - name: Smoke test — pipelines --help
-        run: pipelines --help
+      - name: Smoke test — devops --help
+        run: devops --help
 
       - name: Clean up before pinned-version test
-        run: rm -f "$HOME/.local/bin/pipelines"
+        run: rm -f "$HOME/.local/bin/devops"
 
       - name: Install via install.sh (pinned version)
         env:
@@ -91,14 +91,14 @@ jobs:
 
       - name: Verify pinned version
         run: |
-          INSTALLED=$("$HOME/.local/bin/pipelines" version 2>&1 || true)
+          INSTALLED=$("$HOME/.local/bin/devops" version 2>&1 || true)
           EXPECTED="${{ needs.check-release.outputs.latest_version }}"
           echo "Installed: $INSTALLED"
           echo "Expected version to contain: $EXPECTED"
           echo "$INSTALLED" | grep -q "$EXPECTED"
 
       - name: Clean up before custom dir test
-        run: rm -f "$HOME/.local/bin/pipelines"
+        run: rm -f "$HOME/.local/bin/devops"
 
       - name: Install via install.sh (custom INSTALL_DIR)
         env:
@@ -108,8 +108,8 @@ jobs:
 
       - name: Verify custom install dir
         run: |
-          test -x "${{ runner.temp }}/custom-bin/pipelines"
-          "${{ runner.temp }}/custom-bin/pipelines" --help
+          test -x "${{ runner.temp }}/custom-bin/devops"
+          "${{ runner.temp }}/custom-bin/devops" --help
 
   # ------------------------------------------------------------------
   # Install script E2E: install.ps1 (Windows)
@@ -137,17 +137,17 @@ jobs:
       - name: Verify binary exists
         shell: pwsh
         run: |
-          $path = Join-Path $HOME '.local\bin\pipelines.exe'
+          $path = Join-Path $HOME '.local\bin\devops.exe'
           if (-not (Test-Path $path)) { throw "Binary not found at $path" }
           Write-Host "Binary exists at $path"
 
-      - name: Smoke test — pipelines --help
+      - name: Smoke test — devops --help
         shell: pwsh
-        run: pipelines --help
+        run: devops --help
 
       - name: Clean up before pinned-version test
         shell: pwsh
-        run: Remove-Item -Force (Join-Path $HOME '.local\bin\pipelines.exe') -ErrorAction SilentlyContinue
+        run: Remove-Item -Force (Join-Path $HOME '.local\bin\devops.exe') -ErrorAction SilentlyContinue
 
       - name: Install via install.ps1 (pinned version)
         shell: pwsh
@@ -158,7 +158,7 @@ jobs:
       - name: Verify pinned version
         shell: pwsh
         run: |
-          $path = Join-Path $HOME '.local\bin\pipelines.exe'
+          $path = Join-Path $HOME '.local\bin\devops.exe'
           $output = & $path version 2>&1 | Out-String
           $expected = "${{ needs.check-release.outputs.latest_version }}"
           Write-Host "Installed: $output"
@@ -167,7 +167,7 @@ jobs:
 
       - name: Clean up before custom dir test
         shell: pwsh
-        run: Remove-Item -Force (Join-Path $HOME '.local\bin\pipelines.exe') -ErrorAction SilentlyContinue
+        run: Remove-Item -Force (Join-Path $HOME '.local\bin\devops.exe') -ErrorAction SilentlyContinue
 
       - name: Install via install.ps1 (custom INSTALL_DIR)
         shell: pwsh
@@ -179,7 +179,7 @@ jobs:
       - name: Verify custom install dir
         shell: pwsh
         run: |
-          $path = Join-Path "${{ runner.temp }}\custom-bin" 'pipelines.exe'
+          $path = Join-Path "${{ runner.temp }}\custom-bin" 'devops.exe'
           if (-not (Test-Path $path)) { throw "Binary not found at $path" }
           & $path --help
 
@@ -209,19 +209,19 @@ jobs:
 
       - name: Verify older version is installed
         run: |
-          INSTALLED=$(pipelines version 2>&1 || true)
+          INSTALLED=$(devops version 2>&1 || true)
           EXPECTED="${{ needs.check-release.outputs.previous_version }}"
           echo "Installed: $INSTALLED"
           echo "$INSTALLED" | grep -q "$EXPECTED"
 
-      - name: Run pipelines update
+      - name: Run devops update
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: pipelines update
+        run: devops update
 
       - name: Verify updated to latest version
         run: |
-          INSTALLED=$(pipelines version 2>&1 || true)
+          INSTALLED=$(devops version 2>&1 || true)
           EXPECTED="${{ needs.check-release.outputs.latest_version }}"
           echo "After update: $INSTALLED"
           echo "Expected: $EXPECTED"
@@ -229,16 +229,16 @@ jobs:
 
       - name: Verify symlink points to versioned binary
         run: |
-          LINK_TARGET=$(readlink "$HOME/.local/bin/pipelines")
-          EXPECTED_DIR="$HOME/.local/share/pipelines/versions/${{ needs.check-release.outputs.latest_version }}"
+          LINK_TARGET=$(readlink "$HOME/.local/bin/devops")
+          EXPECTED_DIR="$HOME/.local/share/devops/versions/${{ needs.check-release.outputs.latest_version }}"
           echo "Symlink target: $LINK_TARGET"
           echo "Expected directory: $EXPECTED_DIR"
           echo "$LINK_TARGET" | grep -q "${{ needs.check-release.outputs.latest_version }}"
 
       - name: Verify versions directory exists
         run: |
-          ls -la "$HOME/.local/share/pipelines/versions/"
-          test -d "$HOME/.local/share/pipelines/versions/${{ needs.check-release.outputs.latest_version }}"
+          ls -la "$HOME/.local/share/devops/versions/"
+          test -d "$HOME/.local/share/devops/versions/${{ needs.check-release.outputs.latest_version }}"
 
   # ------------------------------------------------------------------
   # Self-update E2E (Windows)
@@ -268,21 +268,21 @@ jobs:
       - name: Verify older version is installed
         shell: pwsh
         run: |
-          $output = pipelines version 2>&1 | Out-String
+          $output = devops version 2>&1 | Out-String
           $expected = "${{ needs.check-release.outputs.previous_version }}"
           Write-Host "Installed: $output"
           if ($output -notmatch [regex]::Escape($expected)) { throw "Version mismatch" }
 
-      - name: Run pipelines update
+      - name: Run devops update
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: pipelines update
+        run: devops update
 
       - name: Verify updated to latest version
         shell: pwsh
         run: |
-          $output = pipelines version 2>&1 | Out-String
+          $output = devops version 2>&1 | Out-String
           $expected = "${{ needs.check-release.outputs.latest_version }}"
           Write-Host "After update: $output"
           if ($output -notmatch [regex]::Escape($expected)) { throw "Version mismatch" }
@@ -290,7 +290,7 @@ jobs:
       - name: Verify versions directory exists
         shell: pwsh
         run: |
-          $dir = Join-Path $HOME '.local\share\pipelines\versions'
+          $dir = Join-Path $HOME '.local\share\devops\versions'
           Get-ChildItem -Path $dir
           $versionDir = Join-Path $dir "${{ needs.check-release.outputs.latest_version }}"
           if (-not (Test-Path $versionDir)) { throw "Version directory not found: $versionDir" }

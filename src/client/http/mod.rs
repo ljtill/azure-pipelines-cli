@@ -32,7 +32,7 @@ impl AdoClient {
     pub fn new(organization: &str, project: &str) -> Result<Self> {
         let auth = AdoAuth::new()?;
         let http = Client::builder()
-            .user_agent(concat!("pipelines/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("devops/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .build()?;

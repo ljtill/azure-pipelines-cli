@@ -1,4 +1,4 @@
-//! Entry point for the Azure Pipelines CLI dashboard.
+//! Entry point for the Azure DevOps CLI dashboard.
 
 use std::path::PathBuf;
 
@@ -7,13 +7,13 @@ use clap::{Parser, Subcommand};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 
-use azure_pipelines_cli::client::http::AdoClient;
-use azure_pipelines_cli::config::{Config, check_azure_cli};
-use azure_pipelines_cli::state;
-use azure_pipelines_cli::update;
+use azure_devops_cli::client::http::AdoClient;
+use azure_devops_cli::config::{Config, check_azure_cli};
+use azure_devops_cli::state;
+use azure_devops_cli::update;
 
 #[derive(Parser)]
-#[command(name = "pipelines", about = "TUI dashboard for Azure DevOps Pipelines")]
+#[command(name = "devops", about = "TUI dashboard for Azure DevOps")]
 struct Cli {
     /// Path to the config file.
     #[arg(short, long, global = true)]
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
         return run_update().await;
     }
     if let Some(Command::Version) = cli.command {
-        println!("pipelines v{}", update::current_version());
+        println!("devops v{}", update::current_version());
         return Ok(());
     }
 
@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
         c
     } else {
         // No config file — run interactive setup inside the TUI.
-        let result = azure_pipelines_cli::render::setup::run_setup(&mut terminal, &config_path);
+        let result = azure_devops_cli::render::setup::run_setup(&mut terminal, &config_path);
 
         match result {
             Ok(Some(config)) => {
@@ -155,7 +155,7 @@ async fn run_update() -> Result<()> {
 
 /// Initializes tracing to log to a rolling daily file.
 /// Uses the given level as default; `RUST_LOG` env var overrides if set.
-/// Logs go to `log_dir_override` if set, otherwise `~/.local/state/pipelines/`.
+/// Logs go to `log_dir_override` if set, otherwise `~/.local/state/devops/`.
 /// Retains up to `max_log_files` daily log files.
 fn init_tracing(level: &str, log_dir_override: Option<&str>, max_log_files: usize) {
     use tracing_appender::rolling;
@@ -178,7 +178,7 @@ fn init_tracing(level: &str, log_dir_override: Option<&str>, max_log_files: usiz
     let log_dir = if let Some(dir) = log_dir_override {
         std::path::PathBuf::from(dir)
     } else if let Some(h) = dirs::home_dir() {
-        h.join(".local/state/pipelines")
+        h.join(".local/state/devops")
     } else {
         eprintln!("warning: could not determine home directory; file logging disabled");
         return;
@@ -194,7 +194,7 @@ fn init_tracing(level: &str, log_dir_override: Option<&str>, max_log_files: usiz
 
     let file_appender = rolling::RollingFileAppender::builder()
         .rotation(rolling::Rotation::DAILY)
-        .filename_prefix("pipelines.log")
+        .filename_prefix("devops.log")
         .max_log_files(max_log_files)
         .build(&log_dir);
 

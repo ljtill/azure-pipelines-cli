@@ -409,7 +409,7 @@ pub fn handle_message(
             tracing::info!(version = &*version, "update available");
             app.notifications.push_persistent(
                 crate::state::notifications::NotificationLevel::Info,
-                format!("Update available: v{version} — run 'pipelines update' to upgrade"),
+                format!("Update available: v{version} — run 'devops update' to upgrade"),
             );
         }
         AppMessage::RetentionLeasesDeleted { deleted, failed } => {

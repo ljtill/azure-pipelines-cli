@@ -1,6 +1,6 @@
-# azure-pipelines-cli
+# azure-devops-cli
 
-A terminal (TUI) dashboard for monitoring Azure DevOps Pipelines in real-time.
+A terminal (TUI) dashboard for Azure DevOps.
 
 Built with [ratatui](https://ratatui.rs/) and designed to run inside any modern terminal emulator.
 
@@ -22,7 +22,7 @@ Built with [ratatui](https://ratatui.rs/) and designed to run inside any modern 
 - **In-app settings** — Edit configuration live, save, and reload without restarting
 - **First-run setup** — Interactive setup wizard when no config file exists
 - **Auto-update check** — Background check for new releases on GitHub; persistent notification when an update is available
-- **Self-update** — `pipelines update` downloads the latest release and updates the symlink
+- **Self-update** — `devops update` downloads the latest release and updates the symlink
 - **Azure CLI auth** — Uses `DeveloperToolsCredential` (Azure CLI / Azure Developer CLI chain)
 
 ## Installation
@@ -30,19 +30,19 @@ Built with [ratatui](https://ratatui.rs/) and designed to run inside any modern 
 ### macOS / Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh
 ```
 
 Pin a specific version:
 
 ```sh
-VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
+VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.ps1 | iex
 ```
 
 ### From source
@@ -53,22 +53,22 @@ cargo install --path .
 
 ## Configuration
 
-On first launch, an interactive setup wizard creates `~/.config/pipelines/config.toml` with your Azure DevOps organization and project. All settings can be adjusted in-app with `,` (settings).
+On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project. All settings can be adjusted in-app with `,` (settings).
 
 ## Usage
 
 ```bash
 # Uses default config path
-pipelines
+devops
 
 # Override config path
-pipelines --config /path/to/config.toml
+devops --config /path/to/config.toml
 
 # Print installed version
-pipelines version
+devops version
 
 # Update to the latest release
-pipelines update
+devops update
 ```
 
 ## Keybindings

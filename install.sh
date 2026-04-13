@@ -1,8 +1,8 @@
 #!/bin/sh
-# install.sh — Install azure-pipelines-cli from GitHub Releases.
+# install.sh — Install azure-devops-cli from GitHub Releases.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ljtill/azure-pipelines-cli/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh
 #
 # Environment variables:
 #   VERSION   — Pin to a specific version (e.g., "0.2.0"). Defaults to latest.
@@ -10,8 +10,8 @@
 
 set -eu
 
-REPO="ljtill/azure-pipelines-cli"
-BINARY_NAME="pipelines"
+REPO="ljtill/azure-devops-cli"
+BINARY_NAME="devops"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # --- helpers ----------------------------------------------------------------

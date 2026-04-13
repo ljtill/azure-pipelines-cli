@@ -25,7 +25,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  BINARY_NAME: pipelines
+  BINARY_NAME: devops
 
 jobs:
   version:
@@ -115,7 +115,7 @@ jobs:
             gh extension install github/gh-models || echo "::warning::gh-models extension install failed"
           fi
 
-          PROMPT="You are a release notes writer for an open-source CLI tool called azure-pipelines-cli (a TUI dashboard for Azure DevOps Pipelines).
+          PROMPT="You are a release notes writer for an open-source CLI tool called azure-devops-cli (a TUI dashboard for Azure DevOps).
 
           Given the following git commit messages (using Conventional Commits format), generate clean, polished release notes in Markdown.
 
@@ -199,33 +199,33 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            binary: pipelines-linux-amd64
-            archive: pipelines-linux-amd64.tar.gz
+            binary: devops-linux-amd64
+            archive: devops-linux-amd64.tar.gz
             cross: false
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
-            binary: pipelines-linux-arm64
-            archive: pipelines-linux-arm64.tar.gz
+            binary: devops-linux-arm64
+            archive: devops-linux-arm64.tar.gz
             cross: true
           - target: x86_64-apple-darwin
             runner: macos-latest
-            binary: pipelines-darwin-amd64
-            archive: pipelines-darwin-amd64.tar.gz
+            binary: devops-darwin-amd64
+            archive: devops-darwin-amd64.tar.gz
             cross: false
           - target: aarch64-apple-darwin
             runner: macos-latest
-            binary: pipelines-darwin-arm64
-            archive: pipelines-darwin-arm64.tar.gz
+            binary: devops-darwin-arm64
+            archive: devops-darwin-arm64.tar.gz
             cross: false
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            binary: pipelines-windows-amd64.exe
-            archive: pipelines-windows-amd64.zip
+            binary: devops-windows-amd64.exe
+            archive: devops-windows-amd64.zip
             cross: false
           - target: aarch64-pc-windows-msvc
             runner: windows-11-arm
-            binary: pipelines-windows-arm64.exe
-            archive: pipelines-windows-arm64.zip
+            binary: devops-windows-arm64.exe
+            archive: devops-windows-arm64.zip
             cross: false
 
     steps:
@@ -312,7 +312,7 @@ jobs:
         run: |
           (
             cd artifacts
-            sha256sum pipelines-*.tar.gz pipelines-*.zip > SHA256SUMS
+            sha256sum devops-*.tar.gz devops-*.zip > SHA256SUMS
           )
           cat artifacts/SHA256SUMS
 
@@ -329,8 +329,8 @@ jobs:
             --title "${{ needs.version.outputs.tag }}" \
             --notes-file artifacts/release-notes.md \
             $DRAFT_FLAG \
-            artifacts/pipelines-*.tar.gz \
-            artifacts/pipelines-*.zip \
+            artifacts/devops-*.tar.gz \
+            artifacts/devops-*.zip \
             artifacts/SHA256SUMS
 
   commit-version:

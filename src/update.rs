@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 
-const GITHUB_REPO: &str = "ljtill/azure-pipelines-cli";
+const GITHUB_REPO: &str = "ljtill/azure-devops-cli";
 const GITHUB_API_BASE: &str = "https://api.github.com/repos";
 const GITHUB_DOWNLOAD_BASE: &str = "https://github.com";
 const CHECKSUMS_FILE_NAME: &str = "SHA256SUMS";
@@ -65,9 +65,9 @@ pub fn platform_artifact_name() -> Result<String> {
     };
 
     let name = if cfg!(target_os = "windows") {
-        format!("pipelines-{os}-{arch}.zip")
+        format!("devops-{os}-{arch}.zip")
     } else {
-        format!("pipelines-{os}-{arch}.tar.gz")
+        format!("devops-{os}-{arch}.tar.gz")
     };
 
     Ok(name)
@@ -185,7 +185,7 @@ fn verify_sha256(path: &std::path::Path, expected: &str) -> Result<()> {
 pub fn versions_dir() -> Result<PathBuf> {
     let data_dir = dirs::home_dir()
         .context("Could not determine home directory")?
-        .join(".local/share/pipelines/versions");
+        .join(".local/share/devops/versions");
     Ok(data_dir)
 }
 
@@ -196,9 +196,9 @@ pub fn symlink_path() -> Result<PathBuf> {
         .join(".local/bin");
 
     let name = if cfg!(target_os = "windows") {
-        "pipelines.exe"
+        "devops.exe"
     } else {
-        "pipelines"
+        "devops"
     };
 
     Ok(bin_dir.join(name))
@@ -238,7 +238,7 @@ async fn fetch_latest_version() -> Result<String> {
 
     let mut request = client
         .get(&url)
-        .header("User-Agent", format!("pipelines/{}", current_version()))
+        .header("User-Agent", format!("devops/{}", current_version()))
         .header("Accept", "application/vnd.github+json");
 
     if let Some(token) = github_token() {
@@ -326,9 +326,9 @@ pub async fn self_update() -> Result<UpdateResult> {
         .with_context(|| format!("Failed to create directory: {}", version_dir.display()))?;
 
     let binary_name = if cfg!(target_os = "windows") {
-        "pipelines.exe"
+        "devops.exe"
     } else {
-        "pipelines"
+        "devops"
     };
     let binary_path = version_dir.join(binary_name);
     let archive_path = version_dir.join(&artifact);
@@ -343,7 +343,7 @@ pub async fn self_update() -> Result<UpdateResult> {
 
     let mut archive_req = client
         .get(&download_url)
-        .header("User-Agent", format!("pipelines/{}", current_version()));
+        .header("User-Agent", format!("devops/{}", current_version()));
     if let Some(ref token) = token {
         archive_req = archive_req.header("Authorization", format!("token {token}"));
     }
@@ -356,7 +356,7 @@ pub async fn self_update() -> Result<UpdateResult> {
     tracing::debug!(url = &*checksums_url, "downloading checksums");
     let mut checksums_req = client
         .get(&checksums_url)
-        .header("User-Agent", format!("pipelines/{}", current_version()));
+        .header("User-Agent", format!("devops/{}", current_version()));
     if let Some(ref token) = token {
         checksums_req = checksums_req.header("Authorization", format!("token {token}"));
     }
@@ -390,7 +390,7 @@ pub async fn self_update() -> Result<UpdateResult> {
     extract_archive(&archive_path, &version_dir)?;
     let _ = std::fs::remove_file(&archive_path);
 
-    // Removes the platform-named binary left by extraction (e.g. pipelines-darwin-arm64).
+    // Removes the platform-named binary left by extraction (e.g. devops-darwin-arm64).
     let extracted_name = if cfg!(target_os = "windows") {
         artifact.strip_suffix(".zip").unwrap_or(&artifact)
     } else {
@@ -583,7 +583,7 @@ mod tests {
     #[test]
     fn platform_artifact_name_succeeds() {
         let name = platform_artifact_name().unwrap();
-        assert!(name.starts_with("pipelines-"));
+        assert!(name.starts_with("devops-"));
         assert!(name.contains("amd64") || name.contains("arm64"));
         let path = std::path::Path::new(&name);
         // Archive must be .tar.gz or .zip.
@@ -599,8 +599,8 @@ mod tests {
     fn artifact_download_url_uses_canonical_artifact_name() {
         let url = artifact_download_url("1.2.3").unwrap();
         assert!(url.contains("/releases/download/v1.2.3/"));
-        assert!(url.contains("pipelines-"));
-        assert!(!url.contains("azure-pipelines-cli-"));
+        assert!(url.contains("devops-"));
+        assert!(!url.contains("azure-devops-cli-"));
     }
 
     #[test]
@@ -612,10 +612,10 @@ mod tests {
     #[test]
     fn parse_checksum_manifest_returns_matching_hash() {
         let manifest = "\
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  pipelines-linux-amd64.tar.gz
-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-windows-amd64.zip
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  devops-linux-amd64.tar.gz
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows-amd64.zip
 ";
-        let hash = parse_checksum_manifest(manifest, "pipelines-windows-amd64.zip").unwrap();
+        let hash = parse_checksum_manifest(manifest, "devops-windows-amd64.zip").unwrap();
         assert_eq!(
             hash,
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -624,8 +624,8 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-wind
 
     #[test]
     fn parse_checksum_manifest_rejects_missing_artifact() {
-        let manifest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  pipelines-linux-amd64.tar.gz";
-        let err = parse_checksum_manifest(manifest, "pipelines-darwin-arm64.tar.gz").unwrap_err();
+        let manifest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  devops-linux-amd64.tar.gz";
+        let err = parse_checksum_manifest(manifest, "devops-darwin-arm64.tar.gz").unwrap_err();
         assert!(err.to_string().contains("not found"));
     }
 
@@ -633,15 +633,13 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  pipelines-wind
     fn versions_dir_is_under_home() {
         let dir = versions_dir().unwrap();
         let dir_str = dir.to_string_lossy();
-        assert!(dir_str.contains(".local/share/pipelines/versions"));
+        assert!(dir_str.contains(".local/share/devops/versions"));
     }
 
     #[test]
     fn symlink_path_is_under_bin() {
         let path = symlink_path().unwrap();
-        assert!(
-            path.ends_with(".local/bin/pipelines") || path.ends_with(".local/bin/pipelines.exe")
-        );
+        assert!(path.ends_with(".local/bin/devops") || path.ends_with(".local/bin/devops.exe"));
     }
 
     #[test]

@@ -1,14 +1,14 @@
 [package]
-name = "azure-pipelines-cli"
+name = "azure-devops-cli"
 version = "1.0.1"
 edition = "2024"
-description = "A terminal dashboard for monitoring Azure DevOps pipelines"
-repository = "https://github.com/ljtill/azure-pipelines-cli"
+description = "A terminal dashboard for Azure DevOps"
+repository = "https://github.com/ljtill/azure-devops-cli"
 readme = "README.md"
 rust-version = "1.94"
 
 [[bin]]
-name = "pipelines"
+name = "devops"
 path = "src/main.rs"
 
 [dependencies]

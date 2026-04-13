@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you find a security issue in `azure-pipelines-cli`, please report it privately instead of opening a public issue.
+If you find a security issue in `azure-devops-cli`, please report it privately instead of opening a public issue.
 
 1. Open a GitHub security advisory for this repository if that workflow is available to you.
 2. If not, contact the maintainer directly through the repository owner contact path on GitHub and include:

@@ -1,11 +1,9 @@
 use std::path::PathBuf;
 
-use azure_pipelines_cli::client::models::*;
-use azure_pipelines_cli::events::{Action, handle_key};
-use azure_pipelines_cli::state::{
-    App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, View,
-};
-use azure_pipelines_cli::test_helpers::*;
+use azure_devops_cli::client::models::*;
+use azure_devops_cli::events::{Action, handle_key};
+use azure_devops_cli::state::{App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, View};
+use azure_devops_cli::test_helpers::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 // ---------------------------------------------------------------------------
@@ -585,7 +583,7 @@ fn key_4_switches_to_pull_requests() {
 
 #[test]
 fn tab_cycles_pr_mode() {
-    use azure_pipelines_cli::components::pull_requests::PrViewMode;
+    use azure_devops_cli::components::pull_requests::PrViewMode;
 
     let mut app = test_app();
     app.view = View::PullRequests;

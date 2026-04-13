@@ -1,7 +1,7 @@
-//! # azure-pipelines-cli
+//! # azure-devops-cli
 //!
-//! A terminal-based dashboard for monitoring and controlling Azure DevOps
-//! Pipelines, built with [ratatui](https://ratatui.rs) and crossterm.
+//! A terminal-based dashboard for monitoring and controlling Azure DevOps,
+//! built with [ratatui](https://ratatui.rs) and crossterm.
 //!
 //! ## Architecture
 //!
