@@ -402,6 +402,36 @@ pub fn spawn_fetch_pull_requests(app: &App, client: &AdoClient, tx: &mpsc::Sende
     );
 }
 
+/// Spawns an async task that fetches "Created by me" PRs for the Dashboard.
+pub fn spawn_fetch_dashboard_pull_requests(
+    app: &App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+) {
+    let user_id = app.user_id.clone();
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::info_span!("fetch_dashboard_prs");
+    tokio::spawn(
+        async move {
+            let msg = match client
+                .list_pull_requests("active", user_id.as_deref(), None)
+                .await
+            {
+                Ok(prs) => AppMessage::DashboardPullRequests { pull_requests: prs },
+                Err(e) => {
+                    tracing::debug!(error = %e, "dashboard PR fetch failed (non-fatal)");
+                    AppMessage::DashboardPullRequests {
+                        pull_requests: vec![],
+                    }
+                }
+            };
+            let _ = tx.send(msg).await;
+        }
+        .instrument(span),
+    );
+}
+
 /// Spawns an async task that fetches a pull request and its threads in parallel.
 pub fn spawn_fetch_pr_detail(
     client: &AdoClient,

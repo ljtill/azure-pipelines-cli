@@ -458,6 +458,11 @@ pub fn handle_message(
             let section_count = app.pull_request_detail.section_count();
             app.pull_request_detail.nav.set_len(section_count);
         }
+        AppMessage::DashboardPullRequests { pull_requests } => {
+            tracing::info!(count = pull_requests.len(), "dashboard PRs loaded");
+            app.dashboard_pull_requests = pull_requests;
+            app.rebuild_dashboard();
+        }
     }
 }
 

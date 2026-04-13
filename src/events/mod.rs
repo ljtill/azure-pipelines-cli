@@ -48,6 +48,7 @@ pub enum Action {
         repo_id: String,
         pr_id: u32,
     },
+    FetchDashboardPullRequests,
 }
 
 /// Dispatches a key event to the appropriate view-specific handler.
@@ -126,7 +127,8 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             tracing::info!(from = ?app.view, to = ?View::Dashboard, "view switch");
             app.search.query.clear();
             app.view = View::Dashboard;
-            Some(Action::None)
+            app.rebuild_dashboard();
+            Some(Action::FetchDashboardPullRequests)
         }
         KeyCode::Char('2') => {
             tracing::info!(from = ?app.view, to = ?View::Pipelines, "view switch");

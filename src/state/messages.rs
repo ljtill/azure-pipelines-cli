@@ -79,4 +79,7 @@ pub enum AppMessage {
         pull_request: PullRequest,
         threads: Vec<PullRequestThread>,
     },
+    DashboardPullRequests {
+        pull_requests: Vec<PullRequest>,
+    },
 }

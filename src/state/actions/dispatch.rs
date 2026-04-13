@@ -12,8 +12,9 @@ use super::super::TimelineRow;
 use super::super::View;
 use super::super::messages::AppMessage;
 use super::spawn::{
-    open_url, spawn_api, spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_pr_detail,
-    spawn_fetch_pull_requests, spawn_log_fetch, spawn_timeline_fetch,
+    open_url, spawn_api, spawn_build_history_refresh, spawn_data_refresh,
+    spawn_fetch_dashboard_pull_requests, spawn_fetch_pr_detail, spawn_fetch_pull_requests,
+    spawn_log_fetch, spawn_timeline_fetch,
 };
 
 pub fn handle_action(
@@ -215,6 +216,9 @@ pub fn handle_action(
         }
         Action::FetchPullRequestDetail { repo_id, pr_id } => {
             spawn_fetch_pr_detail(client, tx, repo_id, pr_id);
+        }
+        Action::FetchDashboardPullRequests => {
+            spawn_fetch_dashboard_pull_requests(app, client, tx);
         }
         Action::None => {}
     }

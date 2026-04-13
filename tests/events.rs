@@ -34,7 +34,7 @@ fn key_1_switches_to_dashboard() {
     app.view = View::Pipelines;
     let action = handle_key(&mut app, key(KeyCode::Char('1')));
     assert_eq!(app.view, View::Dashboard);
-    assert!(matches!(action, Action::None));
+    assert!(matches!(action, Action::FetchDashboardPullRequests));
 }
 
 #[test]

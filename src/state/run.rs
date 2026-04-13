@@ -14,7 +14,7 @@ use crate::config::Config;
 use crate::events::{handle_key, handle_mouse};
 use crate::render;
 
-use super::actions::spawn::spawn_fetch_user_identity;
+use super::actions::spawn::{spawn_fetch_dashboard_pull_requests, spawn_fetch_user_identity};
 use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_log_refresh};
 use super::messages::AppMessage;
 use super::{App, View};
@@ -80,6 +80,10 @@ pub async fn run(
 
         if should_refresh_data && spawn_data_refresh(&mut app, &client, &tx) {
             last_data_fetch = Instant::now();
+            // Fetch dashboard PRs alongside the data refresh.
+            if app.view == View::Dashboard {
+                spawn_fetch_dashboard_pull_requests(&app, &client, &tx);
+            }
         }
 
         if should_refresh_logs && spawn_log_refresh(&mut app, &client, &tx) {
