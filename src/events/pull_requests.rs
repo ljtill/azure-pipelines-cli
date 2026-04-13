@@ -14,6 +14,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             tracing::info!(mode = ?app.pull_requests.mode, "cycling PR view mode");
             Action::FetchPullRequests
         }
+        KeyCode::BackTab => {
+            app.pull_requests.mode = app.pull_requests.mode.prev();
+            tracing::info!(mode = ?app.pull_requests.mode, "cycling PR view mode backwards");
+            Action::FetchPullRequests
+        }
         KeyCode::Char('/') => {
             app.search.mode = InputMode::Search;
             Action::None

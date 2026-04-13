@@ -32,6 +32,16 @@ impl PrViewMode {
         }
     }
 
+    /// Cycles to the previous sub-mode.
+    #[must_use]
+    pub fn prev(self) -> Self {
+        match self {
+            PrViewMode::CreatedByMe => PrViewMode::AllActive,
+            PrViewMode::AssignedToMe => PrViewMode::CreatedByMe,
+            PrViewMode::AllActive => PrViewMode::AssignedToMe,
+        }
+    }
+
     /// Returns a user-facing label for the mode.
     pub fn label(self) -> &'static str {
         match self {
@@ -239,7 +249,7 @@ impl Component for PullRequests {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "Tab mode  ↑↓ navigate  →/Enter detail  / search  o open  r refresh  1/2/3/4 tabs  ? help"
+        "Tab/Shift-Tab mode  ↑↓ navigate  →/Enter detail  / search  o open  r refresh  1/2/3/4 tabs  ? help"
     }
 }
 
@@ -253,6 +263,13 @@ mod tests {
         assert_eq!(PrViewMode::CreatedByMe.next(), PrViewMode::AssignedToMe);
         assert_eq!(PrViewMode::AssignedToMe.next(), PrViewMode::AllActive);
         assert_eq!(PrViewMode::AllActive.next(), PrViewMode::CreatedByMe);
+    }
+
+    #[test]
+    fn pr_view_mode_cycles_backwards() {
+        assert_eq!(PrViewMode::CreatedByMe.prev(), PrViewMode::AllActive);
+        assert_eq!(PrViewMode::AssignedToMe.prev(), PrViewMode::CreatedByMe);
+        assert_eq!(PrViewMode::AllActive.prev(), PrViewMode::AssignedToMe);
     }
 
     #[test]

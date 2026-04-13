@@ -603,6 +603,27 @@ fn tab_cycles_pr_mode() {
 }
 
 #[test]
+fn shift_tab_cycles_pr_mode_backwards() {
+    use azure_devops_cli::components::pull_requests::PrViewMode;
+
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    assert_eq!(app.pull_requests.mode, PrViewMode::CreatedByMe);
+
+    let action = handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(app.pull_requests.mode, PrViewMode::AllActive);
+    assert!(matches!(action, Action::FetchPullRequests));
+
+    let action = handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(app.pull_requests.mode, PrViewMode::AssignedToMe);
+    assert!(matches!(action, Action::FetchPullRequests));
+
+    let action = handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(app.pull_requests.mode, PrViewMode::CreatedByMe);
+    assert!(matches!(action, Action::FetchPullRequests));
+}
+
+#[test]
 fn slash_enters_search_on_pull_requests() {
     let mut app = test_app();
     app.view = View::PullRequests;
