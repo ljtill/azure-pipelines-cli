@@ -95,6 +95,12 @@ pub fn handle_action(
                     app.log_viewer.clear_log();
                 }
             }
+
+            // Kick off a fresh timeline refresh so follow mode gets the latest data
+            // instead of relying on the cached timeline (up to 5 seconds stale).
+            if let Some(build) = app.log_viewer.selected_build() {
+                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
+            }
         }
         Action::OpenInBrowser(url) => {
             let _ = open_url(&url);
