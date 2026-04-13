@@ -14,6 +14,7 @@ use crate::config::Config;
 use crate::events::{handle_key, handle_mouse};
 use crate::render;
 
+use super::actions::spawn::spawn_fetch_user_identity;
 use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_log_refresh};
 use super::messages::AppMessage;
 use super::{App, View};
@@ -53,6 +54,9 @@ pub async fn run(
             }
         });
     }
+
+    // Resolve current user identity for PR filtering (once, at startup).
+    spawn_fetch_user_identity(&client, &tx);
 
     tracing::info!(
         refresh_secs = config.display.refresh_interval_secs,

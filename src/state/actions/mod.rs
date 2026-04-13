@@ -2,7 +2,7 @@
 
 mod dispatch;
 mod messages;
-mod spawn;
+pub mod spawn;
 
 pub use dispatch::handle_action;
 pub use messages::handle_message;

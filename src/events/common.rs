@@ -212,6 +212,10 @@ pub fn rebuild_search_results(app: &mut App) {
             );
             app.active_runs.nav.set_index(0);
         }
+        View::PullRequests => {
+            app.pull_requests.rebuild(&app.search.query);
+            app.pull_requests.nav.set_index(0);
+        }
         // Pull Requests search will be wired in Phase 2.
         _ => {}
     }

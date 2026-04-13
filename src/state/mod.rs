@@ -371,6 +371,11 @@ impl App {
         self.endpoints.web_definition(definition_id)
     }
 
+    /// Constructs the web portal URL for viewing a pull request.
+    pub fn endpoints_web_pull_request(&self, repo_name: &str, pr_id: u32) -> String {
+        self.endpoints.web_pull_request(repo_name, pr_id)
+    }
+
     /// Builds a snapshot `Config` reflecting the current runtime state.
     /// Used to populate the settings overlay.
     pub fn current_config(&self) -> crate::config::Config {

@@ -589,3 +589,113 @@ fn settings_save_no_reload_when_connection_unchanged() {
     assert!(!app.reload_requested);
     assert!(matches!(action, Action::None));
 }
+
+// ---------------------------------------------------------------------------
+// Pull Requests view
+// ---------------------------------------------------------------------------
+
+#[test]
+fn key_4_switches_to_pull_requests() {
+    let mut app = test_app();
+    let action = handle_key(&mut app, key(KeyCode::Char('4')));
+    assert_eq!(app.view, View::PullRequests);
+    assert!(matches!(action, Action::FetchPullRequests));
+}
+
+#[test]
+fn tab_cycles_pr_mode() {
+    use azure_pipelines_cli::components::pull_requests::PrViewMode;
+
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    assert_eq!(app.pull_requests.mode, PrViewMode::CreatedByMe);
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.pull_requests.mode, PrViewMode::AssignedToMe);
+    assert!(matches!(action, Action::FetchPullRequests));
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.pull_requests.mode, PrViewMode::AllActive);
+    assert!(matches!(action, Action::FetchPullRequests));
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.pull_requests.mode, PrViewMode::CreatedByMe);
+    assert!(matches!(action, Action::FetchPullRequests));
+}
+
+#[test]
+fn slash_enters_search_on_pull_requests() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+
+    handle_key(&mut app, key(KeyCode::Char('/')));
+    assert_eq!(app.search.mode, InputMode::Search);
+}
+
+#[test]
+fn pr_search_filters_list() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+
+    // Populate PRs.
+    app.pull_requests.set_data(
+        vec![
+            make_pull_request(1, "Add feature", "active", "frontend"),
+            make_pull_request(2, "Fix bug", "active", "backend"),
+        ],
+        "",
+    );
+    assert_eq!(app.pull_requests.filtered.len(), 2);
+
+    // Enter search mode and type "bug".
+    handle_key(&mut app, key(KeyCode::Char('/')));
+    handle_key(&mut app, key(KeyCode::Char('b')));
+    handle_key(&mut app, key(KeyCode::Char('u')));
+    handle_key(&mut app, key(KeyCode::Char('g')));
+    assert_eq!(app.pull_requests.filtered.len(), 1);
+    assert_eq!(app.pull_requests.filtered[0].pull_request_id, 2);
+}
+
+#[test]
+fn q_on_pull_requests_goes_to_dashboard() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+
+    handle_key(&mut app, key(KeyCode::Char('q')));
+    assert_eq!(app.view, View::Dashboard);
+}
+
+#[test]
+fn esc_on_pull_requests_goes_to_dashboard() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.view, View::Dashboard);
+}
+
+#[test]
+fn tab_switching_clears_search_on_pr_switch() {
+    let mut app = test_app();
+    app.view = View::Pipelines;
+    app.search.query = "old query".to_string();
+
+    handle_key(&mut app, key(KeyCode::Char('4')));
+    assert_eq!(app.view, View::PullRequests);
+    assert!(app.search.query.is_empty());
+}
+
+#[test]
+fn o_opens_browser_on_pull_requests() {
+    let mut app = test_app();
+    app.view = View::PullRequests;
+    app.pull_requests.set_data(
+        vec![make_pull_request(42, "Test PR", "active", "my-repo")],
+        "",
+    );
+
+    let action = handle_key(&mut app, key(KeyCode::Char('o')));
+    assert!(
+        matches!(action, Action::OpenInBrowser(url) if url.contains("my-repo") && url.contains("42"))
+    );
+}

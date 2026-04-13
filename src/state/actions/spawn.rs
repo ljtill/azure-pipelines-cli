@@ -373,6 +373,63 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
     true
 }
 
+/// Spawns an async task that fetches pull requests from the Azure DevOps REST API.
+pub fn spawn_fetch_pull_requests(app: &App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
+    use crate::components::pull_requests::PrViewMode;
+
+    let mode = app.pull_requests.mode;
+    let user_id = app.user_id.clone();
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::info_span!("fetch_pull_requests", ?mode);
+    tokio::spawn(
+        async move {
+            let (status, creator_id, reviewer_id) = match mode {
+                PrViewMode::CreatedByMe => ("active", user_id.as_deref(), None),
+                PrViewMode::AssignedToMe => ("active", None, user_id.as_deref()),
+                PrViewMode::AllActive => ("active", None, None),
+            };
+            let msg = match client
+                .list_pull_requests(status, creator_id, reviewer_id)
+                .await
+            {
+                Ok(prs) => AppMessage::PullRequestsLoaded { pull_requests: prs },
+                Err(e) => AppMessage::Error(format!("Fetch pull requests: {e}")),
+            };
+            let _ = tx.send(msg).await;
+        }
+        .instrument(span),
+    );
+}
+
+/// Spawns a one-shot task to resolve the current user's identity from the ADO Connection Data API.
+pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::info_span!("fetch_user_identity");
+    tokio::spawn(
+        async move {
+            match client.get_connection_data().await {
+                Ok(cd) => {
+                    if let Some(id) = cd.user_id() {
+                        let _ = tx
+                            .send(AppMessage::UserIdentity {
+                                user_id: id.to_string(),
+                            })
+                            .await;
+                    } else {
+                        tracing::warn!("connection data returned no user id");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to resolve user identity");
+                }
+            }
+        }
+        .instrument(span),
+    );
+}
+
 /// Opens a URL in the platform's default browser.
 pub(super) fn open_url(url: &str) -> std::io::Result<std::process::Child> {
     // Only allow https:// URLs to prevent command injection.

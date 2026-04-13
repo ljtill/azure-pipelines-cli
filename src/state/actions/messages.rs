@@ -444,6 +444,14 @@ pub fn handle_message(
                 spawn_build_history_refresh(app, client, tx, Some(top));
             }
         }
+        AppMessage::PullRequestsLoaded { pull_requests } => {
+            tracing::info!(count = pull_requests.len(), "pull requests loaded");
+            app.pull_requests.set_data(pull_requests, &app.search.query);
+        }
+        AppMessage::UserIdentity { user_id } => {
+            tracing::info!("user identity resolved");
+            app.user_id = Some(user_id);
+        }
     }
 }
 

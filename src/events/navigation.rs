@@ -34,7 +34,19 @@ pub fn handle_open_in_browser(app: &App) -> Action {
             .log_viewer
             .selected_build()
             .map(|b| app.endpoints_web_build(b.id)),
-        View::PullRequests | View::PullRequestDetail => None, // TODO: Phase 2/3 will wire PR browser URLs.
+        View::PullRequests => app
+            .pull_requests
+            .filtered
+            .get(app.pull_requests.nav.index())
+            .and_then(|pr| {
+                let repo_name = pr.repo_name();
+                if repo_name.is_empty() {
+                    None
+                } else {
+                    Some(app.endpoints_web_pull_request(repo_name, pr.pull_request_id))
+                }
+            }),
+        View::PullRequestDetail => None, // TODO: Phase 3 will wire PR detail browser URL.
     };
 
     url.map_or(Action::None, Action::OpenInBrowser)

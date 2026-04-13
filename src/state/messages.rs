@@ -1,6 +1,8 @@
 //! Asynchronous message types for state updates.
 
-use crate::client::models::{Approval, Build, BuildTimeline, PipelineDefinition, RetentionLease};
+use crate::client::models::{
+    Approval, Build, BuildTimeline, PipelineDefinition, PullRequest, RetentionLease,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefreshSource {
@@ -65,5 +67,11 @@ pub enum AppMessage {
     RetentionLeasesDeleted {
         deleted: u32,
         failed: u32,
+    },
+    PullRequestsLoaded {
+        pull_requests: Vec<PullRequest>,
+    },
+    UserIdentity {
+        user_id: String,
     },
 }

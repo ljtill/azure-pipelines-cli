@@ -7,6 +7,7 @@ mod dashboard;
 mod log_viewer;
 mod navigation;
 mod pipelines;
+mod pull_requests;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -86,8 +87,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         View::ActiveRuns => active_runs::handle_key(app, key),
         View::BuildHistory => build_history::handle_key(app, key),
         View::LogViewer => log_viewer::handle_key(app, key),
-        // Pull Request views — no view-specific keys until Phase 2.
-        View::PullRequests | View::PullRequestDetail => Action::None,
+        View::PullRequests => pull_requests::handle_key(app, key),
+        // PR Detail view — no view-specific keys until Phase 3.
+        View::PullRequestDetail => Action::None,
     }
 }
 
