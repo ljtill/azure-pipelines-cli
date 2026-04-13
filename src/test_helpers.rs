@@ -283,12 +283,7 @@ pub fn make_app() -> App {
     app.data.latest_builds_by_def.insert(2, b2);
     app.data.latest_builds_by_def.insert(3, b3);
 
-    app.dashboard.rebuild(
-        &app.data.definitions,
-        &app.data.latest_builds_by_def,
-        &app.filters.folders,
-        &app.filters.definition_ids,
-    );
+    app.rebuild_dashboard();
     app.rebuild_pipelines();
 
     app

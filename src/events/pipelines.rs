@@ -150,12 +150,7 @@ fn handle_pin(app: &mut App) -> Action {
 
     // Rebuild to update pin indicators.
     app.rebuild_pipelines();
-    app.dashboard.rebuild(
-        &app.data.definitions,
-        &app.data.latest_builds_by_def,
-        &app.filters.folders,
-        &app.filters.definition_ids,
-    );
+    app.rebuild_dashboard();
 
     Action::None
 }

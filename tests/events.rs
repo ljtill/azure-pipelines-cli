@@ -423,19 +423,14 @@ fn c_sets_confirm_on_active_runs() {
 fn o_opens_browser_on_dashboard() {
     let mut app = test_app();
     app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
-    app.dashboard.rebuild(
-        &app.data.definitions,
-        &app.data.latest_builds_by_def,
-        &app.filters.folders,
-        &app.filters.definition_ids,
-    );
-    // Row 0 is a folder header; move to row 1 which is the pipeline
+    app.filters.pinned_definition_ids = vec![1];
+    app.rebuild_dashboard();
+    // Row 0 is "Pinned Pipelines" header; row 1 is the pinned pipeline.
     app.dashboard.nav.down();
 
-    // Verify we are on a Pipeline row
     assert!(matches!(
         app.dashboard.rows.get(app.dashboard.nav.index()),
-        Some(DashboardRow::Pipeline { .. })
+        Some(DashboardRow::PinnedPipeline { .. })
     ));
 
     let action = handle_key(&mut app, key(KeyCode::Char('o')));

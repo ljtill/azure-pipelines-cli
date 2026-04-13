@@ -126,12 +126,7 @@ pub fn handle_settings_save(app: &mut App) -> Action {
                     Duration::from_secs(config.display.log_refresh_interval_secs);
 
                 // Rebuild filtered views with new filters.
-                app.dashboard.rebuild(
-                    &app.data.definitions,
-                    &app.data.latest_builds_by_def,
-                    &app.filters.folders,
-                    &app.filters.definition_ids,
-                );
+                app.rebuild_dashboard();
                 app.rebuild_pipelines();
                 app.active_runs.rebuild(
                     &app.data.active_builds,

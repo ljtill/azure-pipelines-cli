@@ -143,12 +143,7 @@ pub fn handle_message(
                 .collect();
             app.data.pending_approvals = pending_approvals;
 
-            app.dashboard.rebuild(
-                &app.data.definitions,
-                &app.data.latest_builds_by_def,
-                &app.filters.folders,
-                &app.filters.definition_ids,
-            );
+            app.rebuild_dashboard();
             app.rebuild_pipelines();
             app.active_runs.rebuild(
                 &app.data.active_builds,
@@ -505,12 +500,7 @@ mod tests {
         app.data.recent_builds = recent;
         app.data.active_builds = vec![];
         app.data.pending_approvals = vec![];
-        app.dashboard.rebuild(
-            &app.data.definitions,
-            &app.data.latest_builds_by_def,
-            &app.filters.folders,
-            &app.filters.definition_ids,
-        );
+        app.rebuild_dashboard();
         app.rebuild_pipelines();
         app.active_runs.rebuild(
             &app.data.active_builds,
@@ -550,12 +540,7 @@ mod tests {
         app.data.latest_builds_by_def.clear();
         app.data.active_builds = vec![];
         app.data.pending_approvals = vec![];
-        app.dashboard.rebuild(
-            &app.data.definitions,
-            &app.data.latest_builds_by_def,
-            &app.filters.folders,
-            &app.filters.definition_ids,
-        );
+        app.rebuild_dashboard();
         app.rebuild_pipelines();
         app.active_runs.rebuild(
             &app.data.active_builds,

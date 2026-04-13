@@ -7,13 +7,20 @@ use crate::state::{App, ConfirmAction, ConfirmPrompt, View};
 pub fn handle_open_in_browser(app: &App) -> Action {
     let url = match app.view {
         View::Dashboard => {
-            if let Some(crate::state::DashboardRow::Pipeline { definition, .. }) =
-                app.dashboard.rows.get(app.dashboard.nav.index())
-            {
-                Some(app.endpoints_web_definition(definition.id))
-            } else {
-                None
-            }
+            let idx = app.dashboard.nav.index();
+            app.dashboard
+                .pinned_definition_at(idx)
+                .map(|def| app.endpoints_web_definition(def.id))
+                .or_else(|| {
+                    app.dashboard.pull_request_at(idx).and_then(|pr| {
+                        let repo_name = pr.repo_name();
+                        if repo_name.is_empty() {
+                            None
+                        } else {
+                            Some(app.endpoints_web_pull_request(repo_name, pr.pull_request_id))
+                        }
+                    })
+                })
         }
         View::Pipelines => app
             .pipelines
@@ -98,10 +105,11 @@ pub fn handle_cancel_request(app: &mut App) -> Action {
 pub fn handle_queue_request(app: &mut App) -> Action {
     let (def_id, def_name) = match app.view {
         View::Dashboard => {
-            if let Some(crate::state::DashboardRow::Pipeline { definition, .. }) =
-                app.dashboard.rows.get(app.dashboard.nav.index())
+            if let Some(def) = app
+                .dashboard
+                .pinned_definition_at(app.dashboard.nav.index())
             {
-                (definition.id, definition.name.clone())
+                (def.id, def.name.clone())
             } else {
                 return Action::None;
             }

@@ -1,6 +1,6 @@
-//! Dashboard view component showing pipeline status grouped by folder.
+//! Dashboard view component showing pinned pipelines and personal pull requests.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use ratatui::Frame;
@@ -10,123 +10,93 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
 use super::Component;
-use crate::client::models::{Build, PipelineDefinition};
+use crate::client::models::{Build, PipelineDefinition, PullRequest};
 use crate::render::helpers::{
-    build_elapsed, effective_status_icon, effective_status_label, truncate,
+    build_elapsed, effective_status_icon, effective_status_label, pr_status_icon, truncate,
 };
 use crate::render::theme;
 use crate::state::App;
 use crate::state::nav::ListNav;
 
-/// Represents a row in the dashboard grouped view — either a folder header or a pipeline entry.
+/// Represents a row in the dashboard view.
 #[derive(Debug, Clone)]
 pub enum DashboardRow {
-    FolderHeader {
-        path: String,
-        collapsed: bool,
+    SectionHeader {
+        title: String,
     },
-    Pipeline {
+    PinnedPipeline {
         definition: PipelineDefinition,
         latest_build: Option<Box<Build>>,
     },
+    DashboardPullRequest {
+        pull_request: Box<PullRequest>,
+    },
+    EmptyHint {
+        message: String,
+    },
 }
 
-/// Normalizes an ADO definition path to a canonical folder key.
-/// Empty or `\\` paths become `\\`; everything else is kept as-is.
-fn folder_key(path: &str) -> String {
-    if path.is_empty() || path == "\\" {
-        "\\".to_string()
-    } else {
-        path.to_string()
-    }
-}
-
-/// Converts a raw folder key (e.g. `\\Infra\\Deploy`) to a display-friendly string.
-fn folder_display(key: &str) -> String {
-    let display = key.trim_start_matches('\\').replace('\\', " / ");
-    if display.is_empty() {
-        "Root".to_string()
-    } else {
-        display
-    }
-}
-
-/// Checks if a definition passes the configured filters.
-fn matches_filter(
-    def: &PipelineDefinition,
-    filter_definition_ids: &[u32],
-    filter_folders: &[String],
-) -> bool {
-    if !filter_definition_ids.is_empty() && !filter_definition_ids.contains(&def.id) {
-        return false;
-    }
-    if !filter_folders.is_empty() && !filter_folders.iter().any(|f| def.path.starts_with(f)) {
-        return false;
-    }
-    true
-}
-
-fn find_folder_key_for_display(
-    display_path: &str,
-    definitions: &[PipelineDefinition],
-) -> Option<String> {
-    for def in definitions {
-        let key = folder_key(&def.path);
-        if folder_display(&key) == display_path {
-            return Some(key);
-        }
-    }
-    None
-}
-
-/// Renders pipelines grouped by folder with collapse/expand.
+/// Renders the personalised dashboard with pinned pipelines and pull requests.
 #[derive(Debug, Default)]
 pub struct Dashboard {
     pub rows: Vec<DashboardRow>,
-    pub collapsed_folders: HashSet<String>,
     pub nav: ListNav,
 }
 
 impl Dashboard {
-    /// Rebuilds the dashboard rows from definitions + latest builds, grouped by folder.
+    /// Rebuilds the dashboard from pinned pipeline IDs, definitions, latest builds, and PRs.
     pub fn rebuild(
         &mut self,
         definitions: &[PipelineDefinition],
         latest_builds_by_def: &BTreeMap<u32, Build>,
-        filter_folders: &[String],
-        filter_definition_ids: &[u32],
+        pinned_ids: &[u32],
+        dashboard_prs: &[PullRequest],
     ) {
         let mut rows = Vec::new();
-        let mut by_folder: BTreeMap<String, Vec<(PipelineDefinition, Option<Build>)>> =
-            BTreeMap::new();
 
-        for def in definitions {
-            if !matches_filter(def, filter_definition_ids, filter_folders) {
-                continue;
+        // --- Pinned Pipelines section ---
+        rows.push(DashboardRow::SectionHeader {
+            title: "Pinned Pipelines".to_string(),
+        });
+
+        let mut pinned: Vec<(PipelineDefinition, Option<Build>)> = pinned_ids
+            .iter()
+            .filter_map(|id| {
+                definitions
+                    .iter()
+                    .find(|d| d.id == *id)
+                    .map(|d| (d.clone(), latest_builds_by_def.get(id).cloned()))
+            })
+            .collect();
+        pinned.sort_by(|(a, _), (b, _)| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+        if pinned.is_empty() {
+            rows.push(DashboardRow::EmptyHint {
+                message: "No pipelines pinned — press 'p' in the Pipelines view to pin".to_string(),
+            });
+        } else {
+            for (def, build) in pinned {
+                rows.push(DashboardRow::PinnedPipeline {
+                    definition: def,
+                    latest_build: build.map(Box::new),
+                });
             }
-            let folder = folder_key(&def.path);
-            let latest = latest_builds_by_def.get(&def.id).cloned();
-            by_folder
-                .entry(folder)
-                .or_default()
-                .push((def.clone(), latest));
         }
 
-        for (key, mut pipelines) in by_folder {
-            pipelines.sort_by(|(a, _), (b, _)| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-            let collapsed = self.collapsed_folders.contains(&key);
-            rows.push(DashboardRow::FolderHeader {
-                path: folder_display(&key),
-                collapsed,
-            });
+        // --- My Pull Requests section ---
+        rows.push(DashboardRow::SectionHeader {
+            title: "My Pull Requests".to_string(),
+        });
 
-            if !collapsed {
-                for (def, build) in &pipelines {
-                    rows.push(DashboardRow::Pipeline {
-                        definition: def.clone(),
-                        latest_build: build.clone().map(Box::new),
-                    });
-                }
+        if dashboard_prs.is_empty() {
+            rows.push(DashboardRow::EmptyHint {
+                message: "No pull requests found".to_string(),
+            });
+        } else {
+            for pr in dashboard_prs.iter().take(10) {
+                rows.push(DashboardRow::DashboardPullRequest {
+                    pull_request: Box::new(pr.clone()),
+                });
             }
         }
 
@@ -134,72 +104,23 @@ impl Dashboard {
         self.nav.set_len(self.rows.len());
     }
 
-    /// Toggles collapse state for a folder at the given dashboard row index.
-    pub fn toggle_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
-        if let Some(DashboardRow::FolderHeader { path, .. }) = self.rows.get(index) {
-            let fk = find_folder_key_for_display(path, definitions);
-            if let Some(key) = fk {
-                if self.collapsed_folders.contains(&key) {
-                    self.collapsed_folders.remove(&key);
-                } else {
-                    self.collapsed_folders.insert(key);
-                }
-                return true;
-            }
+    /// Returns the pipeline definition at the given row index, if it is a pinned pipeline.
+    pub fn pinned_definition_at(&self, index: usize) -> Option<&PipelineDefinition> {
+        match self.rows.get(index) {
+            Some(DashboardRow::PinnedPipeline { definition, .. }) => Some(definition),
+            _ => None,
         }
-        false
     }
 
-    /// Collapses the folder at the given dashboard index.
-    pub fn collapse_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
-        if let Some(DashboardRow::FolderHeader {
-            path, collapsed, ..
-        }) = self.rows.get(index)
-            && !collapsed
-        {
-            let fk = find_folder_key_for_display(path, definitions);
-            if let Some(key) = fk {
-                self.collapsed_folders.insert(key);
-                return true;
-            }
+    /// Returns the pull request at the given row index, if it is a dashboard PR.
+    pub fn pull_request_at(&self, index: usize) -> Option<&PullRequest> {
+        match self.rows.get(index) {
+            Some(DashboardRow::DashboardPullRequest { pull_request }) => Some(pull_request),
+            _ => None,
         }
-        false
     }
 
-    /// Expands the folder at the given dashboard index.
-    pub fn expand_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
-        if let Some(DashboardRow::FolderHeader {
-            path, collapsed, ..
-        }) = self.rows.get(index)
-            && *collapsed
-        {
-            let fk = find_folder_key_for_display(path, definitions);
-            if let Some(key) = fk {
-                self.collapsed_folders.remove(&key);
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Finds the dashboard row index of the parent folder for a pipeline row.
-    pub fn find_parent_folder_index(&self, pipeline_index: usize) -> Option<usize> {
-        for i in (0..pipeline_index).rev() {
-            if let Some(DashboardRow::FolderHeader { .. }) = self.rows.get(i) {
-                return Some(i);
-            }
-        }
-        None
-    }
-
-    /// Checks if a dashboard row is a folder header.
-    pub fn is_folder_header(&self, index: usize) -> bool {
-        matches!(
-            self.rows.get(index),
-            Some(DashboardRow::FolderHeader { .. })
-        )
-    }
-
+    /// Renders the dashboard using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let rects = Layout::horizontal([
             Constraint::Length(4),
@@ -222,19 +143,25 @@ impl Dashboard {
             .iter()
             .enumerate()
             .map(|(i, row)| match row {
-                DashboardRow::FolderHeader { path, collapsed } => {
-                    let icon = if *collapsed { "▸" } else { "▾" };
-                    ListItem::new(Line::from(vec![
-                        Span::styled(format!(" {icon} "), theme::ARROW),
-                        Span::styled(path.clone(), theme::FOLDER),
-                    ]))
-                    .style(if i == self.nav.index() {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    })
-                }
-                DashboardRow::Pipeline {
+                DashboardRow::SectionHeader { title } => ListItem::new(Line::from(vec![
+                    Span::raw(" "),
+                    Span::styled(title.clone(), theme::SECTION_HEADER),
+                ]))
+                .style(if i == self.nav.index() {
+                    theme::SELECTED
+                } else {
+                    Style::new()
+                }),
+                DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(message.clone(), theme::MUTED),
+                ]))
+                .style(if i == self.nav.index() {
+                    theme::SELECTED
+                } else {
+                    Style::new()
+                }),
+                DashboardRow::PinnedPipeline {
                     definition,
                     latest_build,
                 } => {
@@ -308,25 +235,64 @@ impl Dashboard {
                         Span::styled(
                             format!(
                                 "{:<width$} ",
-                                truncate(&definition.name, widths[3].saturating_sub(1)),
+                                truncate(&definition.name, widths[3].saturating_sub(1),),
                                 width = widths[3].saturating_sub(1)
                             ),
                             name_style,
                         ),
                     ];
-
                     spans.extend(build_spans);
 
                     ListItem::new(Line::from(spans)).style(row_style)
                 }
+                DashboardRow::DashboardPullRequest { pull_request } => {
+                    let row_style = if i == self.nav.index() {
+                        theme::SELECTED
+                    } else {
+                        Style::new()
+                    };
+                    let (icon, color) = pr_status_icon(&pull_request.status, pull_request.is_draft);
+                    let (approved, rejected, waiting, _) = pull_request.vote_summary();
+                    let vote_summary = if pull_request.reviewers.is_empty() {
+                        String::new()
+                    } else {
+                        format!("✓{approved} ✗{rejected} ●{waiting}")
+                    };
+                    let draft_marker = if pull_request.is_draft {
+                        " [draft]"
+                    } else {
+                        ""
+                    };
+
+                    ListItem::new(Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled(format!("{icon} "), Style::new().fg(color)),
+                        Span::styled(
+                            format!(
+                                "#{} {}{}  ",
+                                pull_request.pull_request_id,
+                                truncate(&pull_request.title, 30),
+                                draft_marker,
+                            ),
+                            theme::TEXT,
+                        ),
+                        Span::styled(
+                            format!("{}  ", truncate(pull_request.repo_name(), 15)),
+                            theme::MUTED,
+                        ),
+                        Span::styled(
+                            format!("→ {}  ", pull_request.short_target_branch()),
+                            theme::BRANCH,
+                        ),
+                        Span::styled(vote_summary, theme::MUTED),
+                    ]))
+                    .style(row_style)
+                }
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::new()
-                .title(" Dashboard — Pipelines by Folder ")
-                .title_style(theme::TITLE),
-        );
+        let list =
+            List::new(items).block(Block::new().title(" Dashboard ").title_style(theme::TITLE));
 
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
@@ -340,216 +306,100 @@ impl Component for Dashboard {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Q queue  o open  1/2/3 tabs  r refresh  , settings  ? help  q quit"
+        "↑↓ navigate  Enter drill-in  Q queue  o open  r refresh  , settings  ? help  q quit"
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::path::PathBuf;
 
     use super::*;
-    use crate::client::models::*;
-    use crate::state::App;
     use crate::test_helpers::*;
 
-    // --- folder_key / folder_display ---
-
     #[test]
-    fn folder_key_root() {
-        assert_eq!(folder_key(""), "\\");
-        assert_eq!(folder_key("\\"), "\\");
-    }
-
-    #[test]
-    fn folder_key_nested() {
-        assert_eq!(folder_key("\\Infra"), "\\Infra");
-        assert_eq!(folder_key("\\Infra\\Deploy"), "\\Infra\\Deploy");
-    }
-
-    #[test]
-    fn folder_display_root() {
-        assert_eq!(folder_display("\\"), "Root");
-    }
-
-    #[test]
-    fn folder_display_nested() {
-        assert_eq!(folder_display("\\Infra"), "Infra");
-        assert_eq!(folder_display("\\Infra\\Deploy"), "Infra / Deploy");
-    }
-
-    // --- matches_filter ---
-
-    #[test]
-    fn matches_filter_no_filters_passes_all() {
-        let def = make_definition(1, "P", "\\");
-        assert!(matches_filter(&def, &[], &[]));
-    }
-
-    #[test]
-    fn matches_filter_by_definition_id() {
-        let ids = vec![1u32, 2];
-        assert!(matches_filter(&make_definition(1, "P", "\\"), &ids, &[]));
-        assert!(!matches_filter(&make_definition(99, "P", "\\"), &ids, &[]));
-    }
-
-    #[test]
-    fn matches_filter_by_folder() {
-        let folders = vec!["\\Infra".to_string()];
-        assert!(matches_filter(
-            &make_definition(1, "P", "\\Infra"),
-            &[],
-            &folders
-        ));
-        assert!(matches_filter(
-            &make_definition(2, "P", "\\Infra\\Deploy"),
-            &[],
-            &folders
-        ));
-        assert!(!matches_filter(
-            &make_definition(3, "P", "\\"),
-            &[],
-            &folders
-        ));
-    }
-
-    // --- rebuild ---
-
-    #[test]
-    fn rebuild_dashboard_groups_by_folder() {
-        let definitions = vec![
+    fn rebuild_with_pinned_definitions() {
+        let defs = vec![
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
             make_definition(3, "Lint", "\\"),
         ];
-        let mut state = Dashboard::default();
-        state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
-
-        // Should have: Root folder header + 2 pipelines, then Infra folder header + 1 pipeline.
-        // BTreeMap sorts keys, so "\" comes before "\Infra".
-        assert_eq!(state.rows.len(), 5); // 2 headers + 3 pipelines.
+        let mut d = Dashboard::default();
+        d.rebuild(&defs, &BTreeMap::new(), &[1, 3], &[]);
+        // SectionHeader + 2 pinned + SectionHeader + EmptyHint(no PRs) = 5
+        assert_eq!(d.rows.len(), 5);
         assert!(
-            matches!(&state.rows[0], DashboardRow::FolderHeader { path, .. } if path == "Root")
+            matches!(&d.rows[0], DashboardRow::SectionHeader { title } if title == "Pinned Pipelines")
         );
         assert!(
-            matches!(&state.rows[3], DashboardRow::FolderHeader { path, .. } if path == "Infra")
+            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
+        );
+        assert!(
+            matches!(&d.rows[3], DashboardRow::SectionHeader { title } if title == "My Pull Requests")
         );
     }
 
-    // --- Pipelines::rebuild ---
+    #[test]
+    fn rebuild_empty_pins_shows_hint() {
+        let defs = vec![make_definition(1, "CI", "\\")];
+        let mut d = Dashboard::default();
+        d.rebuild(&defs, &BTreeMap::new(), &[], &[]);
+        // SectionHeader + EmptyHint + SectionHeader + EmptyHint = 4
+        assert_eq!(d.rows.len(), 4);
+        assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
+    }
 
     #[test]
-    fn rebuild_filtered_pipelines_with_search() {
-        let mut app = App::new("o", "p", &make_config(), PathBuf::from("/tmp/test.toml"));
-        app.data.definitions = vec![
-            make_definition(1, "CI Pipeline", "\\"),
-            make_definition(2, "Deploy", "\\Infra"),
+    fn rebuild_with_prs() {
+        let defs = vec![];
+        let prs = vec![
+            make_pull_request(1, "PR One", "active", "repo"),
+            make_pull_request(2, "PR Two", "active", "repo"),
         ];
-        app.search.query = "ci".to_string();
-        app.rebuild_pipelines();
-        // Search for "ci" should show Root header + CI Pipeline = 2 rows, 1 pipeline.
-        let pipeline_count = app
-            .pipelines
+        let mut d = Dashboard::default();
+        d.rebuild(&defs, &BTreeMap::new(), &[], &prs);
+        // SectionHeader("Pinned") + EmptyHint + SectionHeader("My PRs") + 2 PRs = 5
+        assert_eq!(d.rows.len(), 5);
+        assert!(
+            matches!(&d.rows[2], DashboardRow::SectionHeader { title } if title == "My Pull Requests")
+        );
+        assert!(matches!(
+            &d.rows[3],
+            DashboardRow::DashboardPullRequest { .. }
+        ));
+    }
+
+    #[test]
+    fn pinned_definition_at() {
+        let defs = vec![make_definition(1, "CI", "\\")];
+        let mut d = Dashboard::default();
+        d.rebuild(&defs, &BTreeMap::new(), &[1], &[]);
+        assert!(d.pinned_definition_at(0).is_none()); // section header
+        assert_eq!(d.pinned_definition_at(1).unwrap().id, 1);
+    }
+
+    #[test]
+    fn pull_request_at() {
+        let prs = vec![make_pull_request(42, "Test", "active", "repo")];
+        let mut d = Dashboard::default();
+        d.rebuild(&[], &BTreeMap::new(), &[], &prs);
+        // Row 0 = SectionHeader("Pinned"), 1 = EmptyHint, 2 = SectionHeader("My PRs"), 3 = PR.
+        assert!(d.pull_request_at(2).is_none()); // Section header
+        assert_eq!(d.pull_request_at(3).unwrap().pull_request_id, 42);
+    }
+
+    #[test]
+    fn prs_limited_to_10() {
+        let prs: Vec<PullRequest> = (0..15)
+            .map(|i| make_pull_request(i, &format!("PR {i}"), "active", "repo"))
+            .collect();
+        let mut d = Dashboard::default();
+        d.rebuild(&[], &BTreeMap::new(), &[], &prs);
+        let pr_count = d
             .rows
             .iter()
-            .filter(|r| {
-                matches!(
-                    r,
-                    crate::components::pipelines::PipelineRow::Pipeline { .. }
-                )
-            })
+            .filter(|r| matches!(r, DashboardRow::DashboardPullRequest { .. }))
             .count();
-        assert_eq!(pipeline_count, 1);
-    }
-
-    #[test]
-    fn rebuild_filtered_pipelines_empty_search_shows_all() {
-        let mut app = App::new("o", "p", &make_config(), PathBuf::from("/tmp/test.toml"));
-        app.data.definitions = vec![
-            make_definition(1, "CI", "\\"),
-            make_definition(2, "Deploy", "\\Infra"),
-        ];
-        app.rebuild_pipelines();
-        let pipeline_count = app
-            .pipelines
-            .rows
-            .iter()
-            .filter(|r| {
-                matches!(
-                    r,
-                    crate::components::pipelines::PipelineRow::Pipeline { .. }
-                )
-            })
-            .count();
-        assert_eq!(pipeline_count, 2);
-    }
-
-    // --- toggle/collapse/expand ---
-
-    #[test]
-    fn toggle_folder_collapses_and_expands() {
-        let definitions = vec![
-            make_definition(1, "CI", "\\"),
-            make_definition(2, "Deploy", "\\"),
-        ];
-        let mut state = Dashboard::default();
-        state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
-        // Row 0 is Root folder header (expanded), rows 1-2 are pipelines.
-        assert_eq!(state.rows.len(), 3);
-
-        state.toggle_folder_at(0, &definitions); // collapse
-        state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
-        assert_eq!(state.rows.len(), 1); // only header
-
-        state.toggle_folder_at(0, &definitions); // expand
-        state.rebuild(&definitions, &BTreeMap::new(), &[], &[]);
-        assert_eq!(state.rows.len(), 3);
-    }
-
-    // --- folder filter does not restrict active builds ---
-
-    #[test]
-    fn folder_filter_does_not_restrict_active_builds() {
-        let mut cfg = make_config();
-        cfg.filters.folders = vec!["\\Infra".to_string()];
-        let mut app = App::new("o", "p", &cfg, PathBuf::from("/tmp/test.toml"));
-
-        let mut build = make_build(1, BuildStatus::InProgress, None);
-        build.definition.id = 99;
-        build.definition.name = "Outside Infra".to_string();
-        app.data.active_builds = vec![build];
-
-        app.active_runs.rebuild(
-            &app.data.active_builds,
-            &app.filters.definition_ids,
-            &app.search.query,
-        );
-
-        assert_eq!(app.active_runs.filtered.len(), 1);
-        assert_eq!(app.active_runs.filtered[0].definition.id, 99);
-    }
-
-    // --- rebuild_filtered_active_builds ---
-
-    #[test]
-    fn rebuild_filtered_active_builds_applies_search() {
-        let mut app = App::new("o", "p", &make_config(), PathBuf::from("/tmp/test.toml"));
-        let mut b1 = make_build(1, BuildStatus::Completed, Some(BuildResult::Succeeded));
-        b1.definition.name = "CI".to_string();
-        b1.status = BuildStatus::InProgress;
-        let mut b2 = make_build(2, BuildStatus::Completed, Some(BuildResult::Succeeded));
-        b2.definition.name = "Deploy".to_string();
-        b2.status = BuildStatus::InProgress;
-        app.data.active_builds = vec![b1, b2];
-
-        app.search.query = "deploy".to_string();
-        app.active_runs.rebuild(
-            &app.data.active_builds,
-            &app.filters.definition_ids,
-            &app.search.query,
-        );
-        assert_eq!(app.active_runs.filtered.len(), 1);
-        assert_eq!(app.active_runs.filtered[0].definition.name, "Deploy");
+        assert_eq!(pr_count, 10);
     }
 }

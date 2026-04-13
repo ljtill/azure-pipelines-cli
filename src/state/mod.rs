@@ -172,6 +172,7 @@ pub struct App {
     pub pull_requests: crate::components::pull_requests::PullRequests,
     pub pull_request_detail: crate::components::pull_request_detail::PullRequestDetail,
     pub user_id: Option<String>,
+    pub dashboard_pull_requests: Vec<crate::client::models::PullRequest>,
 
     // --- Retention Leases ---
     pub retention_leases: RetentionLeasesState,
@@ -245,6 +246,7 @@ impl App {
             pull_request_detail: crate::components::pull_request_detail::PullRequestDetail::default(
             ),
             user_id: None,
+            dashboard_pull_requests: Vec::new(),
 
             retention_leases: RetentionLeasesState::default(),
 
@@ -279,6 +281,16 @@ impl App {
             &self.filters.definition_ids,
             &self.filters.pinned_definition_ids,
             &self.search.query,
+        );
+    }
+
+    /// Rebuilds the Dashboard view from current state.
+    pub fn rebuild_dashboard(&mut self) {
+        self.dashboard.rebuild(
+            &self.data.definitions,
+            &self.data.latest_builds_by_def,
+            &self.filters.pinned_definition_ids,
+            &self.dashboard_pull_requests,
         );
     }
 
