@@ -442,6 +442,7 @@ pub fn handle_message(
         AppMessage::UserIdentity { user_id } => {
             tracing::info!("user identity resolved");
             app.user_id = Some(user_id);
+            app.identity_resolved = true;
             // Re-fetch dashboard PRs now that we can filter by creator.
             spawn_fetch_dashboard_pull_requests(app, client, tx);
         }
@@ -465,6 +466,16 @@ pub fn handle_message(
             tracing::info!(count = pull_requests.len(), "dashboard PRs loaded");
             app.dashboard_pull_requests = pull_requests;
             app.rebuild_dashboard();
+        }
+        AppMessage::UserIdentityFailed => {
+            tracing::warn!("user identity resolution failed, falling back to unfiltered PRs");
+            app.identity_resolved = true;
+            app.notifications.push(
+                NotificationLevel::Info,
+                "Could not resolve user identity — showing all pull requests",
+            );
+            // Fetch unfiltered dashboard PRs as a fallback.
+            spawn_fetch_dashboard_pull_requests(app, client, tx);
         }
     }
 }

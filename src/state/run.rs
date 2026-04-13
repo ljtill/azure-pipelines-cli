@@ -80,8 +80,8 @@ pub async fn run(
 
         if should_refresh_data && spawn_data_refresh(&mut app, &client, &tx) {
             last_data_fetch = Instant::now();
-            // Fetch dashboard PRs alongside the data refresh (only once identity is known).
-            if app.view == View::Dashboard && app.user_id.is_some() {
+            // Fetch dashboard PRs alongside the data refresh (only once identity resolution is attempted).
+            if app.view == View::Dashboard && app.identity_resolved {
                 spawn_fetch_dashboard_pull_requests(&app, &client, &tx);
             }
         }

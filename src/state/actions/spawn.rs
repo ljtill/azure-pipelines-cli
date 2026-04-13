@@ -462,6 +462,9 @@ pub fn spawn_fetch_pr_detail(
 }
 
 /// Spawns a one-shot task to resolve the current user's identity from the ADO Connection Data API.
+///
+/// Sends `UserIdentity` on success or `UserIdentityFailed` on failure so the
+/// dashboard can fall back to an unfiltered PR fetch.
 pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
     let client = client.clone();
     let tx = tx.clone();
@@ -478,10 +481,12 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
                             .await;
                     } else {
                         tracing::warn!("connection data returned no user id");
+                        let _ = tx.send(AppMessage::UserIdentityFailed).await;
                     }
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "failed to resolve user identity");
+                    let _ = tx.send(AppMessage::UserIdentityFailed).await;
                 }
             }
         }

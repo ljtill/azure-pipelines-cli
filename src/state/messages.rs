@@ -82,4 +82,5 @@ pub enum AppMessage {
     DashboardPullRequests {
         pull_requests: Vec<PullRequest>,
     },
+    UserIdentityFailed,
 }
