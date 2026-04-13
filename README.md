@@ -2,7 +2,7 @@
 
 A terminal (TUI) dashboard for monitoring Azure DevOps Pipelines in real-time.
 
-Built with [ratatui](https://ratatui.rs/) and designed to run inside [Ghostty](https://ghostty.org/) or any modern terminal emulator.
+Built with [ratatui](https://ratatui.rs/) and designed to run inside any modern terminal emulator.
 
 ## Features
 
