@@ -6,12 +6,13 @@ Built with [ratatui](https://ratatui.rs/) and designed to run inside any modern 
 
 ## Features
 
-- **Dashboard view** — Pipeline definitions grouped by folder with latest build status
-- **Pipelines view** — Flat, searchable list of all pipeline definitions
+- **Area-based navigation** — Move between Dashboard, Boards, Repos, and Pipelines from a consistent top bar
+- **Dashboard** — Cross-service landing view with pinned pipelines and personal pull requests
+- **Pipelines Definitions view** — Flat, searchable list of all pipeline definitions
 - **Active Runs view** — All currently running builds across the fleet
 - **Build History** — Drill into a pipeline's recent builds
 - **Log Viewer** — Drill into a build to view live log output with collapsible timeline tree
-- **Search / filter** — Incremental search in Pipelines and Active Runs views
+- **Search / filter** — Incremental search in Pipelines, Active Runs, and Pull Requests views
 - **Queue pipeline** — Trigger a new pipeline run directly from the TUI
 - **Cancel build** — Stop a running build; multi-select batch cancel in Active Runs
 - **Retry stage** — Re-run a failed stage without re-queuing the entire pipeline
@@ -79,8 +80,9 @@ devops update
 | → / Enter    | Drill into selected item / expand (tree views)        |
 | ← / q / Esc  | Go back / collapse (tree views)                       |
 | Home / End   | Jump to first / last item                             |
-| 1 / 2 / 3    | Switch between Dashboard / Pipelines / Active Runs   |
-| /            | Search / filter (Pipelines / Active Runs)             |
+| 1 / 2 / 3 / 4 | Switch between Dashboard / Boards / Repos / Pipelines areas |
+| [/]          | Switch views within the current area                 |
+| /            | Search / filter (Pipelines / Active Runs / Pull Requests) |
 | Space        | Select / deselect build (Active Runs)                 |
 | Q            | Queue pipeline run                                    |
 | R            | Retry failed stage (Log Viewer)                       |

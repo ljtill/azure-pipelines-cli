@@ -71,6 +71,15 @@ pub struct FilterConfig {
     pub pinned_definition_ids: Vec<u32>,
 }
 
+/// Represents the active top-level area in the shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Service {
+    Dashboard,
+    Boards,
+    Repos,
+    Pipelines,
+}
+
 /// Represents the active view in the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -81,6 +90,90 @@ pub enum View {
     LogViewer,
     PullRequests,
     PullRequestDetail,
+    Boards,
+}
+
+impl View {
+    /// Returns `true` when this view is a root-level screen in the shell.
+    pub fn is_root(self) -> bool {
+        matches!(
+            self,
+            View::Dashboard
+                | View::Pipelines
+                | View::ActiveRuns
+                | View::PullRequests
+                | View::Boards
+        )
+    }
+
+    /// Returns the owning top-level area for this view.
+    pub fn service(self) -> Service {
+        match self {
+            View::Dashboard => Service::Dashboard,
+            View::Pipelines | View::ActiveRuns | View::BuildHistory | View::LogViewer => {
+                Service::Pipelines
+            }
+            View::PullRequests | View::PullRequestDetail => Service::Repos,
+            View::Boards => Service::Boards,
+        }
+    }
+
+    /// Returns the user-facing label for this view when shown in the shell.
+    pub fn root_label(self) -> &'static str {
+        match self {
+            View::Dashboard => "Overview",
+            View::Pipelines => "Definitions",
+            View::ActiveRuns => "Active Runs",
+            View::PullRequests => "Pull Requests",
+            View::Boards => "Coming soon",
+            View::BuildHistory | View::LogViewer | View::PullRequestDetail => "",
+        }
+    }
+}
+
+const DASHBOARD_ROOT_VIEWS: [View; 1] = [View::Dashboard];
+const BOARDS_ROOT_VIEWS: [View; 1] = [View::Boards];
+const REPOS_ROOT_VIEWS: [View; 1] = [View::PullRequests];
+const PIPELINES_ROOT_VIEWS: [View; 2] = [View::Pipelines, View::ActiveRuns];
+
+impl Service {
+    /// All top-level areas currently exposed in the shell.
+    pub const ALL: [Service; 4] = [
+        Service::Dashboard,
+        Service::Boards,
+        Service::Repos,
+        Service::Pipelines,
+    ];
+
+    /// Returns the user-facing label for this area.
+    pub fn label(self) -> &'static str {
+        match self {
+            Service::Dashboard => "Dashboard",
+            Service::Boards => "Boards",
+            Service::Repos => "Repos",
+            Service::Pipelines => "Pipelines",
+        }
+    }
+
+    /// Returns the keybinding used to jump directly to this area.
+    pub fn key(self) -> char {
+        match self {
+            Service::Dashboard => '1',
+            Service::Boards => '2',
+            Service::Repos => '3',
+            Service::Pipelines => '4',
+        }
+    }
+
+    /// Returns the root views for this area in display order.
+    pub fn root_views(self) -> &'static [View] {
+        match self {
+            Service::Dashboard => &DASHBOARD_ROOT_VIEWS,
+            Service::Boards => &BOARDS_ROOT_VIEWS,
+            Service::Repos => &REPOS_ROOT_VIEWS,
+            Service::Pipelines => &PIPELINES_ROOT_VIEWS,
+        }
+    }
 }
 
 /// Represents the current input mode.
@@ -160,7 +253,11 @@ pub enum DashboardPullRequestsState {
 
 /// Holds the central application state, including views, data, and configuration.
 pub struct App {
+    pub service: Service,
     pub view: View,
+    pub pipelines_root_view: View,
+    pub repos_root_view: View,
+    pub boards_root_view: View,
     pub search: SearchState,
     pub running: bool,
     pub show_help: bool,
@@ -198,6 +295,9 @@ pub struct App {
     pub pull_request_detail: crate::components::pull_request_detail::PullRequestDetail,
     pub current_user: ExactUserIdentity,
     pub dashboard_pull_requests: DashboardPullRequestsState,
+
+    // --- Boards ---
+    pub boards: crate::components::boards::Boards,
 
     // --- Retention Leases ---
     pub retention_leases: RetentionLeasesState,
@@ -239,7 +339,11 @@ impl App {
         config_path: std::path::PathBuf,
     ) -> Self {
         Self {
+            service: Service::Dashboard,
             view: View::Dashboard,
+            pipelines_root_view: View::Pipelines,
+            repos_root_view: View::PullRequests,
+            boards_root_view: View::Boards,
             search: SearchState::default(),
             running: true,
             show_help: false,
@@ -272,6 +376,7 @@ impl App {
             ),
             current_user: ExactUserIdentity::default(),
             dashboard_pull_requests: DashboardPullRequestsState::Loading,
+            boards: crate::components::boards::Boards::default(),
 
             retention_leases: RetentionLeasesState::default(),
 
@@ -319,6 +424,131 @@ impl App {
         );
     }
 
+    fn build_history_root_view(&self) -> View {
+        match self.build_history.return_to.unwrap_or(View::Pipelines) {
+            View::ActiveRuns => View::ActiveRuns,
+            View::Dashboard | View::Pipelines => View::Pipelines,
+            view if view.service() == Service::Pipelines && view.is_root() => view,
+            _ => View::Pipelines,
+        }
+    }
+
+    fn log_viewer_root_view(&self) -> View {
+        match self.log_viewer.return_to_view() {
+            View::BuildHistory => self.build_history_root_view(),
+            View::ActiveRuns => View::ActiveRuns,
+            View::Dashboard | View::Pipelines => View::Pipelines,
+            view if view.service() == Service::Pipelines && view.is_root() => view,
+            _ => View::Pipelines,
+        }
+    }
+
+    /// Returns the current root view for the selected service, even from a drill-in.
+    pub fn active_root_view(&self) -> View {
+        match self.view {
+            View::BuildHistory => self.build_history_root_view(),
+            View::LogViewer => self.log_viewer_root_view(),
+            View::PullRequestDetail => self.repos_root_view,
+            view => view,
+        }
+    }
+
+    /// Returns the remembered root view for a service.
+    pub fn root_view_for_service(&self, service: Service) -> View {
+        match service {
+            Service::Dashboard => View::Dashboard,
+            Service::Boards => self.boards_root_view,
+            Service::Repos => self.repos_root_view,
+            Service::Pipelines => self.pipelines_root_view,
+        }
+    }
+
+    /// Selects a service and activates its remembered root view.
+    pub fn select_service(&mut self, service: Service) -> View {
+        let target = self.root_view_for_service(service);
+        self.activate_root_view(target);
+        target
+    }
+
+    /// Cycles between root views within the selected service.
+    pub fn cycle_root_view(&mut self, direction: i8) -> View {
+        let views = self.service.root_views();
+        let current = self.active_root_view();
+        let current_index = views.iter().position(|view| *view == current).unwrap_or(0);
+        let next_index = if direction < 0 {
+            if current_index == 0 {
+                views.len() - 1
+            } else {
+                current_index - 1
+            }
+        } else {
+            (current_index + 1) % views.len()
+        };
+        let target = views[next_index];
+        self.activate_root_view(target);
+        target
+    }
+
+    /// Activates a root-level view and resets detail-only state as needed.
+    pub fn activate_root_view(&mut self, view: View) {
+        debug_assert!(view.is_root());
+
+        self.search.mode = InputMode::Normal;
+        self.search.query.clear();
+
+        self.reset_log_viewer();
+        self.reset_build_history();
+        self.reset_pull_request_detail();
+
+        self.set_service_root_view(view);
+        self.service = view.service();
+        self.view = view;
+
+        match view {
+            View::Dashboard => self.rebuild_dashboard(),
+            View::Pipelines => self.rebuild_pipelines(),
+            View::ActiveRuns => self.active_runs.rebuild(
+                &self.data.active_builds,
+                &self.filters.definition_ids,
+                &self.search.query,
+            ),
+            View::PullRequests => self.pull_requests.rebuild(&self.search.query),
+            View::Boards | View::BuildHistory | View::LogViewer | View::PullRequestDetail => {}
+        }
+    }
+
+    fn set_service_root_view(&mut self, view: View) {
+        match view.service() {
+            Service::Dashboard => {}
+            Service::Boards => self.boards_root_view = view,
+            Service::Repos => self.repos_root_view = view,
+            Service::Pipelines => self.pipelines_root_view = view,
+        }
+    }
+
+    fn reset_build_history(&mut self) {
+        self.build_history.selected_definition = None;
+        self.build_history.builds.clear();
+        self.build_history.selected.clear();
+        self.build_history.nav.reset();
+        self.build_history.return_to = None;
+        self.build_history.has_more = false;
+        self.build_history.loading_more = false;
+        self.build_history.continuation_token = None;
+        self.build_history.pending_nav_index = None;
+    }
+
+    fn reset_log_viewer(&mut self) {
+        let next_gen = self.log_viewer.generation() + 1;
+        self.log_viewer = LogViewer::default();
+        self.log_viewer.set_generation(next_gen);
+    }
+
+    fn reset_pull_request_detail(&mut self) {
+        self.pull_request_detail =
+            crate::components::pull_request_detail::PullRequestDetail::default();
+    }
+
     pub fn go_back(&mut self) {
         if self.show_settings {
             tracing::debug!("closing settings");
@@ -342,34 +572,30 @@ impl App {
             View::LogViewer => {
                 let return_to = self.log_viewer.return_to_view();
                 tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
-                let next_gen = self.log_viewer.generation() + 1;
-                self.log_viewer = LogViewer::default();
-                // Preserve generation across resets to invalidate stale messages.
-                self.log_viewer.set_generation(next_gen);
+                self.reset_log_viewer();
 
                 if return_to == View::BuildHistory {
+                    self.service = Service::Pipelines;
                     self.view = View::BuildHistory;
                 } else {
+                    self.service = return_to.service();
                     self.view = return_to;
-                    self.build_history.selected_definition = None;
-                    self.build_history.builds.clear();
-                    self.build_history.nav.reset();
+                    self.reset_build_history();
                 }
             }
             View::BuildHistory => {
                 let return_to = self.build_history.return_to.unwrap_or(View::Dashboard);
                 tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
+                self.service = return_to.service();
                 self.view = return_to;
-                self.build_history.selected_definition = None;
-                self.build_history.builds.clear();
-                self.build_history.selected.clear();
-                self.build_history.nav.reset();
+                self.reset_build_history();
             }
             View::PullRequestDetail => {
-                tracing::info!(from = ?self.view, to = ?View::PullRequests, "navigating back");
-                self.view = View::PullRequests;
-                self.pull_request_detail =
-                    crate::components::pull_request_detail::PullRequestDetail::default();
+                let return_to = self.repos_root_view;
+                tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
+                self.service = Service::Repos;
+                self.view = return_to;
+                self.reset_pull_request_detail();
             }
             _ => {}
         }
@@ -381,6 +607,7 @@ impl App {
             definition_name = &*def.name,
             "navigating to build history"
         );
+        self.service = Service::Pipelines;
         self.build_history.return_to = Some(self.view);
         self.build_history.selected_definition = Some(def);
         self.build_history.builds.clear();
@@ -392,6 +619,7 @@ impl App {
     pub fn navigate_to_log_viewer(&mut self, build: Build) {
         tracing::info!(build_id = build.id, "navigating to log viewer");
         let return_to = self.view;
+        self.service = return_to.service();
         let next_gen = self.log_viewer.generation() + 1;
         self.log_viewer = LogViewer::new_for_build(build, return_to, next_gen);
         self.view = View::LogViewer;
@@ -400,6 +628,7 @@ impl App {
     /// Navigates to the pull request detail view for the given PR.
     pub fn navigate_to_pr_detail(&mut self, pr: &crate::client::models::PullRequest) {
         tracing::info!(pr_id = pr.pull_request_id, "navigating to PR detail");
+        self.service = Service::Repos;
         self.pull_request_detail = crate::components::pull_request_detail::PullRequestDetail {
             pull_request: None,
             threads: vec![],
@@ -418,6 +647,7 @@ impl App {
             View::LogViewer => self.log_viewer.nav_mut(),
             View::PullRequests => &mut self.pull_requests.nav,
             View::PullRequestDetail => &mut self.pull_request_detail.nav,
+            View::Boards => &mut self.boards.nav,
         }
     }
 
@@ -495,6 +725,7 @@ mod tests {
             &make_config(),
             PathBuf::from("/tmp/test.toml"),
         );
+        assert_eq!(app.service, Service::Dashboard);
         assert_eq!(app.view, View::Dashboard);
         assert!(app.running);
         assert!(!app.show_help);
@@ -517,6 +748,43 @@ mod tests {
             app.build_history.selected_definition.as_ref().unwrap().id,
             1
         );
+    }
+
+    #[test]
+    fn build_history_uses_pipeline_root_context_when_launched_from_dashboard() {
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
+        app.pipelines_root_view = View::ActiveRuns;
+
+        let def = make_definition(1, "My Pipeline", "\\");
+        app.navigate_to_build_history(def);
+
+        assert_eq!(app.active_root_view(), View::Pipelines);
+    }
+
+    #[test]
+    fn log_viewer_uses_pipeline_root_context_for_dashboard_pipeline_drill_in() {
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
+        app.pipelines_root_view = View::ActiveRuns;
+
+        let def = make_definition(1, "My Pipeline", "\\");
+        app.navigate_to_build_history(def);
+        app.navigate_to_log_viewer(make_build(
+            42,
+            BuildStatus::Completed,
+            Some(BuildResult::Succeeded),
+        ));
+
+        assert_eq!(app.active_root_view(), View::Pipelines);
     }
 
     #[test]

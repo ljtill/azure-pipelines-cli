@@ -1,4 +1,4 @@
-//! Header bar component displaying app title and status indicators.
+//! Header bar component displaying app title and area-aware navigation.
 
 use anyhow::Result;
 use chrono::Utc;
@@ -11,71 +11,42 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use super::Component;
 use crate::render::helpers::truncate;
 use crate::render::theme;
-use crate::state::{App, View};
+use crate::state::{App, Service, View};
 
-/// Defines a single tab in the header bar.
-pub struct TabDef {
-    pub label: &'static str,
-    pub key: char,
-    pub view: View,
-}
-
-/// Ordered tab definitions for the header bar.
-pub const TABS: &[TabDef] = &[
-    TabDef {
-        label: "Dashboard",
-        key: '1',
-        view: View::Dashboard,
-    },
-    TabDef {
-        label: "Pipelines",
-        key: '2',
-        view: View::Pipelines,
-    },
-    TabDef {
-        label: "Active Runs",
-        key: '3',
-        view: View::ActiveRuns,
-    },
-    TabDef {
-        label: "Pull Requests",
-        key: '4',
-        view: View::PullRequests,
-    },
-];
-
-/// Returns the tab index for the given view, resolving drill-in views to their parent tab.
-fn tab_index_for_view(app: &App) -> usize {
+fn breadcrumb(app: &App) -> String {
     match app.view {
-        View::Dashboard => 0,
-        View::Pipelines => 1,
-        View::ActiveRuns => 2,
-        View::PullRequests | View::PullRequestDetail => 3,
-        View::BuildHistory | View::LogViewer => match app.build_history.return_to {
-            Some(View::Pipelines) => 1,
-            Some(View::ActiveRuns) => 2,
-            _ => 0,
-        },
+        View::Dashboard => "Dashboard / Overview".to_string(),
+        View::Pipelines => "Pipelines / Definitions".to_string(),
+        View::ActiveRuns => "Pipelines / Active Runs".to_string(),
+        View::BuildHistory => format!(
+            "Pipelines / {} / Build History",
+            app.active_root_view().root_label()
+        ),
+        View::LogViewer => format!(
+            "Pipelines / {} / Log Viewer",
+            app.active_root_view().root_label()
+        ),
+        View::PullRequests => "Repos / Pull Requests".to_string(),
+        View::PullRequestDetail => "Repos / Pull Requests / Detail".to_string(),
+        View::Boards => "Boards / Coming soon".to_string(),
     }
 }
 
-/// Renders the title, refresh status, notifications, and tab bar.
+/// Renders the title, refresh status, notifications, and top-level shell.
 /// Always visible at the top of the screen. Not interactive.
 #[derive(Default)]
 pub struct Header;
 
 impl Header {
-    /// Renders the header using data from the App. This is a helper that takes
-    /// `&App` since the header reads cross-cutting state (notifications, refresh
-    /// timestamps, approvals, view, etc.).
+    /// Renders the header using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let chunks = Layout::vertical([
             Constraint::Length(1), // title + status
-            Constraint::Length(2), // tabs
+            Constraint::Length(1), // primary area tabs
+            Constraint::Length(2), // area-local tabs
         ])
         .split(area);
 
-        // Title bar with org/project and refresh status.
         let refresh_text = if app.loading {
             " ⟳ refreshing...".to_string()
         } else if let Some(last) = app.last_refresh {
@@ -96,7 +67,7 @@ impl Header {
                 crate::state::notifications::NotificationLevel::Info => ("ℹ", Color::Cyan),
             };
             Span::styled(
-                format!("  {} {}", prefix, truncate(&notif.message, 60)),
+                format!("  {} {}", prefix, truncate(&notif.message, 48)),
                 Style::new().fg(color),
             )
         } else {
@@ -117,32 +88,49 @@ impl Header {
             Span::styled("  ●  ", theme::MUTED),
             Span::styled(&app.org_project_label, theme::TEXT),
             Span::styled(refresh_text, theme::MUTED),
+            Span::styled(format!("  │  {}", breadcrumb(app)), theme::MUTED),
             approvals_span,
             error_span,
         ]));
         f.render_widget(title, chunks[0]);
 
-        // Tab bar — rendered dynamically from TABS definitions.
-        let tab_titles: Vec<String> = TABS
+        let service_titles: Vec<String> = Service::ALL
             .iter()
-            .map(|t| format!("[{}] {}", t.key, t.label))
+            .map(|service| format!("[{}] {}", service.key(), service.label()))
             .collect();
-        let selected = tab_index_for_view(app);
-
-        let tabs = Tabs::new(tab_titles)
-            .block(Block::new().borders(Borders::BOTTOM))
-            .select(selected)
+        let selected_service = Service::ALL
+            .iter()
+            .position(|service| *service == app.service)
+            .unwrap_or(0);
+        let service_tabs = Tabs::new(service_titles)
+            .select(selected_service)
             .style(theme::MUTED)
             .highlight_style(theme::BRAND);
-        f.render_widget(tabs, chunks[1]);
+        f.render_widget(service_tabs, chunks[1]);
+
+        let local_titles: Vec<String> = app
+            .service
+            .root_views()
+            .iter()
+            .map(|view| view.root_label().to_string())
+            .collect();
+        let selected_local = app
+            .service
+            .root_views()
+            .iter()
+            .position(|view| *view == app.active_root_view())
+            .unwrap_or(0);
+        let local_tabs = Tabs::new(local_titles)
+            .block(Block::new().borders(Borders::BOTTOM))
+            .select(selected_local)
+            .style(theme::MUTED)
+            .highlight_style(theme::TEXT);
+        f.render_widget(local_tabs, chunks[2]);
     }
 }
 
 impl Component for Header {
     fn draw(&self, _frame: &mut Frame, _area: Rect) -> Result<()> {
-        // Header rendering requires App context — use draw_with_app() instead.
-        // This is a no-op to satisfy the trait; the App coordinator calls
-        // draw_with_app() directly.
         Ok(())
     }
 }

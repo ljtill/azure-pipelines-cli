@@ -185,6 +185,6 @@ impl Component for BuildHistory {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  →/Enter view logs  ←/q/Esc back  Space select  d delete leases  c cancel  Q queue  o open  r refresh  ? help"
+        "↑↓ navigate  →/Enter view logs  ←/q/Esc back  Space select  d delete leases  c cancel  Q queue  o open  [/] views  1/2/3/4 areas  r refresh  ? help"
     }
 }

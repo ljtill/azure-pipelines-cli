@@ -13,7 +13,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     use ratatui::layout::{Constraint, Layout};
 
     let chunks = Layout::vertical([
-        Constraint::Length(3), // Header.
+        Constraint::Length(4), // Header.
         Constraint::Min(0),    // Body.
         Constraint::Length(1), // Footer.
     ])
@@ -33,6 +33,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         crate::state::View::PullRequestDetail => {
             app.pull_request_detail.draw_with_app(f, app, chunks[1]);
         }
+        crate::state::View::Boards => app.boards.draw_with_app(f, chunks[1]),
     }
 
     draw_footer(f, app, chunks[2]);
@@ -70,6 +71,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         crate::state::View::LogViewer => app.log_viewer.footer_hints(),
         crate::state::View::PullRequests => app.pull_requests.footer_hints(),
         crate::state::View::PullRequestDetail => app.pull_request_detail.footer_hints(),
+        crate::state::View::Boards => app.boards.footer_hints(),
     };
 
     let footer = Paragraph::new(Line::from(vec![Span::styled(hints, theme::MUTED)]));

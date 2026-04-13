@@ -186,6 +186,6 @@ impl Component for ActiveRuns {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  Space select  c cancel  / filter  →/Enter view logs  o open  1/2/3 tabs  r refresh  , settings  ? help  q/Esc back"
+        "↑↓ navigate  Space select  c cancel  / filter  →/Enter view logs  o open  [/] views  1/2/3/4 areas  r refresh  , settings  ? help  q/Esc back"
     }
 }

@@ -250,7 +250,7 @@ impl Component for PullRequests {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "Tab/Shift-Tab mode  ↑↓ navigate  →/Enter detail  / search  o open  r refresh  1/2/3/4 tabs  ? help"
+        "Tab/Shift-Tab mode  ↑↓ navigate  →/Enter detail  / search  o open  r refresh  [/] views  1/2/3/4 areas  ? help"
     }
 }
 

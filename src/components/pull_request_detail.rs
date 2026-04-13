@@ -161,7 +161,7 @@ impl Component for PullRequestDetail {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "←/q/Esc back  ↑↓ navigate  o open  1/2/3/4 tabs  ? help"
+        "←/q/Esc back  ↑↓ navigate  o open  [/] views  1/2/3/4 areas  ? help"
     }
 }
 

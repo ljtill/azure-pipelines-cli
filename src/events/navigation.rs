@@ -64,6 +64,7 @@ pub fn handle_open_in_browser(app: &App) -> Action {
                     Some(app.endpoints_web_pull_request(repo_name, pr.pull_request_id))
                 }
             }),
+        View::Boards => None,
     };
 
     url.map_or(Action::None, Action::OpenInBrowser)

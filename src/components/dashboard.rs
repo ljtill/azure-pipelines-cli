@@ -1,4 +1,4 @@
-//! Dashboard view component showing pinned pipelines and personal pull requests.
+//! Global dashboard view component showing pinned pipelines and personal pull requests.
 
 use std::collections::BTreeMap;
 
@@ -41,7 +41,7 @@ fn pad(n: usize) -> String {
     " ".repeat(n)
 }
 
-/// Renders the personalised dashboard with pinned pipelines and pull requests.
+/// Renders the cross-service dashboard with pinned pipelines and pull requests.
 #[derive(Debug, Default)]
 pub struct Dashboard {
     pub rows: Vec<DashboardRow>,
@@ -318,7 +318,7 @@ impl Component for Dashboard {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  Enter drill-in  Q queue  o open  r refresh  , settings  ? help  q quit"
+        "↑↓ navigate  Enter drill-in  [/] views  1/2/3/4 areas  Q queue  o open  r refresh  , settings  ? help  q quit"
     }
 }
 

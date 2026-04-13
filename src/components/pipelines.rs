@@ -386,7 +386,7 @@ impl Component for Pipelines {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Space select  p pin  Q queue  o open  / search  ? help"
+        "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Space select  p pin  Q queue  o open  / search  [/] views  1/2/3/4 areas  ? help"
     }
 }
 

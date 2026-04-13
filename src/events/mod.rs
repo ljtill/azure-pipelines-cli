@@ -1,6 +1,7 @@
 //! Keyboard and mouse event dispatch to per-view handlers.
 
 mod active_runs;
+mod boards;
 mod build_history;
 mod common;
 mod dashboard;
@@ -12,7 +13,7 @@ mod pull_requests;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
-use crate::state::{App, ConfirmAction, ConfirmPrompt, InputMode, View};
+use crate::state::{App, ConfirmAction, ConfirmPrompt, InputMode, Service, View};
 
 /// Represents the action requested by the user after handling a key event.
 #[derive(Debug)]
@@ -95,6 +96,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         View::LogViewer => log_viewer::handle_key(app, key),
         View::PullRequests => pull_requests::handle_key(app, key),
         View::PullRequestDetail => pull_request_detail::handle_key(app, key),
+        View::Boards => boards::handle_key(app, key),
     }
 }
 
@@ -112,48 +114,18 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             Some(Action::None)
         }
         KeyCode::Char('r') => Some(Action::ForceRefresh),
-        KeyCode::Char('x')
-            if app.view == View::Dashboard
-                || app.view == View::Pipelines
-                || app.view == View::ActiveRuns
-                || app.view == View::PullRequests =>
-        {
+        KeyCode::Char('x') if app.view.is_root() => {
             app.notifications.clear();
             Some(Action::None)
         }
 
-        // Tab switching.
-        KeyCode::Char('1') => {
-            tracing::info!(from = ?app.view, to = ?View::Dashboard, "view switch");
-            app.search.query.clear();
-            app.view = View::Dashboard;
-            app.rebuild_dashboard();
-            Some(Action::FetchDashboardPullRequests)
-        }
-        KeyCode::Char('2') => {
-            tracing::info!(from = ?app.view, to = ?View::Pipelines, "view switch");
-            app.search.query.clear();
-            app.view = View::Pipelines;
-            app.rebuild_pipelines();
-            Some(Action::None)
-        }
-        KeyCode::Char('3') => {
-            tracing::info!(from = ?app.view, to = ?View::ActiveRuns, "view switch");
-            app.search.query.clear();
-            app.view = View::ActiveRuns;
-            app.active_runs.rebuild(
-                &app.data.active_builds,
-                &app.filters.definition_ids,
-                &app.search.query,
-            );
-            Some(Action::None)
-        }
-        KeyCode::Char('4') => {
-            tracing::info!(from = ?app.view, to = ?View::PullRequests, "view switch");
-            app.search.query.clear();
-            app.view = View::PullRequests;
-            Some(Action::FetchPullRequests)
-        }
+        // Top-level area switching.
+        KeyCode::Char('1') => Some(activate_service(app, Service::Dashboard)),
+        KeyCode::Char('2') => Some(activate_service(app, Service::Boards)),
+        KeyCode::Char('3') => Some(activate_service(app, Service::Repos)),
+        KeyCode::Char('4') => Some(activate_service(app, Service::Pipelines)),
+        KeyCode::Char('[') => Some(cycle_service_view(app, -1)),
+        KeyCode::Char(']') => Some(cycle_service_view(app, 1)),
 
         // Navigation.
         KeyCode::Up => {
@@ -191,10 +163,8 @@ fn handle_quit_key(app: &mut App) -> Action {
             });
             Action::None
         }
-        View::Pipelines | View::ActiveRuns | View::PullRequests => {
-            app.search.mode = InputMode::Normal;
-            app.search.query.clear();
-            app.view = View::Dashboard;
+        View::Pipelines | View::ActiveRuns | View::PullRequests | View::Boards => {
+            app.activate_root_view(View::Dashboard);
             Action::None
         }
         _ => {
@@ -208,10 +178,8 @@ fn handle_quit_key(app: &mut App) -> Action {
 fn handle_esc_key(app: &mut App) -> Action {
     match app.view {
         View::Dashboard => Action::None,
-        View::Pipelines | View::ActiveRuns | View::PullRequests => {
-            app.search.mode = InputMode::Normal;
-            app.search.query.clear();
-            app.view = View::Dashboard;
+        View::Pipelines | View::ActiveRuns | View::PullRequests | View::Boards => {
+            app.activate_root_view(View::Dashboard);
             Action::None
         }
         _ => {
@@ -255,6 +223,29 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) -> Action {
             Action::None
         }
         _ => Action::None,
+    }
+}
+
+fn activate_service(app: &mut App, service: Service) -> Action {
+    let target = app.select_service(service);
+    action_for_root_view(target)
+}
+
+fn cycle_service_view(app: &mut App, direction: i8) -> Action {
+    let target = app.cycle_root_view(direction);
+    action_for_root_view(target)
+}
+
+fn action_for_root_view(view: View) -> Action {
+    match view {
+        View::Dashboard => Action::FetchDashboardPullRequests,
+        View::PullRequests => Action::FetchPullRequests,
+        View::Pipelines
+        | View::ActiveRuns
+        | View::Boards
+        | View::BuildHistory
+        | View::LogViewer
+        | View::PullRequestDetail => Action::None,
     }
 }
 

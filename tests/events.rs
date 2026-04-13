@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use azure_devops_cli::client::models::*;
 use azure_devops_cli::events::{Action, handle_key};
-use azure_devops_cli::state::{App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, View};
+use azure_devops_cli::state::{
+    App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, Service, View,
+};
 use azure_devops_cli::test_helpers::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -23,33 +25,43 @@ fn test_app() -> App {
 }
 
 // ---------------------------------------------------------------------------
-// Tab switching
+// Area switching
 // ---------------------------------------------------------------------------
 
 #[test]
 fn key_1_switches_to_dashboard() {
     let mut app = test_app();
-    app.view = View::Pipelines;
+    app.activate_root_view(View::PullRequests);
     let action = handle_key(&mut app, key(KeyCode::Char('1')));
     assert_eq!(app.view, View::Dashboard);
+    assert_eq!(app.service, Service::Dashboard);
     assert!(matches!(action, Action::FetchDashboardPullRequests));
 }
 
 #[test]
-fn key_2_switches_to_pipelines() {
+fn key_2_switches_to_boards() {
     let mut app = test_app();
-    app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     let action = handle_key(&mut app, key(KeyCode::Char('2')));
-    assert_eq!(app.view, View::Pipelines);
-    assert!(!app.pipelines.rows.is_empty());
+    assert_eq!(app.view, View::Boards);
+    assert_eq!(app.service, Service::Boards);
     assert!(matches!(action, Action::None));
 }
 
 #[test]
-fn key_3_switches_to_active_runs() {
+fn key_3_switches_to_repos() {
     let mut app = test_app();
     let action = handle_key(&mut app, key(KeyCode::Char('3')));
-    assert_eq!(app.view, View::ActiveRuns);
+    assert_eq!(app.view, View::PullRequests);
+    assert_eq!(app.service, Service::Repos);
+    assert!(matches!(action, Action::FetchPullRequests));
+}
+
+#[test]
+fn key_4_switches_to_pipelines() {
+    let mut app = test_app();
+    let action = handle_key(&mut app, key(KeyCode::Char('4')));
+    assert_eq!(app.view, View::Pipelines);
+    assert_eq!(app.service, Service::Pipelines);
     assert!(matches!(action, Action::None));
 }
 
@@ -515,6 +527,7 @@ fn home_and_end_keys() {
 fn tab_switching_clears_search_query() {
     let mut app = test_app();
     app.view = View::Pipelines;
+    app.service = Service::Pipelines;
     app.search.query = "hello".into();
 
     handle_key(&mut app, key(KeyCode::Char('1')));
@@ -574,11 +587,18 @@ fn settings_save_no_reload_when_connection_unchanged() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn key_4_switches_to_pull_requests() {
+fn right_bracket_cycles_pipeline_views() {
     let mut app = test_app();
-    let action = handle_key(&mut app, key(KeyCode::Char('4')));
-    assert_eq!(app.view, View::PullRequests);
-    assert!(matches!(action, Action::FetchPullRequests));
+    app.activate_root_view(View::Pipelines);
+
+    let action = handle_key(&mut app, key(KeyCode::Char(']')));
+    assert_eq!(app.view, View::ActiveRuns);
+    assert_eq!(app.service, Service::Pipelines);
+    assert!(matches!(action, Action::None));
+
+    let action = handle_key(&mut app, key(KeyCode::Char(']')));
+    assert_eq!(app.view, View::Pipelines);
+    assert!(matches!(action, Action::None));
 }
 
 #[test]
@@ -687,9 +707,10 @@ fn esc_on_pull_requests_goes_to_dashboard() {
 fn tab_switching_clears_search_on_pr_switch() {
     let mut app = test_app();
     app.view = View::Pipelines;
+    app.service = Service::Pipelines;
     app.search.query = "old query".to_string();
 
-    handle_key(&mut app, key(KeyCode::Char('4')));
+    handle_key(&mut app, key(KeyCode::Char('3')));
     assert_eq!(app.view, View::PullRequests);
     assert!(app.search.query.is_empty());
 }

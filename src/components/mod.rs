@@ -6,6 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 pub mod active_runs;
+pub mod boards;
 pub mod build_history;
 pub mod dashboard;
 pub mod header;
