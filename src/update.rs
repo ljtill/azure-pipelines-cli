@@ -438,7 +438,13 @@ pub async fn self_update() -> Result<UpdateResult> {
 /// file out of the way first (Windows allows renaming a running executable).
 fn install_to_bin(target: &std::path::Path) -> Result<()> {
     let dest = symlink_path()?;
+    install_to_path(target, &dest)
+}
 
+/// Install the given target file at `dest` using the same semantics as
+/// `install_to_bin`. Extracted so tests can exercise the swap logic against a
+/// temporary destination without touching the user's real install path.
+fn install_to_path(target: &std::path::Path, dest: &std::path::Path) -> Result<()> {
     // Ensures the parent directory exists.
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
@@ -455,7 +461,7 @@ fn install_to_bin(target: &std::path::Path) -> Result<()> {
         std::os::unix::fs::symlink(target, &tmp_link)
             .with_context(|| format!("Failed to create temp symlink at {}", tmp_link.display()))?;
 
-        std::fs::rename(&tmp_link, &dest).with_context(|| {
+        std::fs::rename(&tmp_link, dest).with_context(|| {
             let _ = std::fs::remove_file(&tmp_link);
             format!("Failed to rename symlink to {}", dest.display())
         })?;
@@ -468,7 +474,7 @@ fn install_to_bin(target: &std::path::Path) -> Result<()> {
         let old_path = dest.with_extension("exe.old");
         if dest.exists() {
             let _ = std::fs::remove_file(&old_path);
-            std::fs::rename(&dest, &old_path).with_context(|| {
+            std::fs::rename(dest, &old_path).with_context(|| {
                 format!(
                     "Failed to rename {} to {}",
                     dest.display(),
@@ -477,7 +483,7 @@ fn install_to_bin(target: &std::path::Path) -> Result<()> {
             })?;
         }
 
-        std::fs::copy(target, &dest).with_context(|| {
+        std::fs::copy(target, dest).with_context(|| {
             format!("Failed to copy {} to {}", target.display(), dest.display())
         })?;
 
@@ -678,5 +684,81 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
                 None => std::env::remove_var("GH_TOKEN"),
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_to_path_atomically_swaps_symlink() {
+        use std::fs;
+        let tmp = std::env::temp_dir().join(format!(
+            "devops-install-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let v1 = tmp.join("v1");
+        let v2 = tmp.join("v2");
+        fs::write(&v1, b"version 1").unwrap();
+        fs::write(&v2, b"version 2").unwrap();
+
+        let dest = tmp.join("bin").join("devops");
+
+        // First install: no existing link, should succeed.
+        install_to_path(&v1, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"version 1");
+        assert!(
+            fs::symlink_metadata(&dest)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+
+        // Second install: overwrites the existing link atomically.
+        install_to_path(&v2, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"version 2");
+
+        // No stale tmp symlink left behind.
+        assert!(!dest.with_extension("tmp").exists());
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn install_to_path_copies_and_swaps_on_windows() {
+        use std::fs;
+        let tmp = std::env::temp_dir().join(format!(
+            "devops-install-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let v1 = tmp.join("v1.exe");
+        let v2 = tmp.join("v2.exe");
+        fs::write(&v1, b"version 1").unwrap();
+        fs::write(&v2, b"version 2").unwrap();
+
+        let dest = tmp.join("bin").join("devops.exe");
+
+        // First install: no existing file.
+        install_to_path(&v1, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"version 1");
+
+        // Second install: replaces the prior file.
+        install_to_path(&v2, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"version 2");
+
+        // No stale .exe.old file left behind.
+        assert!(!dest.with_extension("exe.old").exists());
+
+        fs::remove_dir_all(&tmp).ok();
     }
 }
