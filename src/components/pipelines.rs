@@ -34,11 +34,25 @@ pub enum PipelineRow {
 }
 
 /// Normalizes an ADO definition path to a canonical folder key.
+///
+/// Azure DevOps pipeline definition paths are conventionally of the form
+/// `\Folder\Subfolder` with a leading backslash, or `\` for the root. We
+/// rely on that convention for grouping and display, but tolerate missing
+/// or malformed inputs defensively:
+///
+/// * empty string -> root (`\`)
+/// * `\` -> root
+/// * anything else without a leading backslash is prefixed with `\` so it
+///   still groups consistently with well-formed paths.
 fn folder_key(path: &str) -> String {
     if path.is_empty() || path == "\\" {
         "\\".to_string()
-    } else {
+    } else if path.starts_with('\\') {
         path.to_string()
+    } else {
+        // Defensive: ADO should always prefix paths with `\`, but if a response
+        // ever omits it, normalize so grouping/collapsing behavior is stable.
+        format!("\\{path}")
     }
 }
 
@@ -430,6 +444,20 @@ mod tests {
     #[test]
     fn folder_display_nested() {
         assert_eq!(folder_display("\\Infra\\Deploy"), "Infra / Deploy");
+    }
+
+    #[test]
+    fn folder_key_handles_malformed_paths() {
+        // Empty path collapses to root.
+        assert_eq!(folder_key(""), "\\");
+        // Single backslash is root.
+        assert_eq!(folder_key("\\"), "\\");
+        // Well-formed nested paths pass through.
+        assert_eq!(folder_key("\\Infra"), "\\Infra");
+        assert_eq!(folder_key("\\Infra\\Deploy"), "\\Infra\\Deploy");
+        // Missing leading backslash is normalized to be safe.
+        assert_eq!(folder_key("Infra"), "\\Infra");
+        assert_eq!(folder_key("Infra\\Deploy"), "\\Infra\\Deploy");
     }
 
     #[test]
