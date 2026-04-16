@@ -34,7 +34,9 @@ pub enum DashboardRow {
     EmptyHint {
         message: String,
     },
-    Separator,
+    SectionHeader {
+        label: String,
+    },
 }
 
 /// Returns a string of `n` spaces for column padding.
@@ -59,6 +61,10 @@ impl Dashboard {
         dashboard_prs: &DashboardPullRequestsState,
     ) {
         let mut rows = Vec::new();
+
+        rows.push(DashboardRow::SectionHeader {
+            label: "Pinned Pipelines".to_string(),
+        });
 
         // --- Pinned Pipelines section ---
         let mut pinned: Vec<(PipelineDefinition, Option<Build>)> = pinned_ids
@@ -85,7 +91,9 @@ impl Dashboard {
             }
         }
 
-        rows.push(DashboardRow::Separator);
+        rows.push(DashboardRow::SectionHeader {
+            label: "Pull Requests".to_string(),
+        });
 
         // --- My Pull Requests section ---
         match dashboard_prs {
@@ -111,6 +119,9 @@ impl Dashboard {
 
         self.rows = rows;
         self.nav.set_len(self.rows.len());
+        if self.is_separator(self.nav.index()) {
+            self.skip_separator(true);
+        }
     }
 
     /// Returns the pipeline definition at the given row index, if it is a pinned pipeline.
@@ -129,9 +140,12 @@ impl Dashboard {
         }
     }
 
-    /// Returns true if the row at the given index is a non-selectable separator.
+    /// Returns true if the row at the given index is a non-selectable section header.
     pub fn is_separator(&self, index: usize) -> bool {
-        matches!(self.rows.get(index), Some(DashboardRow::Separator))
+        matches!(
+            self.rows.get(index),
+            Some(DashboardRow::SectionHeader { .. })
+        )
     }
 
     /// Nudges the cursor off a separator row by stepping one more in the given direction.
@@ -155,21 +169,7 @@ impl Dashboard {
 
     /// Renders the dashboard using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
-        let pinned_count = self
-            .rows
-            .iter()
-            .filter(|row| matches!(row, DashboardRow::PinnedPipeline { .. }))
-            .count();
-        let pr_count = self
-            .rows
-            .iter()
-            .filter(|row| matches!(row, DashboardRow::DashboardPullRequest { .. }))
-            .count();
-        let subtitle = Line::from(vec![
-            Span::styled(format!(" {pinned_count} pinned pipelines"), theme::TEXT),
-            Span::styled(format!("  ·  {pr_count} pull requests"), theme::MUTED),
-        ]);
-        let content_area = draw_view_frame(f, area, " Dashboard ", Some(subtitle));
+        let content_area = draw_view_frame(f, area, " Dashboard ", None);
 
         // Two schemas — dashboard has heterogeneous row kinds.
         let pinned_schema = build_row(BuildRowOpts {
@@ -195,9 +195,15 @@ impl Dashboard {
                 let sel_style = row_style(i == self.nav.index());
 
                 match row {
-                    DashboardRow::Separator => {
-                        let rule = "─".repeat(content_area.width.saturating_sub(1) as usize);
-                        ListItem::new(Line::from(Span::styled(rule, theme::MUTED)))
+                    DashboardRow::SectionHeader { label } => {
+                        let total_w = content_area.width.saturating_sub(1) as usize;
+                        let label_len = label.chars().count() + 2;
+                        let rule_len = total_w.saturating_sub(label_len);
+                        let rule = "─".repeat(rule_len);
+                        ListItem::new(Line::from(vec![
+                            Span::styled(format!(" {label} "), theme::TEXT),
+                            Span::styled(rule, theme::MUTED),
+                        ]))
                     }
 
                     DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
@@ -369,16 +375,17 @@ mod tests {
             &[1, 3],
             &DashboardPullRequestsState::EmptyVerified,
         );
-        // 2 pinned + Separator + EmptyHint(no PRs) = 4
-        assert_eq!(d.rows.len(), 4);
+        // Header + 2 pinned + Header + EmptyHint(no PRs) = 5
+        assert_eq!(d.rows.len(), 5);
+        assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
         assert!(
-            matches!(&d.rows[0], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
+            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
         );
         assert!(
-            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 3)
+            matches!(&d.rows[2], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 3)
         );
-        assert!(matches!(&d.rows[2], DashboardRow::Separator));
-        assert!(matches!(&d.rows[3], DashboardRow::EmptyHint { .. }));
+        assert!(matches!(&d.rows[3], DashboardRow::SectionHeader { .. }));
+        assert!(matches!(&d.rows[4], DashboardRow::EmptyHint { .. }));
     }
 
     #[test]
@@ -391,11 +398,12 @@ mod tests {
             &[],
             &DashboardPullRequestsState::EmptyVerified,
         );
-        // EmptyHint(no pins) + Separator + EmptyHint(no PRs) = 3
-        assert_eq!(d.rows.len(), 3);
-        assert!(matches!(&d.rows[0], DashboardRow::EmptyHint { .. }));
-        assert!(matches!(&d.rows[1], DashboardRow::Separator));
-        assert!(matches!(&d.rows[2], DashboardRow::EmptyHint { .. }));
+        // Header + EmptyHint(no pins) + Header + EmptyHint(no PRs) = 4
+        assert_eq!(d.rows.len(), 4);
+        assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
+        assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
+        assert!(matches!(&d.rows[2], DashboardRow::SectionHeader { .. }));
+        assert!(matches!(&d.rows[3], DashboardRow::EmptyHint { .. }));
     }
 
     #[test]
@@ -412,12 +420,13 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
         );
-        // EmptyHint(no pins) + Separator + 2 PRs = 4
-        assert_eq!(d.rows.len(), 4);
-        assert!(matches!(&d.rows[0], DashboardRow::EmptyHint { .. }));
-        assert!(matches!(&d.rows[1], DashboardRow::Separator));
+        // Header + EmptyHint(no pins) + Header + 2 PRs = 5
+        assert_eq!(d.rows.len(), 5);
+        assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
+        assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
+        assert!(matches!(&d.rows[2], DashboardRow::SectionHeader { .. }));
         assert!(matches!(
-            &d.rows[2],
+            &d.rows[3],
             DashboardRow::DashboardPullRequest { .. }
         ));
     }
@@ -432,8 +441,9 @@ mod tests {
             &[1],
             &DashboardPullRequestsState::EmptyVerified,
         );
-        assert_eq!(d.pinned_definition_at(0).unwrap().id, 1);
-        assert!(d.pinned_definition_at(1).is_none()); // EmptyHint
+        assert_eq!(d.pinned_definition_at(1).unwrap().id, 1);
+        assert!(d.pinned_definition_at(0).is_none()); // SectionHeader
+        assert!(d.pinned_definition_at(2).is_none()); // SectionHeader
     }
 
     #[test]
@@ -446,10 +456,11 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
         );
-        // Row 0 = EmptyHint(no pins), 1 = Separator, 2 = PR.
+        // Row 0 = Header, 1 = EmptyHint(no pins), 2 = Header, 3 = PR.
         assert!(d.pull_request_at(0).is_none());
         assert!(d.pull_request_at(1).is_none());
-        assert_eq!(d.pull_request_at(2).unwrap().pull_request_id, 42);
+        assert!(d.pull_request_at(2).is_none());
+        assert_eq!(d.pull_request_at(3).unwrap().pull_request_id, 42);
     }
 
     #[test]
@@ -482,7 +493,7 @@ mod tests {
             &DashboardPullRequestsState::Loading,
         );
         assert!(matches!(
-            &d.rows[2],
+            &d.rows[3],
             DashboardRow::EmptyHint { message } if message == "Loading pull requests..."
         ));
     }
@@ -497,7 +508,7 @@ mod tests {
             &DashboardPullRequestsState::Unavailable("Unavailable".to_string()),
         );
         assert!(matches!(
-            &d.rows[2],
+            &d.rows[3],
             DashboardRow::EmptyHint { message } if message == "Unavailable"
         ));
     }
