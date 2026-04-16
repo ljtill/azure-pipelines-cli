@@ -34,6 +34,7 @@ pub enum DashboardRow {
     EmptyHint {
         message: String,
     },
+    Separator,
 }
 
 /// Returns a string of `n` spaces for column padding.
@@ -84,6 +85,8 @@ impl Dashboard {
             }
         }
 
+        rows.push(DashboardRow::Separator);
+
         // --- My Pull Requests section ---
         match dashboard_prs {
             DashboardPullRequestsState::Loading => rows.push(DashboardRow::EmptyHint {
@@ -123,6 +126,30 @@ impl Dashboard {
         match self.rows.get(index) {
             Some(DashboardRow::DashboardPullRequest { pull_request }) => Some(pull_request),
             _ => None,
+        }
+    }
+
+    /// Returns true if the row at the given index is a non-selectable separator.
+    pub fn is_separator(&self, index: usize) -> bool {
+        matches!(self.rows.get(index), Some(DashboardRow::Separator))
+    }
+
+    /// Nudges the cursor off a separator row by stepping one more in the given direction.
+    /// Falls back to the opposite direction if the requested step would leave nothing selectable.
+    pub fn skip_separator(&mut self, forward: bool) {
+        if !self.is_separator(self.nav.index()) {
+            return;
+        }
+        if forward {
+            self.nav.down();
+            if self.is_separator(self.nav.index()) {
+                self.nav.up();
+            }
+        } else {
+            self.nav.up();
+            if self.is_separator(self.nav.index()) {
+                self.nav.down();
+            }
         }
     }
 
@@ -168,6 +195,11 @@ impl Dashboard {
                 let sel_style = row_style(i == self.nav.index());
 
                 match row {
+                    DashboardRow::Separator => {
+                        let rule = "─".repeat(content_area.width.saturating_sub(1) as usize);
+                        ListItem::new(Line::from(Span::styled(rule, theme::MUTED)))
+                    }
+
                     DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
                         Span::raw(pad(pinned_widths[pinned_schema.icon])),
                         Span::styled(message.clone(), theme::MUTED),
@@ -337,15 +369,16 @@ mod tests {
             &[1, 3],
             &DashboardPullRequestsState::EmptyVerified,
         );
-        // 2 pinned + EmptyHint(no PRs) = 3
-        assert_eq!(d.rows.len(), 3);
+        // 2 pinned + Separator + EmptyHint(no PRs) = 4
+        assert_eq!(d.rows.len(), 4);
         assert!(
             matches!(&d.rows[0], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
         );
         assert!(
             matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 3)
         );
-        assert!(matches!(&d.rows[2], DashboardRow::EmptyHint { .. }));
+        assert!(matches!(&d.rows[2], DashboardRow::Separator));
+        assert!(matches!(&d.rows[3], DashboardRow::EmptyHint { .. }));
     }
 
     #[test]
@@ -358,10 +391,11 @@ mod tests {
             &[],
             &DashboardPullRequestsState::EmptyVerified,
         );
-        // EmptyHint(no pins) + EmptyHint(no PRs) = 2
-        assert_eq!(d.rows.len(), 2);
+        // EmptyHint(no pins) + Separator + EmptyHint(no PRs) = 3
+        assert_eq!(d.rows.len(), 3);
         assert!(matches!(&d.rows[0], DashboardRow::EmptyHint { .. }));
-        assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
+        assert!(matches!(&d.rows[1], DashboardRow::Separator));
+        assert!(matches!(&d.rows[2], DashboardRow::EmptyHint { .. }));
     }
 
     #[test]
@@ -378,11 +412,12 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
         );
-        // EmptyHint(no pins) + 2 PRs = 3
-        assert_eq!(d.rows.len(), 3);
+        // EmptyHint(no pins) + Separator + 2 PRs = 4
+        assert_eq!(d.rows.len(), 4);
         assert!(matches!(&d.rows[0], DashboardRow::EmptyHint { .. }));
+        assert!(matches!(&d.rows[1], DashboardRow::Separator));
         assert!(matches!(
-            &d.rows[1],
+            &d.rows[2],
             DashboardRow::DashboardPullRequest { .. }
         ));
     }
@@ -411,9 +446,10 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
         );
-        // Row 0 = EmptyHint(no pins), 1 = PR.
+        // Row 0 = EmptyHint(no pins), 1 = Separator, 2 = PR.
         assert!(d.pull_request_at(0).is_none());
-        assert_eq!(d.pull_request_at(1).unwrap().pull_request_id, 42);
+        assert!(d.pull_request_at(1).is_none());
+        assert_eq!(d.pull_request_at(2).unwrap().pull_request_id, 42);
     }
 
     #[test]
@@ -446,7 +482,7 @@ mod tests {
             &DashboardPullRequestsState::Loading,
         );
         assert!(matches!(
-            &d.rows[1],
+            &d.rows[2],
             DashboardRow::EmptyHint { message } if message == "Loading pull requests..."
         ));
     }
@@ -461,7 +497,7 @@ mod tests {
             &DashboardPullRequestsState::Unavailable("Unavailable".to_string()),
         );
         assert!(matches!(
-            &d.rows[1],
+            &d.rows[2],
             DashboardRow::EmptyHint { message } if message == "Unavailable"
         ));
     }

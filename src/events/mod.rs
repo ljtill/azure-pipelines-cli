@@ -138,18 +138,30 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
         // Navigation.
         KeyCode::Up => {
             app.current_nav_mut().up();
+            if app.view == View::Dashboard {
+                app.dashboard.skip_separator(false);
+            }
             Some(Action::None)
         }
         KeyCode::Down if app.view != View::BuildHistory => {
             app.current_nav_mut().down();
+            if app.view == View::Dashboard {
+                app.dashboard.skip_separator(true);
+            }
             Some(Action::None)
         }
         KeyCode::Home => {
             app.current_nav_mut().home();
+            if app.view == View::Dashboard {
+                app.dashboard.skip_separator(true);
+            }
             Some(Action::None)
         }
         KeyCode::End if app.view != View::BuildHistory => {
             app.current_nav_mut().end();
+            if app.view == View::Dashboard {
+                app.dashboard.skip_separator(false);
+            }
             Some(Action::None)
         }
 
