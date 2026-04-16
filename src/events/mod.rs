@@ -125,8 +125,7 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
         KeyCode::Char('2') => Some(activate_service(app, Service::Boards)),
         KeyCode::Char('3') => Some(activate_service(app, Service::Repos)),
         KeyCode::Char('4') => Some(activate_service(app, Service::Pipelines)),
-        KeyCode::Char('[') => Some(cycle_service_view(app, -1)),
-        KeyCode::Char(']') => Some(cycle_service_view(app, 1)),
+        KeyCode::Char('5') => Some(activate_service(app, Service::ActiveRuns)),
 
         // Navigation.
         KeyCode::Up => {
@@ -154,7 +153,7 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
     }
 }
 
-/// Handles the quit key by navigating back or prompting to confirm quit.
+/// Handles the quit key by navigating back or jumping to Dashboard.
 fn handle_quit_key(app: &mut App) -> Action {
     match app.view {
         View::Dashboard => {
@@ -164,7 +163,7 @@ fn handle_quit_key(app: &mut App) -> Action {
             });
             Action::None
         }
-        View::Pipelines | View::ActiveRuns | View::PullRequests | View::Boards => {
+        view if view.is_root() => {
             app.activate_root_view(View::Dashboard);
             Action::None
         }
@@ -175,18 +174,14 @@ fn handle_quit_key(app: &mut App) -> Action {
     }
 }
 
-/// Handles the Esc key by navigating back to the parent view.
+/// Handles the Esc key by navigating up one level.
 fn handle_esc_key(app: &mut App) -> Action {
-    match app.view {
-        View::Dashboard => Action::None,
-        View::Pipelines | View::ActiveRuns | View::PullRequests | View::Boards => {
-            app.activate_root_view(View::Dashboard);
-            Action::None
-        }
-        _ => {
-            app.go_back();
-            Action::None
-        }
+    if app.view.is_root() {
+        // No-op at the top level — Esc always means "up one level".
+        Action::None
+    } else {
+        app.go_back();
+        Action::None
     }
 }
 
@@ -232,18 +227,13 @@ fn activate_service(app: &mut App, service: Service) -> Action {
     action_for_root_view(target)
 }
 
-fn cycle_service_view(app: &mut App, direction: i8) -> Action {
-    let target = app.cycle_root_view(direction);
-    action_for_root_view(target)
-}
-
 fn action_for_root_view(view: View) -> Action {
     match view {
         View::Dashboard => Action::FetchDashboardPullRequests,
         View::Boards => Action::FetchBoards,
         View::PullRequests => Action::FetchPullRequests,
-        View::Pipelines
-        | View::ActiveRuns
+        View::ActiveRuns
+        | View::Pipelines
         | View::BuildHistory
         | View::LogViewer
         | View::PullRequestDetail => Action::None,
@@ -293,24 +283,28 @@ mod tests {
         assert_eq!(app.view, View::BuildHistory);
     }
 
-    // --- Esc on top-level peer views ---
+    // --- Esc on top-level root views is no-op ---
 
     #[test]
-    fn esc_on_pipelines_goes_to_dashboard() {
+    fn esc_on_pipelines_is_noop() {
         let mut app = make_app();
         app.view = View::Pipelines;
+        app.service = Service::Pipelines;
 
-        handle_key(&mut app, key(KeyCode::Esc));
-        assert_eq!(app.view, View::Dashboard);
+        let action = handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.view, View::Pipelines);
+        assert!(matches!(action, Action::None));
     }
 
     #[test]
-    fn esc_on_active_runs_goes_to_dashboard() {
+    fn esc_on_active_runs_is_noop() {
         let mut app = make_app();
         app.view = View::ActiveRuns;
+        app.service = Service::ActiveRuns;
 
-        handle_key(&mut app, key(KeyCode::Esc));
-        assert_eq!(app.view, View::Dashboard);
+        let action = handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.view, View::ActiveRuns);
+        assert!(matches!(action, Action::None));
     }
 
     #[test]

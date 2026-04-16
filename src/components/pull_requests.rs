@@ -5,10 +5,12 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
-use crate::render::helpers::{pr_status_icon, row_style, split_with_search_bar, truncate};
+use crate::render::helpers::{
+    draw_state_message, draw_view_frame, pr_status_icon, row_style, split_with_search_bar, truncate,
+};
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav};
 
@@ -112,15 +114,6 @@ impl PullRequests {
     /// Renders the pull requests list using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
-
-        // Split area: mode bar | search bar (optional) | list.
-        let top_chunks = Layout::vertical([
-            Constraint::Length(1), // mode bar
-            Constraint::Min(0),    // rest (search + list)
-        ])
-        .split(area);
-
-        // Mode indicator bar.
         let mode_spans: Vec<Span> = PrViewMode::ALL
             .iter()
             .enumerate()
@@ -137,24 +130,29 @@ impl PullRequests {
                 spans
             })
             .collect();
-        let mode_line = Paragraph::new(Line::from(mode_spans));
-        f.render_widget(mode_line, top_chunks[0]);
+        let mut subtitle_spans = mode_spans;
+        subtitle_spans.push(Span::styled(
+            format!("  ·  {} shown", self.filtered.len()),
+            theme::MUTED,
+        ));
+        let frame_area =
+            draw_view_frame(f, area, " Pull Requests ", Some(Line::from(subtitle_spans)));
 
-        // Search bar + list area.
         let list_area = split_with_search_bar(
             f,
-            top_chunks[1],
+            frame_area,
             &app.search.query,
             app.search.mode,
             show_search,
         );
 
         if self.filtered.is_empty() {
-            let empty = Paragraph::new(Line::from(Span::styled(
-                "  No pull requests found",
-                theme::MUTED,
-            )));
-            f.render_widget(empty, list_area);
+            let hint = if show_search {
+                " No pull requests match the current search"
+            } else {
+                " No pull requests found"
+            };
+            draw_state_message(f, list_area, hint, theme::MUTED);
             return;
         }
 
@@ -250,7 +248,7 @@ impl Component for PullRequests {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "Tab/Shift-Tab mode  ↑↓ navigate  →/Enter detail  / search  o open  r refresh  [/] views  1/2/3/4 areas  ? help"
+        "Tab/Shift-Tab mode  ↑↓ navigate  →/Enter detail  / search  o open  r refresh  1–5 areas  ? help"
     }
 }
 

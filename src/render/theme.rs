@@ -6,6 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 pub const BRAND: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
 pub const MUTED: Style = Style::new().fg(Color::DarkGray);
 pub const TEXT: Style = Style::new().fg(Color::White);
+pub const PANEL_BORDER: Style = Style::new().fg(Color::DarkGray);
 
 // --- Status indicators ---
 pub const SUCCESS: Style = Style::new().fg(Color::Green);

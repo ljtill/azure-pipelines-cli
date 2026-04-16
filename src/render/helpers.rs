@@ -150,12 +150,48 @@ pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: Input
             Span::raw("")
         },
     ]))
-    .block(
-        Block::bordered()
-            .title(" Filter ")
-            .title_style(theme::SEARCH_PROMPT),
-    );
+    .block(view_block(" Filter ").title_style(theme::SEARCH_PROMPT));
     f.render_widget(search, area);
+}
+
+/// Returns the standard bordered block used for top-level view panels.
+pub fn view_block<'a, T>(title: T) -> Block<'a>
+where
+    T: Into<Line<'a>>,
+{
+    Block::bordered()
+        .title(title)
+        .title_style(theme::TITLE)
+        .border_style(theme::PANEL_BORDER)
+}
+
+/// Renders the standard outer frame for a view and returns the remaining body area.
+pub fn draw_view_frame<'a, T>(
+    f: &mut Frame,
+    area: Rect,
+    title: T,
+    subtitle: Option<Line<'a>>,
+) -> Rect
+where
+    T: Into<Line<'a>>,
+{
+    let block = view_block(title);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    subtitle.map_or(inner, |line| {
+        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner);
+        f.render_widget(Paragraph::new(line), chunks[0]);
+        chunks[1]
+    })
+}
+
+/// Renders a concise placeholder message inside an already-framed view body.
+pub fn draw_state_message<'a, T>(f: &mut Frame, area: Rect, message: T, style: Style)
+where
+    T: Into<Line<'a>>,
+{
+    f.render_widget(Paragraph::new(message.into()).style(style), area);
 }
 
 /// Truncates a string to at most `max_len` characters, safe for multi-byte UTF-8.

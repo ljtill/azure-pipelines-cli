@@ -13,7 +13,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     use ratatui::layout::{Constraint, Layout};
 
     let chunks = Layout::vertical([
-        Constraint::Length(4), // Header.
+        Constraint::Length(3), // Header.
         Constraint::Min(0),    // Body.
         Constraint::Length(1), // Footer.
     ])

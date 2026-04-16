@@ -7,13 +7,13 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState};
+use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::client::models::Build;
 use crate::render::helpers::{
-    build_elapsed, effective_status_icon, effective_status_label, row_style, split_with_search_bar,
-    truncate,
+    build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
+    effective_status_label, row_style, split_with_search_bar, truncate,
 };
 use crate::render::theme;
 use crate::state::nav::ListNav;
@@ -72,8 +72,39 @@ impl ActiveRuns {
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.view == crate::state::View::ActiveRuns
             && (app.search.mode == InputMode::Search || !app.search.query.is_empty());
-        let list_area =
-            split_with_search_bar(f, area, &app.search.query, app.search.mode, show_search);
+        let sel_count = self.selected.len();
+        let filtered = self.filtered.len();
+        let total = app.data.active_builds.len();
+        let subtitle = Line::from(vec![
+            Span::styled(format!(" {filtered} shown"), theme::TEXT),
+            Span::styled(format!("  ·  {total} total"), theme::MUTED),
+            Span::styled(
+                format!("  ·  {sel_count} selected"),
+                if sel_count > 0 {
+                    theme::SUCCESS
+                } else {
+                    theme::MUTED
+                },
+            ),
+        ]);
+        let frame_area = draw_view_frame(f, area, " Active Runs ", Some(subtitle));
+        let list_area = split_with_search_bar(
+            f,
+            frame_area,
+            &app.search.query,
+            app.search.mode,
+            show_search,
+        );
+
+        if self.filtered.is_empty() {
+            let hint = if show_search {
+                " No active runs match the current search"
+            } else {
+                " No active runs found"
+            };
+            draw_state_message(f, list_area, hint, theme::MUTED);
+            return;
+        }
 
         let rects = Layout::horizontal([
             Constraint::Length(2),
@@ -86,7 +117,7 @@ impl ActiveRuns {
             Constraint::Fill(2),
             Constraint::Length(15),
         ])
-        .split(area);
+        .split(list_area);
         let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
         widths[3] = widths[3].min(40);
         widths[6] = widths[6].min(35);
@@ -161,18 +192,7 @@ impl ActiveRuns {
                 .style(row_style(i == self.nav.index()))
             })
             .collect();
-
-        let sel_count = self.selected.len();
-        let filtered = self.filtered.len();
-        let total = app.data.active_builds.len();
-        let title = if sel_count > 0 {
-            format!(" Active Runs ({filtered} / {total}) — {sel_count} selected ")
-        } else if filtered != total {
-            format!(" Active Runs ({filtered} / {total}) ")
-        } else {
-            format!(" Active Runs ({total}) ")
-        };
-        let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
+        let list = List::new(items);
 
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
@@ -186,6 +206,6 @@ impl Component for ActiveRuns {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  Space select  c cancel  / filter  →/Enter view logs  o open  [/] views  1/2/3/4 areas  r refresh  , settings  ? help  q/Esc back"
+        "↑↓ navigate  Space select  c cancel  / filter  →/Enter view logs  o open  1–5 areas  r refresh  , settings  ? help  q/Esc back"
     }
 }

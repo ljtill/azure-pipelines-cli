@@ -650,17 +650,14 @@ fn settings_save_no_reload_when_connection_unchanged() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn right_bracket_cycles_pipeline_views() {
+fn key_5_switches_to_active_runs() {
     let mut app = test_app();
     app.activate_root_view(View::Pipelines);
-
-    let action = handle_key(&mut app, key(KeyCode::Char(']')));
-    assert_eq!(app.view, View::ActiveRuns);
     assert_eq!(app.service, Service::Pipelines);
-    assert!(matches!(action, Action::None));
 
-    let action = handle_key(&mut app, key(KeyCode::Char(']')));
-    assert_eq!(app.view, View::Pipelines);
+    let action = handle_key(&mut app, key(KeyCode::Char('5')));
+    assert_eq!(app.view, View::ActiveRuns);
+    assert_eq!(app.service, Service::ActiveRuns);
     assert!(matches!(action, Action::None));
 }
 
@@ -758,12 +755,14 @@ fn r_on_pull_requests_triggers_force_refresh() {
 }
 
 #[test]
-fn esc_on_pull_requests_goes_to_dashboard() {
+fn esc_on_pull_requests_is_noop() {
     let mut app = test_app();
     app.view = View::PullRequests;
+    app.service = Service::Repos;
 
-    handle_key(&mut app, key(KeyCode::Esc));
-    assert_eq!(app.view, View::Dashboard);
+    let action = handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.view, View::PullRequests);
+    assert!(matches!(action, Action::None));
 }
 
 #[test]

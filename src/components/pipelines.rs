@@ -7,12 +7,13 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState};
+use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::client::models::{Build, PipelineDefinition};
 use crate::render::helpers::{
-    build_elapsed, effective_status_icon, effective_status_label, split_with_search_bar, truncate,
+    build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
+    effective_status_label, row_style, split_with_search_bar, truncate,
 };
 use crate::render::theme;
 use crate::state::nav::ListNav;
@@ -221,8 +222,36 @@ impl Pipelines {
     /// Renders the folder-grouped pipeline list.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
-        let list_area =
-            split_with_search_bar(f, area, &app.search.query, app.search.mode, show_search);
+        let selected_count = self.selected.len();
+        let subtitle = Line::from(vec![
+            Span::styled(format!(" {} pipelines", self.pipeline_count()), theme::TEXT),
+            Span::styled(
+                format!("  ·  {selected_count} selected"),
+                if selected_count > 0 {
+                    theme::SUCCESS
+                } else {
+                    theme::MUTED
+                },
+            ),
+        ]);
+        let frame_area = draw_view_frame(f, area, " Pipelines ", Some(subtitle));
+        let list_area = split_with_search_bar(
+            f,
+            frame_area,
+            &app.search.query,
+            app.search.mode,
+            show_search,
+        );
+
+        if self.rows.is_empty() {
+            let hint = if show_search {
+                " No pipelines match the current search"
+            } else {
+                " No pipelines found"
+            };
+            draw_state_message(f, list_area, hint, theme::MUTED);
+            return;
+        }
 
         let rects = Layout::horizontal([
             Constraint::Length(4),
@@ -251,23 +280,13 @@ impl Pipelines {
                         Span::styled(format!(" {icon} "), theme::ARROW),
                         Span::styled(path.clone(), theme::FOLDER),
                     ]))
-                    .style(if i == self.nav.index() {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    })
+                    .style(row_style(i == self.nav.index()))
                 }
                 PipelineRow::Pipeline {
                     definition,
                     latest_build,
                     pinned,
                 } => {
-                    let row_style = if i == self.nav.index() {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    };
-
                     let (icon, icon_color) =
                         latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
                             let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
@@ -355,16 +374,11 @@ impl Pipelines {
 
                     spans.extend(build_spans);
 
-                    ListItem::new(Line::from(spans)).style(row_style)
+                    ListItem::new(Line::from(spans)).style(row_style(i == self.nav.index()))
                 }
             })
             .collect();
-
-        let list = List::new(items).block(
-            Block::new()
-                .title(format!(" Pipelines ({}) ", self.pipeline_count()))
-                .title_style(theme::TITLE),
-        );
+        let list = List::new(items);
 
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
@@ -386,7 +400,7 @@ impl Component for Pipelines {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Space select  p pin  Q queue  o open  / search  [/] views  1/2/3/4 areas  ? help"
+        "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Space select  p pin  Q queue  o open  / search  1–5 areas  ? help"
     }
 }
 

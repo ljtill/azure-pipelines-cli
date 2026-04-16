@@ -12,7 +12,8 @@ use ratatui::widgets::{List, ListItem, ListState};
 use super::Component;
 use crate::client::models::{Build, PipelineDefinition, PullRequest};
 use crate::render::helpers::{
-    build_elapsed, effective_status_icon, effective_status_label, pr_status_icon, truncate,
+    build_elapsed, draw_view_frame, effective_status_icon, effective_status_label, pr_status_icon,
+    row_style, truncate,
 };
 use crate::render::theme;
 use crate::state::nav::ListNav;
@@ -136,6 +137,22 @@ impl Dashboard {
 
     /// Renders the dashboard using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
+        let pinned_count = self
+            .rows
+            .iter()
+            .filter(|row| matches!(row, DashboardRow::PinnedPipeline { .. }))
+            .count();
+        let pr_count = self
+            .rows
+            .iter()
+            .filter(|row| matches!(row, DashboardRow::DashboardPullRequest { .. }))
+            .count();
+        let subtitle = Line::from(vec![
+            Span::styled(format!(" {pinned_count} pinned pipelines"), theme::TEXT),
+            Span::styled(format!("  ·  {pr_count} pull requests"), theme::MUTED),
+        ]);
+        let content_area = draw_view_frame(f, area, " Dashboard ", Some(subtitle));
+
         // Shared column grid for both Pinned Pipeline and PR rows.
         let rects = Layout::horizontal([
             Constraint::Length(3),  // col 0: indent
@@ -147,7 +164,7 @@ impl Dashboard {
             Constraint::Fill(1),    // col 6: requestor / votes
             Constraint::Length(12), // col 7: elapsed
         ])
-        .split(area);
+        .split(content_area);
         let w: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
 
         let items: Vec<ListItem> = self
@@ -155,12 +172,7 @@ impl Dashboard {
             .iter()
             .enumerate()
             .map(|(i, row)| {
-                let selected = i == self.nav.index();
-                let sel_style = if selected {
-                    theme::SELECTED
-                } else {
-                    Style::new()
-                };
+                let sel_style = row_style(i == self.nav.index());
 
                 match row {
                     DashboardRow::SectionHeader { title } => ListItem::new(Line::from(vec![
@@ -308,7 +320,7 @@ impl Dashboard {
 
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
-        f.render_stateful_widget(list, area, &mut state);
+        f.render_stateful_widget(list, content_area, &mut state);
     }
 }
 
@@ -318,7 +330,7 @@ impl Component for Dashboard {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  Enter drill-in  [/] views  1/2/3/4 areas  Q queue  o open  r refresh  , settings  ? help  q quit"
+        "↑↓ navigate  Enter drill-in  1–5 areas  Q queue  o open  r refresh  , settings  ? help  q quit"
     }
 }
 

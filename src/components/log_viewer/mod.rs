@@ -13,10 +13,12 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
 
 use super::Component;
-use crate::render::helpers::{checkpoint_status_icon, timeline_status_icon};
+use crate::render::helpers::{
+    checkpoint_status_icon, draw_view_frame, row_style, timeline_status_icon, view_block,
+};
 use crate::render::theme;
 use crate::state::App;
 
@@ -28,22 +30,25 @@ pub fn draw_log_viewer(f: &mut Frame, app: &mut App, area: Rect) {
         || "Build".to_string(),
         |b| format!("{} #{}", b.definition.name, b.build_number),
     );
-
-    let chunks = Layout::vertical([
-        Constraint::Length(2), // build info header
-        Constraint::Min(0),    // body (tree + log)
-    ])
-    .split(area);
-
-    let header = Paragraph::new(Line::from(vec![
-        Span::styled(" ← ", theme::MUTED),
-        Span::styled(&build_label, theme::BRAND),
-        Span::styled(" — Log Viewer", theme::MUTED),
-    ]));
-    f.render_widget(header, chunks[0]);
+    let subtitle = Line::from(vec![
+        Span::styled(format!(" {build_label}"), theme::TEXT),
+        Span::styled(
+            if app.log_viewer.is_following() {
+                "  ·  Follow mode"
+            } else {
+                "  ·  Inspect mode"
+            },
+            if app.log_viewer.is_following() {
+                theme::SUCCESS
+            } else {
+                theme::MUTED
+            },
+        ),
+    ]);
+    let content_area = draw_view_frame(f, area, " Log Viewer ", Some(subtitle));
 
     let body = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
-        .split(chunks[1]);
+        .split(content_area);
 
     // Store layout areas for mouse hit-testing.
     app.log_viewer.set_layout_areas(body[0], body[1]);
@@ -58,7 +63,7 @@ impl Component for LogViewer {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  [/] views  1/2/3/4 areas  q/Esc back"
+        "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  1–5 areas  q/Esc back"
     }
 }
 
@@ -66,11 +71,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
     if app.log_viewer.timeline_rows().is_empty() {
         let loading = Paragraph::new(" Loading timeline...")
             .style(theme::MUTED)
-            .block(
-                Block::bordered()
-                    .title(" Pipeline Stages ")
-                    .title_style(theme::TITLE),
-            );
+            .block(view_block(" Pipeline Stages "));
         f.render_widget(loading, area);
         return;
     }
@@ -97,11 +98,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                         Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), theme::STAGE),
                     ]))
-                    .style(if selected {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    })
+                    .style(row_style(selected))
                 }
                 TimelineRow::Job {
                     name,
@@ -118,11 +115,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                         Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), theme::JOB),
                     ]))
-                    .style(if selected {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    })
+                    .style(row_style(selected))
                 }
                 TimelineRow::Task {
                     name,
@@ -139,11 +132,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                         Span::styled(name.as_str(), theme::JOB),
                         Span::styled(log_indicator, theme::MUTED),
                     ]))
-                    .style(if selected {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    })
+                    .style(row_style(selected))
                 }
                 TimelineRow::Checkpoint {
                     name,
@@ -157,21 +146,13 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                         Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(name.as_str(), Style::new().fg(icon_color)),
                     ]))
-                    .style(if selected {
-                        theme::SELECTED
-                    } else {
-                        Style::new()
-                    })
+                    .style(row_style(selected))
                 }
             }
         })
         .collect();
 
-    let list = List::new(items).block(
-        Block::bordered()
-            .title(" Pipeline Stages ")
-            .title_style(theme::TITLE),
-    );
+    let list = List::new(items).block(view_block(" Pipeline Stages "));
 
     let mut state = ListState::default();
     state.select(Some(app.log_viewer.nav().index()));
@@ -202,7 +183,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
     if app.log_viewer.log_content().is_empty() {
         let hint = Paragraph::new(" Select a task and press Enter to view its log")
             .style(theme::MUTED)
-            .block(Block::bordered().title(title));
+            .block(view_block(title));
         f.render_widget(hint, area);
     } else {
         let lines: Vec<Line> = app
@@ -230,7 +211,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let log = Paragraph::new(Text::from(lines))
-            .block(Block::bordered().title(title).title_style(title_style))
+            .block(view_block(title).title_style(title_style))
             .wrap(Wrap { trim: false })
             .scroll((scroll_offset, 0));
         f.render_widget(log, area);

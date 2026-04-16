@@ -3,11 +3,14 @@
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Wrap};
 
 use super::Component;
-use crate::render::helpers::{pr_status_icon, reviewer_vote_icon};
+use crate::render::helpers::{
+    draw_state_message, draw_view_frame, pr_status_icon, reviewer_vote_icon, view_block,
+};
 use crate::render::theme;
 use crate::state::{App, ListNav};
 
@@ -36,30 +39,33 @@ impl PullRequestDetail {
 
     /// Renders the PR detail view using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, _app: &App, area: Rect) {
+        let subtitle = self.pull_request.as_ref().map(|pr| {
+            Line::from(vec![
+                Span::styled(format!(" #{}", pr.pull_request_id), theme::TEXT),
+                Span::styled(format!("  ·  {}", pr.repo_name()), theme::MUTED),
+                Span::styled("  ·  ", theme::MUTED),
+                Span::styled(pr.short_source_branch(), theme::BRANCH),
+                Span::styled(" → ", theme::ARROW),
+                Span::styled(pr.short_target_branch(), theme::BRANCH),
+            ])
+        });
+        let content_area = draw_view_frame(f, area, " Pull Request Detail ", subtitle);
+
         if self.loading {
-            let loading = Paragraph::new(Line::from(Span::styled(
-                "  Loading pull request…",
-                theme::MUTED,
-            )));
-            f.render_widget(loading, area);
+            draw_state_message(f, content_area, " Loading pull request…", theme::MUTED);
             return;
         }
 
         let Some(pr) = &self.pull_request else {
-            let empty = Paragraph::new(Line::from(Span::styled(
-                "  No pull request selected",
-                theme::MUTED,
-            )));
-            f.render_widget(empty, area);
+            draw_state_message(f, content_area, " No pull request selected", theme::MUTED);
             return;
         };
 
         let chunks = Layout::vertical([
-            Constraint::Length(5), // header
-            Constraint::Length(3), // metadata
+            Constraint::Length(4), // header
             Constraint::Min(4),    // reviewers + threads
         ])
-        .split(area);
+        .split(content_area);
 
         // Header section.
         let (status_icon, status_color) = pr_status_icon(&pr.status, pr.is_draft);
@@ -78,10 +84,10 @@ impl PullRequestDetail {
             Line::from(vec![Span::raw("   "), Span::styled(&pr.title, theme::TEXT)]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("   Author: ", theme::MUTED),
+                Span::styled(" Author: ", theme::MUTED),
                 Span::styled(pr.author(), theme::TEXT),
                 Span::styled("    Status: ", theme::MUTED),
-                Span::styled(&pr.status, ratatui::style::Style::new().fg(status_color)),
+                Span::styled(&pr.status, Style::new().fg(status_color)),
                 Span::styled(
                     format!("    Merge: {}", pr.merge_status.as_deref().unwrap_or("—")),
                     theme::MUTED,
@@ -91,26 +97,12 @@ impl PullRequestDetail {
         let header = Paragraph::new(header_lines);
         f.render_widget(header, chunks[0]);
 
-        // Metadata section.
-        let meta_lines = vec![Line::from(vec![
-            Span::styled("   ", theme::MUTED),
-            Span::styled(pr.short_source_branch(), theme::BRANCH),
-            Span::styled(" → ", theme::ARROW),
-            Span::styled(pr.short_target_branch(), theme::BRANCH),
-            Span::styled(format!("    Repo: {}", pr.repo_name()), theme::MUTED),
-        ])];
-        let meta = Paragraph::new(meta_lines);
-        f.render_widget(meta, chunks[1]);
-
         // Reviewers + threads section.
         let bottom = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(chunks[2]);
+            .split(chunks[1]);
 
         // Reviewers panel.
-        let mut reviewer_lines = vec![Line::from(Span::styled(
-            " Reviewers",
-            theme::SECTION_HEADER,
-        ))];
+        let mut reviewer_lines = Vec::new();
         if pr.reviewers.is_empty() {
             reviewer_lines.push(Line::from(Span::styled("  No reviewers", theme::MUTED)));
         } else {
@@ -118,39 +110,33 @@ impl PullRequestDetail {
                 let (icon, color) = reviewer_vote_icon(r.vote);
                 let required = if r.is_required { " (required)" } else { "" };
                 reviewer_lines.push(Line::from(vec![
-                    Span::styled(format!("  {icon} "), ratatui::style::Style::new().fg(color)),
+                    Span::styled(format!("  {icon} "), Style::new().fg(color)),
                     Span::styled(&r.display_name, theme::TEXT),
                     Span::styled(required, theme::MUTED),
                 ]));
             }
         }
-        let reviewers_panel =
-            Paragraph::new(reviewer_lines).block(Block::new().borders(Borders::RIGHT));
+        let reviewers_panel = Paragraph::new(reviewer_lines).block(view_block(" Reviewers "));
         f.render_widget(reviewers_panel, bottom[0]);
 
         // Threads panel.
         let total = self.threads.len();
         let active = self.threads.iter().filter(|t| t.is_active()).count();
         let resolved = total - active;
-        let mut thread_lines = vec![
-            Line::from(Span::styled(" Threads", theme::SECTION_HEADER)),
-            Line::from(vec![
-                Span::styled(format!("  {total} total"), theme::TEXT),
-                Span::styled(format!("  ·  {active} active"), theme::WARNING),
-                Span::styled(format!("  ·  {resolved} resolved"), theme::SUCCESS),
-            ]),
-        ];
+        let mut thread_lines = vec![Line::from(vec![
+            Span::styled(format!("  {total} total"), theme::TEXT),
+            Span::styled(format!("  ·  {active} active"), theme::WARNING),
+            Span::styled(format!("  ·  {resolved} resolved"), theme::SUCCESS),
+        ])];
         if let Some(desc) = &pr.description {
             thread_lines.push(Line::from(""));
-            thread_lines.push(Line::from(Span::styled(
-                " Description",
-                theme::SECTION_HEADER,
-            )));
             for line in desc.lines().take(8) {
                 thread_lines.push(Line::from(Span::styled(format!("  {line}"), theme::MUTED)));
             }
         }
-        let threads_panel = Paragraph::new(thread_lines).wrap(Wrap { trim: false });
+        let threads_panel = Paragraph::new(thread_lines)
+            .block(view_block(" Threads "))
+            .wrap(Wrap { trim: false });
         f.render_widget(threads_panel, bottom[1]);
     }
 }
@@ -161,7 +147,7 @@ impl Component for PullRequestDetail {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "←/q/Esc back  ↑↓ navigate  o open  [/] views  1/2/3/4 areas  ? help"
+        "←/q/Esc back  ↑↓ navigate  o open  1–5 areas  ? help"
     }
 }
 

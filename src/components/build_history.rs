@@ -7,12 +7,13 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::client::models::{Build, PipelineDefinition};
 use crate::render::helpers::{
-    build_elapsed, effective_status_icon, effective_status_label, truncate,
+    build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
+    effective_status_label, row_style, truncate,
 };
 use crate::render::theme;
 use crate::state::nav::ListNav;
@@ -50,23 +51,30 @@ impl BuildHistory {
     }
 
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
-        let chunks = Layout::vertical([
-            Constraint::Length(2), // Pipeline name header.
-            Constraint::Min(0),    // Builds list.
-        ])
-        .split(area);
-
         let def_name = self
             .selected_definition
             .as_ref()
             .map_or("Unknown", |d| d.name.as_str());
+        let total = self.builds.len();
+        let selected_count = self.selected.len();
+        let subtitle = Line::from(vec![
+            Span::styled(format!(" {def_name}"), theme::TEXT),
+            Span::styled(format!("  ·  {total} builds"), theme::MUTED),
+            Span::styled(
+                format!("  ·  {selected_count} selected"),
+                if selected_count > 0 {
+                    theme::SUCCESS
+                } else {
+                    theme::MUTED
+                },
+            ),
+        ]);
+        let content_area = draw_view_frame(f, area, " Build History ", Some(subtitle));
 
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(" ← ", theme::MUTED),
-            Span::styled(def_name, theme::BRAND),
-            Span::styled(" — Build History", theme::MUTED),
-        ]));
-        f.render_widget(header, chunks[0]);
+        if self.builds.is_empty() {
+            draw_state_message(f, content_area, " No builds found", theme::MUTED);
+            return;
+        }
 
         let rects = Layout::horizontal([
             Constraint::Length(2),
@@ -78,7 +86,7 @@ impl BuildHistory {
             Constraint::Fill(2),
             Constraint::Length(15),
         ])
-        .split(area);
+        .split(content_area);
         let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
         widths[5] = widths[5].min(40);
         widths[6] = widths[6].min(35);
@@ -97,12 +105,6 @@ impl BuildHistory {
                 let retained = app.retention_leases.retained_run_ids.contains(&build.id);
                 let selected = self.selected.contains(&build.id);
                 let check = if selected { "✓ " } else { "  " };
-
-                let row_style = if i == self.nav.index() {
-                    theme::SELECTED
-                } else {
-                    Style::new()
-                };
 
                 ListItem::new(Line::from(vec![
                     Span::styled(
@@ -148,7 +150,7 @@ impl BuildHistory {
                         theme::MUTED,
                     ),
                 ]))
-                .style(row_style)
+                .style(row_style(i == self.nav.index()))
             })
             .collect();
 
@@ -164,18 +166,11 @@ impl BuildHistory {
             )])));
         }
 
-        let sel_count = self.selected.len();
-        let total = self.builds.len();
-        let title = if sel_count > 0 {
-            format!(" Builds ({total}) — {sel_count} selected ")
-        } else {
-            format!(" Builds ({total}) ")
-        };
-        let list = List::new(items).block(Block::new().title(title).title_style(theme::TITLE));
+        let list = List::new(items);
 
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
-        f.render_stateful_widget(list, chunks[1], &mut state);
+        f.render_stateful_widget(list, content_area, &mut state);
     }
 }
 
@@ -185,6 +180,6 @@ impl Component for BuildHistory {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  →/Enter view logs  ←/q/Esc back  Space select  d delete leases  c cancel  Q queue  o open  [/] views  1/2/3/4 areas  r refresh  ? help"
+        "↑↓ navigate  →/Enter view logs  ←/q/Esc back  Space select  d delete leases  c cancel  Q queue  o open  1–5 areas  r refresh  ? help"
     }
 }

@@ -78,6 +78,7 @@ pub enum Service {
     Boards,
     Repos,
     Pipelines,
+    ActiveRuns,
 }
 
 /// Represents the active view in the application.
@@ -110,9 +111,8 @@ impl View {
     pub fn service(self) -> Service {
         match self {
             View::Dashboard => Service::Dashboard,
-            View::Pipelines | View::ActiveRuns | View::BuildHistory | View::LogViewer => {
-                Service::Pipelines
-            }
+            View::Pipelines | View::BuildHistory | View::LogViewer => Service::Pipelines,
+            View::ActiveRuns => Service::ActiveRuns,
             View::PullRequests | View::PullRequestDetail => Service::Repos,
             View::Boards => Service::Boards,
         }
@@ -134,15 +134,17 @@ impl View {
 const DASHBOARD_ROOT_VIEWS: [View; 1] = [View::Dashboard];
 const BOARDS_ROOT_VIEWS: [View; 1] = [View::Boards];
 const REPOS_ROOT_VIEWS: [View; 1] = [View::PullRequests];
-const PIPELINES_ROOT_VIEWS: [View; 2] = [View::Pipelines, View::ActiveRuns];
+const PIPELINES_ROOT_VIEWS: [View; 1] = [View::Pipelines];
+const ACTIVE_RUNS_ROOT_VIEWS: [View; 1] = [View::ActiveRuns];
 
 impl Service {
     /// All top-level areas currently exposed in the shell.
-    pub const ALL: [Service; 4] = [
+    pub const ALL: [Service; 5] = [
         Service::Dashboard,
         Service::Boards,
         Service::Repos,
         Service::Pipelines,
+        Service::ActiveRuns,
     ];
 
     /// Returns the user-facing label for this area.
@@ -152,6 +154,7 @@ impl Service {
             Service::Boards => "Boards",
             Service::Repos => "Repos",
             Service::Pipelines => "Pipelines",
+            Service::ActiveRuns => "Active Runs",
         }
     }
 
@@ -162,6 +165,7 @@ impl Service {
             Service::Boards => '2',
             Service::Repos => '3',
             Service::Pipelines => '4',
+            Service::ActiveRuns => '5',
         }
     }
 
@@ -172,6 +176,7 @@ impl Service {
             Service::Boards => &BOARDS_ROOT_VIEWS,
             Service::Repos => &REPOS_ROOT_VIEWS,
             Service::Pipelines => &PIPELINES_ROOT_VIEWS,
+            Service::ActiveRuns => &ACTIVE_RUNS_ROOT_VIEWS,
         }
     }
 }
@@ -255,9 +260,6 @@ pub enum DashboardPullRequestsState {
 pub struct App {
     pub service: Service,
     pub view: View,
-    pub pipelines_root_view: View,
-    pub repos_root_view: View,
-    pub boards_root_view: View,
     pub search: SearchState,
     pub running: bool,
     pub show_help: bool,
@@ -341,9 +343,6 @@ impl App {
         Self {
             service: Service::Dashboard,
             view: View::Dashboard,
-            pipelines_root_view: View::Pipelines,
-            repos_root_view: View::PullRequests,
-            boards_root_view: View::Boards,
             search: SearchState::default(),
             running: true,
             show_help: false,
@@ -432,8 +431,7 @@ impl App {
     fn build_history_root_view(&self) -> View {
         match self.build_history.return_to.unwrap_or(View::Pipelines) {
             View::ActiveRuns => View::ActiveRuns,
-            View::Dashboard | View::Pipelines => View::Pipelines,
-            view if view.service() == Service::Pipelines && view.is_root() => view,
+            View::Dashboard => View::Dashboard,
             _ => View::Pipelines,
         }
     }
@@ -442,8 +440,7 @@ impl App {
         match self.log_viewer.return_to_view() {
             View::BuildHistory => self.build_history_root_view(),
             View::ActiveRuns => View::ActiveRuns,
-            View::Dashboard | View::Pipelines => View::Pipelines,
-            view if view.service() == Service::Pipelines && view.is_root() => view,
+            View::Dashboard => View::Dashboard,
             _ => View::Pipelines,
         }
     }
@@ -453,43 +450,19 @@ impl App {
         match self.view {
             View::BuildHistory => self.build_history_root_view(),
             View::LogViewer => self.log_viewer_root_view(),
-            View::PullRequestDetail => self.repos_root_view,
+            View::PullRequestDetail => View::PullRequests,
             view => view,
         }
     }
 
-    /// Returns the remembered root view for a service.
+    /// Returns the root view for a service.
     pub fn root_view_for_service(&self, service: Service) -> View {
-        match service {
-            Service::Dashboard => View::Dashboard,
-            Service::Boards => self.boards_root_view,
-            Service::Repos => self.repos_root_view,
-            Service::Pipelines => self.pipelines_root_view,
-        }
+        service.root_views()[0]
     }
 
-    /// Selects a service and activates its remembered root view.
+    /// Selects a service and activates its root view.
     pub fn select_service(&mut self, service: Service) -> View {
         let target = self.root_view_for_service(service);
-        self.activate_root_view(target);
-        target
-    }
-
-    /// Cycles between root views within the selected service.
-    pub fn cycle_root_view(&mut self, direction: i8) -> View {
-        let views = self.service.root_views();
-        let current = self.active_root_view();
-        let current_index = views.iter().position(|view| *view == current).unwrap_or(0);
-        let next_index = if direction < 0 {
-            if current_index == 0 {
-                views.len() - 1
-            } else {
-                current_index - 1
-            }
-        } else {
-            (current_index + 1) % views.len()
-        };
-        let target = views[next_index];
         self.activate_root_view(target);
         target
     }
@@ -505,7 +478,6 @@ impl App {
         self.reset_build_history();
         self.reset_pull_request_detail();
 
-        self.set_service_root_view(view);
         self.service = view.service();
         self.view = view;
 
@@ -520,15 +492,6 @@ impl App {
             View::PullRequests => self.pull_requests.rebuild(&self.search.query),
             View::Boards => self.rebuild_boards(),
             View::BuildHistory | View::LogViewer | View::PullRequestDetail => {}
-        }
-    }
-
-    fn set_service_root_view(&mut self, view: View) {
-        match view.service() {
-            Service::Dashboard => {}
-            Service::Boards => self.boards_root_view = view,
-            Service::Repos => self.repos_root_view = view,
-            Service::Pipelines => self.pipelines_root_view = view,
         }
     }
 
@@ -597,10 +560,9 @@ impl App {
                 self.reset_build_history();
             }
             View::PullRequestDetail => {
-                let return_to = self.repos_root_view;
-                tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
+                tracing::info!(from = ?self.view, to = ?View::PullRequests, "navigating back");
                 self.service = Service::Repos;
-                self.view = return_to;
+                self.view = View::PullRequests;
                 self.reset_pull_request_detail();
             }
             _ => {}
@@ -762,14 +724,15 @@ mod tests {
     }
 
     #[test]
-    fn build_history_uses_pipeline_root_context_when_launched_from_dashboard() {
+    fn build_history_root_view_is_pipelines_when_launched_from_pipelines() {
         let mut app = App::new(
             "org",
             "proj",
             &make_config(),
             PathBuf::from("/tmp/test.toml"),
         );
-        app.pipelines_root_view = View::ActiveRuns;
+        app.view = View::Pipelines;
+        app.service = Service::Pipelines;
 
         let def = make_definition(1, "My Pipeline", "\\");
         app.navigate_to_build_history(def);
@@ -778,14 +741,15 @@ mod tests {
     }
 
     #[test]
-    fn log_viewer_uses_pipeline_root_context_for_dashboard_pipeline_drill_in() {
+    fn log_viewer_root_view_follows_build_history_origin() {
         let mut app = App::new(
             "org",
             "proj",
             &make_config(),
             PathBuf::from("/tmp/test.toml"),
         );
-        app.pipelines_root_view = View::ActiveRuns;
+        app.view = View::Pipelines;
+        app.service = Service::Pipelines;
 
         let def = make_definition(1, "My Pipeline", "\\");
         app.navigate_to_build_history(def);

@@ -8,11 +8,13 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::client::models::{BacklogLevelConfiguration, WorkItem};
-use crate::render::helpers::{row_style, split_with_search_bar, truncate};
+use crate::render::helpers::{
+    draw_state_message, draw_view_frame, row_style, split_with_search_bar, truncate,
+};
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav};
 
@@ -249,34 +251,24 @@ impl Boards {
     /// Renders the Boards view using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
-        let list_area =
-            split_with_search_bar(f, area, &app.search.query, app.search.mode, show_search);
+        let frame_area = draw_view_frame(f, area, " Boards ", Some(self.subtitle_line()));
+        let list_area = split_with_search_bar(
+            f,
+            frame_area,
+            &app.search.query,
+            app.search.mode,
+            show_search,
+        );
 
         if self.loading && self.rows.is_empty() {
-            let loading = Paragraph::new(" Loading backlog...")
-                .style(theme::MUTED)
-                .block(
-                    Block::bordered()
-                        .title(self.title())
-                        .title_style(theme::TITLE),
-                );
-            f.render_widget(loading, list_area);
+            draw_state_message(f, list_area, " Loading backlog...", theme::MUTED);
             return;
         }
 
         if let Some(message) = &self.error
             && self.rows.is_empty()
         {
-            let error = Paragraph::new(Line::from(vec![Span::styled(
-                format!(" {message}"),
-                theme::WARNING,
-            )]))
-            .block(
-                Block::bordered()
-                    .title(self.title())
-                    .title_style(theme::TITLE),
-            );
-            f.render_widget(error, list_area);
+            draw_state_message(f, list_area, format!(" {message}"), theme::WARNING);
             return;
         }
 
@@ -286,12 +278,7 @@ impl Boards {
             } else {
                 " No backlog items found"
             };
-            let empty = Paragraph::new(hint).style(theme::MUTED).block(
-                Block::bordered()
-                    .title(self.title())
-                    .title_style(theme::TITLE),
-            );
-            f.render_widget(empty, list_area);
+            draw_state_message(f, list_area, hint, theme::MUTED);
             return;
         }
 
@@ -377,25 +364,26 @@ impl Boards {
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::bordered()
-                .title(self.title())
-                .title_style(theme::TITLE),
-        );
+        let list = List::new(items);
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
         f.render_stateful_widget(list, list_area, &mut state);
     }
 
-    fn title(&self) -> String {
+    fn subtitle_line(&self) -> Line<'static> {
         let team = self.team_name.as_deref().unwrap_or("Backlog");
         if self.backlog_names.is_empty() {
-            format!(" Azure Boards — {team} ")
+            Line::from(vec![
+                Span::styled(format!(" {team}"), theme::TEXT),
+                Span::styled(format!("  ·  {} items", self.rows.len()), theme::MUTED),
+            ])
         } else {
-            format!(
-                " Azure Boards — {team} [{}] ",
-                self.backlog_names.join(" / ")
-            )
+            Line::from(vec![
+                Span::styled(format!(" {team}"), theme::TEXT),
+                Span::styled("  ·  ", theme::MUTED),
+                Span::styled(self.backlog_names.join(" / "), theme::MUTED),
+                Span::styled(format!("  ·  {} items", self.rows.len()), theme::MUTED),
+            ])
         }
     }
 
@@ -506,7 +494,7 @@ impl Component for Boards {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  ←→ collapse/expand  Enter toggle  / search  o open  r refresh  [/] views  1/2/3/4 areas  ? help"
+        "↑↓ navigate  ←→ collapse/expand  Enter toggle  / search  o open  r refresh  1–5 areas  ? help"
     }
 }
 
