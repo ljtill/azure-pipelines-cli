@@ -488,8 +488,7 @@ fn o_opens_browser_on_dashboard() {
     app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     app.filters.pinned_definition_ids = vec![1];
     app.rebuild_dashboard();
-    // Row 0 is "Pinned Pipelines" header; row 1 is the pinned pipeline.
-    app.dashboard.nav.down();
+    // Row 0 is the pinned pipeline (section headers were removed).
 
     assert!(matches!(
         app.dashboard.rows.get(app.dashboard.nav.index()),

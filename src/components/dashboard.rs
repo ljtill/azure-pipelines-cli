@@ -22,9 +22,6 @@ use crate::state::{App, DashboardPullRequestsState};
 /// Represents a row in the dashboard view.
 #[derive(Debug, Clone)]
 pub enum DashboardRow {
-    SectionHeader {
-        title: String,
-    },
     PinnedPipeline {
         definition: PipelineDefinition,
         latest_build: Option<Box<Build>>,
@@ -61,10 +58,6 @@ impl Dashboard {
         let mut rows = Vec::new();
 
         // --- Pinned Pipelines section ---
-        rows.push(DashboardRow::SectionHeader {
-            title: "Pinned Pipelines".to_string(),
-        });
-
         let mut pinned: Vec<(PipelineDefinition, Option<Build>)> = pinned_ids
             .iter()
             .filter_map(|id| {
@@ -90,10 +83,6 @@ impl Dashboard {
         }
 
         // --- My Pull Requests section ---
-        rows.push(DashboardRow::SectionHeader {
-            title: "My Pull Requests".to_string(),
-        });
-
         match dashboard_prs {
             DashboardPullRequestsState::Loading => rows.push(DashboardRow::EmptyHint {
                 message: "Loading pull requests...".to_string(),
@@ -175,12 +164,6 @@ impl Dashboard {
                 let sel_style = row_style(i == self.nav.index());
 
                 match row {
-                    DashboardRow::SectionHeader { title } => ListItem::new(Line::from(vec![
-                        Span::raw(pad(w[0])),
-                        Span::styled(title.clone(), theme::SECTION_HEADER),
-                    ]))
-                    .style(sel_style),
-
                     DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
                         Span::raw(pad(w[0])),
                         Span::raw(pad(w[1])),
@@ -355,17 +338,15 @@ mod tests {
             &[1, 3],
             &DashboardPullRequestsState::EmptyVerified,
         );
-        // SectionHeader + 2 pinned + SectionHeader + EmptyHint(no PRs) = 5
-        assert_eq!(d.rows.len(), 5);
+        // 2 pinned + EmptyHint(no PRs) = 3
+        assert_eq!(d.rows.len(), 3);
         assert!(
-            matches!(&d.rows[0], DashboardRow::SectionHeader { title } if title == "Pinned Pipelines")
+            matches!(&d.rows[0], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
         );
         assert!(
-            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
+            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 3)
         );
-        assert!(
-            matches!(&d.rows[3], DashboardRow::SectionHeader { title } if title == "My Pull Requests")
-        );
+        assert!(matches!(&d.rows[2], DashboardRow::EmptyHint { .. }));
     }
 
     #[test]
@@ -378,8 +359,9 @@ mod tests {
             &[],
             &DashboardPullRequestsState::EmptyVerified,
         );
-        // SectionHeader + EmptyHint + SectionHeader + EmptyHint = 4
-        assert_eq!(d.rows.len(), 4);
+        // EmptyHint(no pins) + EmptyHint(no PRs) = 2
+        assert_eq!(d.rows.len(), 2);
+        assert!(matches!(&d.rows[0], DashboardRow::EmptyHint { .. }));
         assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
     }
 
@@ -397,13 +379,11 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
         );
-        // SectionHeader("Pinned") + EmptyHint + SectionHeader("My PRs") + 2 PRs = 5
-        assert_eq!(d.rows.len(), 5);
-        assert!(
-            matches!(&d.rows[2], DashboardRow::SectionHeader { title } if title == "My Pull Requests")
-        );
+        // EmptyHint(no pins) + 2 PRs = 3
+        assert_eq!(d.rows.len(), 3);
+        assert!(matches!(&d.rows[0], DashboardRow::EmptyHint { .. }));
         assert!(matches!(
-            &d.rows[3],
+            &d.rows[1],
             DashboardRow::DashboardPullRequest { .. }
         ));
     }
@@ -418,8 +398,8 @@ mod tests {
             &[1],
             &DashboardPullRequestsState::EmptyVerified,
         );
-        assert!(d.pinned_definition_at(0).is_none()); // section header
-        assert_eq!(d.pinned_definition_at(1).unwrap().id, 1);
+        assert_eq!(d.pinned_definition_at(0).unwrap().id, 1);
+        assert!(d.pinned_definition_at(1).is_none()); // EmptyHint
     }
 
     #[test]
@@ -432,9 +412,9 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
         );
-        // Row 0 = SectionHeader("Pinned"), 1 = EmptyHint, 2 = SectionHeader("My PRs"), 3 = PR.
-        assert!(d.pull_request_at(2).is_none()); // Section header
-        assert_eq!(d.pull_request_at(3).unwrap().pull_request_id, 42);
+        // Row 0 = EmptyHint(no pins), 1 = PR.
+        assert!(d.pull_request_at(0).is_none());
+        assert_eq!(d.pull_request_at(1).unwrap().pull_request_id, 42);
     }
 
     #[test]
@@ -467,7 +447,7 @@ mod tests {
             &DashboardPullRequestsState::Loading,
         );
         assert!(matches!(
-            &d.rows[3],
+            &d.rows[1],
             DashboardRow::EmptyHint { message } if message == "Loading pull requests..."
         ));
     }
@@ -482,7 +462,7 @@ mod tests {
             &DashboardPullRequestsState::Unavailable("Unavailable".to_string()),
         );
         assert!(matches!(
-            &d.rows[3],
+            &d.rows[1],
             DashboardRow::EmptyHint { message } if message == "Unavailable"
         ));
     }
