@@ -93,6 +93,8 @@ pub enum View {
     PullRequestsAllActive,
     PullRequestDetail,
     Boards,
+    BoardsAssignedToMe,
+    BoardsCreatedByMe,
 }
 
 impl View {
@@ -107,6 +109,8 @@ impl View {
                 | View::PullRequestsAssignedToMe
                 | View::PullRequestsAllActive
                 | View::Boards
+                | View::BoardsAssignedToMe
+                | View::BoardsCreatedByMe
         )
     }
 
@@ -120,6 +124,11 @@ impl View {
         )
     }
 
+    /// Returns `true` when this view is one of the personal Boards list sub-views.
+    pub fn is_my_work_items(self) -> bool {
+        matches!(self, View::BoardsAssignedToMe | View::BoardsCreatedByMe)
+    }
+
     /// Returns the owning top-level area for this view.
     pub fn service(self) -> Service {
         match self {
@@ -131,7 +140,7 @@ impl View {
             | View::PullRequestsAssignedToMe
             | View::PullRequestsAllActive
             | View::PullRequestDetail => Service::Repos,
-            View::Boards => Service::Boards,
+            View::Boards | View::BoardsAssignedToMe | View::BoardsCreatedByMe => Service::Boards,
         }
     }
 
@@ -141,8 +150,8 @@ impl View {
             View::Dashboard => "Overview",
             View::Pipelines => "Definitions",
             View::ActiveRuns => "Active Runs",
-            View::PullRequestsCreatedByMe => "Created by me",
-            View::PullRequestsAssignedToMe => "Assigned to me",
+            View::PullRequestsCreatedByMe | View::BoardsCreatedByMe => "Created by me",
+            View::PullRequestsAssignedToMe | View::BoardsAssignedToMe => "Assigned to me",
             View::PullRequestsAllActive => "All active",
             View::Boards => "Backlog",
             View::BuildHistory | View::LogViewer | View::PullRequestDetail => "",
@@ -151,7 +160,11 @@ impl View {
 }
 
 const DASHBOARD_ROOT_VIEWS: [View; 1] = [View::Dashboard];
-const BOARDS_ROOT_VIEWS: [View; 1] = [View::Boards];
+const BOARDS_ROOT_VIEWS: [View; 3] = [
+    View::Boards,
+    View::BoardsAssignedToMe,
+    View::BoardsCreatedByMe,
+];
 const REPOS_ROOT_VIEWS: [View; 3] = [
     View::PullRequestsCreatedByMe,
     View::PullRequestsAssignedToMe,
@@ -318,6 +331,7 @@ pub struct App {
 
     // --- Boards ---
     pub boards: crate::components::boards::Boards,
+    pub my_work_items: crate::components::my_work_items::MyWorkItems,
 
     // --- Retention Leases ---
     pub retention_leases: RetentionLeasesState,
@@ -397,6 +411,7 @@ impl App {
             current_user: ExactUserIdentity::default(),
             dashboard_pull_requests: DashboardPullRequestsState::Loading,
             boards: crate::components::boards::Boards::default(),
+            my_work_items: crate::components::my_work_items::MyWorkItems::default(),
 
             retention_leases: RetentionLeasesState::default(),
 
@@ -523,6 +538,11 @@ impl App {
             | View::PullRequestsAssignedToMe
             | View::PullRequestsAllActive => self.pull_requests.rebuild(&self.search.query),
             View::Boards => self.rebuild_boards(),
+            View::BoardsAssignedToMe | View::BoardsCreatedByMe => {
+                if let Some(list) = self.my_work_items.list_for_mut(view) {
+                    list.rebuild(&self.search.query);
+                }
+            }
             View::BuildHistory | View::LogViewer | View::PullRequestDetail => {}
         }
     }
@@ -675,6 +695,8 @@ impl App {
             | View::PullRequestsAllActive => &mut self.pull_requests.nav,
             View::PullRequestDetail => &mut self.pull_request_detail.nav,
             View::Boards => &mut self.boards.nav,
+            View::BoardsAssignedToMe => &mut self.my_work_items.assigned.nav,
+            View::BoardsCreatedByMe => &mut self.my_work_items.created.nav,
         }
     }
 

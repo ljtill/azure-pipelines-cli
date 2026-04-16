@@ -17,6 +17,7 @@ const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
     "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
 const DASHBOARD_PULL_REQUESTS_UNAVAILABLE_MESSAGE: &str = "Failed to load My Pull Requests";
 const BOARDS_FETCH_FAILED_MESSAGE: &str = "Failed to load backlog";
+const MY_WORK_ITEMS_FETCH_FAILED_MESSAGE: &str = "Failed to load work items";
 const BOARD_FIELDS: &[&str] = &[
     "System.Title",
     "System.WorkItemType",
@@ -718,6 +719,88 @@ pub fn spawn_fetch_boards(
     );
 }
 
+/// Builds the WIQL for one of the personal Boards sub-views.
+///
+/// Returns `None` when the view is not a personal Boards sub-view. The query
+/// uses the `@Me` token so it does not depend on identity resolution.
+pub(crate) fn build_my_work_items_wiql(view: super::super::View, project: &str) -> Option<String> {
+    let user_clause = match view {
+        super::super::View::BoardsAssignedToMe => "[System.AssignedTo] = @Me",
+        super::super::View::BoardsCreatedByMe => "[System.CreatedBy] = @Me",
+        _ => return None,
+    };
+    // Escape single quotes in project name to avoid breaking out of the literal.
+    let escaped_project = project.replace('\'', "''");
+    Some(format!(
+        "SELECT [System.Id] FROM WorkItems WHERE {user_clause} \
+         AND [System.TeamProject] = '{escaped_project}' \
+         AND [System.State] NOT IN ('Closed', 'Removed', 'Done', 'Cut') \
+         ORDER BY [System.ChangedDate] DESC"
+    ))
+}
+
+/// Spawns a one-shot task that loads the current user's personal work items
+/// for the given view ("Assigned to me" or "Created by me").
+pub fn spawn_fetch_my_work_items(
+    app: &mut App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    view: super::super::View,
+) {
+    let Some(list) = app.my_work_items.list_for_mut(view) else {
+        return;
+    };
+    let generation = list.next_generation();
+
+    let Some(wiql) = build_my_work_items_wiql(view, &app.current_config().azure_devops.project)
+    else {
+        return;
+    };
+
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::info_span!("fetch_my_work_items", ?view, generation);
+    tokio::spawn(
+        async move {
+            let message = match load_my_work_items(&client, &wiql).await {
+                Ok(work_items) => AppMessage::MyWorkItemsLoaded {
+                    view,
+                    work_items,
+                    generation,
+                },
+                Err(error) => AppMessage::MyWorkItemsFailed {
+                    view,
+                    message: format!("{MY_WORK_ITEMS_FETCH_FAILED_MESSAGE}: {error}"),
+                    generation,
+                },
+            };
+            let _ = tx.send(message).await;
+        }
+        .instrument(span),
+    );
+}
+
+async fn load_my_work_items(client: &AdoClient, wiql: &str) -> Result<Vec<WorkItem>> {
+    let result = client.query_by_wiql(wiql).await?;
+    let ids: Vec<u32> = result.work_items.iter().map(|r| r.id).collect();
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let fields = &[
+        "System.Title",
+        "System.WorkItemType",
+        "System.State",
+        "System.AssignedTo",
+        "System.IterationPath",
+    ];
+    let items = client.get_work_items_batch(&ids, fields, None).await?;
+    // Batch does not guarantee ordering; reorder to match the WIQL ordering.
+    let mut by_id: std::collections::HashMap<u32, WorkItem> =
+        items.into_iter().map(|w| (w.id, w)).collect();
+    let ordered: Vec<WorkItem> = ids.into_iter().filter_map(|id| by_id.remove(&id)).collect();
+    Ok(ordered)
+}
+
 /// Opens a URL in the platform's default browser.
 pub(super) fn open_url(url: &str) -> std::io::Result<std::process::Child> {
     // Only allow https:// URLs to prevent command injection.
@@ -819,5 +902,40 @@ mod tests {
             describe_connection_data_error(&error),
             "connection data request failed: connection data blew up with extra whitespace"
         );
+    }
+
+    #[test]
+    fn build_my_work_items_wiql_for_assigned() {
+        let wiql =
+            build_my_work_items_wiql(super::super::super::View::BoardsAssignedToMe, "MyProject")
+                .expect("wiql for assigned view");
+        assert!(wiql.contains("[System.AssignedTo] = @Me"));
+        assert!(wiql.contains("[System.TeamProject] = 'MyProject'"));
+        assert!(wiql.contains("NOT IN ('Closed', 'Removed', 'Done', 'Cut')"));
+        assert!(wiql.contains("ORDER BY [System.ChangedDate] DESC"));
+    }
+
+    #[test]
+    fn build_my_work_items_wiql_for_created() {
+        let wiql =
+            build_my_work_items_wiql(super::super::super::View::BoardsCreatedByMe, "MyProject")
+                .expect("wiql for created view");
+        assert!(wiql.contains("[System.CreatedBy] = @Me"));
+    }
+
+    #[test]
+    fn build_my_work_items_wiql_escapes_single_quotes_in_project() {
+        let wiql =
+            build_my_work_items_wiql(super::super::super::View::BoardsAssignedToMe, "it's mine")
+                .expect("wiql");
+        assert!(wiql.contains("'it''s mine'"));
+    }
+
+    #[test]
+    fn build_my_work_items_wiql_rejects_non_boards_views() {
+        assert!(
+            build_my_work_items_wiql(super::super::super::View::Dashboard, "MyProject").is_none()
+        );
+        assert!(build_my_work_items_wiql(super::super::super::View::Boards, "MyProject").is_none());
     }
 }

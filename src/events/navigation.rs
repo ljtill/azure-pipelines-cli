@@ -70,6 +70,11 @@ pub fn handle_open_in_browser(app: &App) -> Action {
             .boards
             .selected_work_item_id()
             .map(|work_item_id| app.endpoints_web_work_item(work_item_id)),
+        View::BoardsAssignedToMe | View::BoardsCreatedByMe => app
+            .my_work_items
+            .list_for(app.view)
+            .and_then(|list| list.filtered.get(list.nav.index()))
+            .map(|row| app.endpoints_web_work_item(row.id)),
     };
 
     url.map_or(Action::None, Action::OpenInBrowser)

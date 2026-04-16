@@ -102,4 +102,14 @@ pub enum AppMessage {
         message: String,
         generation: u64,
     },
+    MyWorkItemsLoaded {
+        view: super::View,
+        work_items: Vec<WorkItem>,
+        generation: u64,
+    },
+    MyWorkItemsFailed {
+        view: super::View,
+        message: String,
+        generation: u64,
+    },
 }

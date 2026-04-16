@@ -209,6 +209,12 @@ pub fn rebuild_search_results(app: &mut App) {
             app.boards.rebuild(&app.search.query);
             app.boards.nav.set_index(0);
         }
+        View::BoardsAssignedToMe | View::BoardsCreatedByMe => {
+            if let Some(list) = app.my_work_items.list_for_mut(app.view) {
+                list.rebuild(&app.search.query);
+                list.nav.set_index(0);
+            }
+        }
         _ => {}
     }
 }

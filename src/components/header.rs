@@ -24,7 +24,9 @@ fn breadcrumb(app: &App) -> Line<'_> {
         View::PullRequestsAssignedToMe => vec!["Repos", "Assigned to me"],
         View::PullRequestsAllActive => vec!["Repos", "All active"],
         View::PullRequestDetail => vec!["Repos", "Detail"],
-        View::Boards => vec!["Boards"],
+        View::Boards => vec!["Boards", "Backlog"],
+        View::BoardsAssignedToMe => vec!["Boards", "Assigned to me"],
+        View::BoardsCreatedByMe => vec!["Boards", "Created by me"],
     };
     let mut spans = Vec::new();
     for (i, seg) in segments.iter().enumerate() {

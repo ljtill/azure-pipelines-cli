@@ -6,6 +6,7 @@ mod build_history;
 mod common;
 mod dashboard;
 mod log_viewer;
+mod my_work_items;
 mod navigation;
 mod pipelines;
 mod pull_request_detail;
@@ -51,6 +52,7 @@ pub enum Action {
     },
     FetchDashboardPullRequests,
     FetchBoards,
+    FetchMyWorkItems,
 }
 
 /// Dispatches a key event to the appropriate view-specific handler.
@@ -100,6 +102,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         | View::PullRequestsAllActive => pull_requests::handle_key(app, key),
         View::PullRequestDetail => pull_request_detail::handle_key(app, key),
         View::Boards => boards::handle_key(app, key),
+        View::BoardsAssignedToMe | View::BoardsCreatedByMe => my_work_items::handle_key(app, key),
     }
 }
 
@@ -247,6 +250,7 @@ fn action_for_root_view(view: View) -> Action {
     match view {
         View::Dashboard => Action::FetchDashboardPullRequests,
         View::Boards => Action::FetchBoards,
+        View::BoardsAssignedToMe | View::BoardsCreatedByMe => Action::FetchMyWorkItems,
         View::PullRequestsCreatedByMe
         | View::PullRequestsAssignedToMe
         | View::PullRequestsAllActive => Action::FetchPullRequests,

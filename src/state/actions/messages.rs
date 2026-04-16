@@ -549,6 +549,46 @@ pub fn handle_message(
             app.boards.set_error(message.clone());
             app.notifications.error_dedup(message);
         }
+        AppMessage::MyWorkItemsLoaded {
+            view,
+            work_items,
+            generation,
+        } => {
+            let Some(list) = app.my_work_items.list_for_mut(view) else {
+                return;
+            };
+            if generation < list.generation {
+                tracing::debug!(
+                    ?view,
+                    generation,
+                    current = list.generation,
+                    "dropping stale my work items response"
+                );
+                return;
+            }
+            tracing::info!(?view, count = work_items.len(), "my work items loaded");
+            list.set_data(&work_items, &app.search.query);
+        }
+        AppMessage::MyWorkItemsFailed {
+            view,
+            message,
+            generation,
+        } => {
+            let Some(list) = app.my_work_items.list_for_mut(view) else {
+                return;
+            };
+            if generation < list.generation {
+                tracing::debug!(
+                    ?view,
+                    generation,
+                    current = list.generation,
+                    "dropping stale my work items failure"
+                );
+                return;
+            }
+            tracing::warn!(?view, %message, "my work items fetch failed");
+            app.notifications.error_dedup(message);
+        }
         AppMessage::UserIdentity { identity } => {
             tracing::info!("user identity resolved");
             app.current_user = identity;

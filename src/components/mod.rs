@@ -12,6 +12,7 @@ pub mod dashboard;
 pub mod header;
 pub mod help;
 pub mod log_viewer;
+pub mod my_work_items;
 pub mod pipelines;
 pub mod pull_request_detail;
 pub mod pull_requests;

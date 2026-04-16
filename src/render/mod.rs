@@ -38,6 +38,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             app.pull_request_detail.draw_with_app(f, app, chunks[1]);
         }
         crate::state::View::Boards => app.boards.draw_with_app(f, app, chunks[1]),
+        crate::state::View::BoardsAssignedToMe | crate::state::View::BoardsCreatedByMe => {
+            app.my_work_items.draw_with_app(f, app, chunks[1]);
+        }
     }
 
     draw_footer(f, app, chunks[2]);
@@ -78,6 +81,9 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         | crate::state::View::PullRequestsAllActive => app.pull_requests.footer_hints(),
         crate::state::View::PullRequestDetail => app.pull_request_detail.footer_hints(),
         crate::state::View::Boards => app.boards.footer_hints(),
+        crate::state::View::BoardsAssignedToMe | crate::state::View::BoardsCreatedByMe => {
+            app.my_work_items.footer_hints()
+        }
     };
 
     let footer = Paragraph::new(Line::from(vec![Span::styled(hints, theme::MUTED)]));

@@ -734,6 +734,44 @@ fn shift_tab_cycles_pr_sub_views_backwards() {
 }
 
 #[test]
+fn tab_cycles_boards_sub_views() {
+    let mut app = test_app();
+    app.view = View::Boards;
+    app.service = Service::Boards;
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.view, View::BoardsAssignedToMe);
+    assert!(matches!(action, Action::FetchMyWorkItems));
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.view, View::BoardsCreatedByMe);
+    assert!(matches!(action, Action::FetchMyWorkItems));
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.view, View::Boards);
+    assert!(matches!(action, Action::FetchBoards));
+}
+
+#[test]
+fn shift_tab_cycles_boards_sub_views_backwards() {
+    let mut app = test_app();
+    app.view = View::Boards;
+    app.service = Service::Boards;
+
+    let action = handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(app.view, View::BoardsCreatedByMe);
+    assert!(matches!(action, Action::FetchMyWorkItems));
+
+    let action = handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(app.view, View::BoardsAssignedToMe);
+    assert!(matches!(action, Action::FetchMyWorkItems));
+
+    let action = handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(app.view, View::Boards);
+    assert!(matches!(action, Action::FetchBoards));
+}
+
+#[test]
 fn slash_enters_search_on_pull_requests() {
     let mut app = test_app();
     app.view = View::PullRequestsCreatedByMe;
