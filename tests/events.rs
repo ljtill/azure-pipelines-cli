@@ -47,7 +47,7 @@ fn board_item(id: u32, parent_id: Option<u32>, title: &str, child_ids: Vec<u32>)
 #[test]
 fn key_1_switches_to_dashboard() {
     let mut app = test_app();
-    app.activate_root_view(View::PullRequests);
+    app.activate_root_view(View::PullRequestsCreatedByMe);
     let action = handle_key(&mut app, key(KeyCode::Char('1')));
     assert_eq!(app.view, View::Dashboard);
     assert_eq!(app.service, Service::Dashboard);
@@ -104,7 +104,7 @@ fn key_2_switches_to_boards_and_rebuilds_after_clearing_search() {
 fn key_3_switches_to_repos() {
     let mut app = test_app();
     let action = handle_key(&mut app, key(KeyCode::Char('3')));
-    assert_eq!(app.view, View::PullRequests);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
     assert_eq!(app.service, Service::Repos);
     assert!(matches!(action, Action::FetchPullRequests));
 }
@@ -650,63 +650,94 @@ fn settings_save_no_reload_when_connection_unchanged() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn key_5_switches_to_active_runs() {
+fn key_5_is_unbound() {
     let mut app = test_app();
     app.activate_root_view(View::Pipelines);
     assert_eq!(app.service, Service::Pipelines);
 
     let action = handle_key(&mut app, key(KeyCode::Char('5')));
-    assert_eq!(app.view, View::ActiveRuns);
-    assert_eq!(app.service, Service::ActiveRuns);
+    assert_eq!(app.view, View::Pipelines);
     assert!(matches!(action, Action::None));
 }
 
 #[test]
-fn tab_cycles_pr_mode() {
-    use azure_devops_cli::components::pull_requests::PrViewMode;
-
+fn tab_cycles_pipelines_sub_views() {
     let mut app = test_app();
-    app.view = View::PullRequests;
-    assert_eq!(app.pull_requests.mode, PrViewMode::CreatedByMe);
+    app.activate_root_view(View::Pipelines);
+    assert_eq!(app.view, View::Pipelines);
 
     let action = handle_key(&mut app, key(KeyCode::Tab));
-    assert_eq!(app.pull_requests.mode, PrViewMode::AssignedToMe);
+    assert_eq!(app.view, View::ActiveRuns);
+    assert_eq!(app.service, Service::Pipelines);
+    assert!(matches!(action, Action::None));
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.view, View::Pipelines);
+    assert!(matches!(action, Action::None));
+}
+
+#[test]
+fn shift_tab_cycles_pipelines_sub_views_backwards() {
+    let mut app = test_app();
+    app.activate_root_view(View::Pipelines);
+
+    let action = handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(app.view, View::ActiveRuns);
+    assert!(matches!(action, Action::None));
+}
+
+#[test]
+fn tab_on_dashboard_is_noop() {
+    let mut app = test_app();
+    app.activate_root_view(View::Dashboard);
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.view, View::Dashboard);
+    assert!(matches!(action, Action::None));
+}
+
+#[test]
+fn tab_cycles_pr_sub_views() {
+    let mut app = test_app();
+    app.view = View::PullRequestsCreatedByMe;
+    app.service = Service::Repos;
+
+    let action = handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.view, View::PullRequestsAssignedToMe);
     assert!(matches!(action, Action::FetchPullRequests));
 
     let action = handle_key(&mut app, key(KeyCode::Tab));
-    assert_eq!(app.pull_requests.mode, PrViewMode::AllActive);
+    assert_eq!(app.view, View::PullRequestsAllActive);
     assert!(matches!(action, Action::FetchPullRequests));
 
     let action = handle_key(&mut app, key(KeyCode::Tab));
-    assert_eq!(app.pull_requests.mode, PrViewMode::CreatedByMe);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
     assert!(matches!(action, Action::FetchPullRequests));
 }
 
 #[test]
-fn shift_tab_cycles_pr_mode_backwards() {
-    use azure_devops_cli::components::pull_requests::PrViewMode;
-
+fn shift_tab_cycles_pr_sub_views_backwards() {
     let mut app = test_app();
-    app.view = View::PullRequests;
-    assert_eq!(app.pull_requests.mode, PrViewMode::CreatedByMe);
+    app.view = View::PullRequestsCreatedByMe;
+    app.service = Service::Repos;
 
     let action = handle_key(&mut app, key(KeyCode::BackTab));
-    assert_eq!(app.pull_requests.mode, PrViewMode::AllActive);
+    assert_eq!(app.view, View::PullRequestsAllActive);
     assert!(matches!(action, Action::FetchPullRequests));
 
     let action = handle_key(&mut app, key(KeyCode::BackTab));
-    assert_eq!(app.pull_requests.mode, PrViewMode::AssignedToMe);
+    assert_eq!(app.view, View::PullRequestsAssignedToMe);
     assert!(matches!(action, Action::FetchPullRequests));
 
     let action = handle_key(&mut app, key(KeyCode::BackTab));
-    assert_eq!(app.pull_requests.mode, PrViewMode::CreatedByMe);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
     assert!(matches!(action, Action::FetchPullRequests));
 }
 
 #[test]
 fn slash_enters_search_on_pull_requests() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
 
     handle_key(&mut app, key(KeyCode::Char('/')));
     assert_eq!(app.search.mode, InputMode::Search);
@@ -715,7 +746,7 @@ fn slash_enters_search_on_pull_requests() {
 #[test]
 fn pr_search_filters_list() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
 
     // Populate PRs.
     app.pull_requests.set_data(
@@ -739,7 +770,7 @@ fn pr_search_filters_list() {
 #[test]
 fn q_on_pull_requests_goes_to_dashboard() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
 
     handle_key(&mut app, key(KeyCode::Char('q')));
     assert_eq!(app.view, View::Dashboard);
@@ -748,7 +779,7 @@ fn q_on_pull_requests_goes_to_dashboard() {
 #[test]
 fn r_on_pull_requests_triggers_force_refresh() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
 
     let action = handle_key(&mut app, key(KeyCode::Char('r')));
     assert!(matches!(action, Action::ForceRefresh));
@@ -757,11 +788,11 @@ fn r_on_pull_requests_triggers_force_refresh() {
 #[test]
 fn esc_on_pull_requests_is_noop() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
     app.service = Service::Repos;
 
     let action = handle_key(&mut app, key(KeyCode::Esc));
-    assert_eq!(app.view, View::PullRequests);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
     assert!(matches!(action, Action::None));
 }
 
@@ -773,14 +804,14 @@ fn tab_switching_clears_search_on_pr_switch() {
     app.search.query = "old query".to_string();
 
     handle_key(&mut app, key(KeyCode::Char('3')));
-    assert_eq!(app.view, View::PullRequests);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
     assert!(app.search.query.is_empty());
 }
 
 #[test]
 fn o_opens_browser_on_pull_requests() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
     app.pull_requests.set_data(
         vec![make_pull_request(42, "Test PR", "active", "my-repo")],
         "",
@@ -844,7 +875,7 @@ fn boards_tree_keys_toggle_rows_and_select_parent() {
 #[test]
 fn enter_on_pr_list_drills_into_detail() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
     app.pull_requests.set_data(
         vec![make_pull_request(42, "Test PR", "active", "my-repo")],
         "",
@@ -862,7 +893,7 @@ fn enter_on_pr_list_drills_into_detail() {
 #[test]
 fn right_on_pr_list_drills_into_detail() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
     app.pull_requests.set_data(
         vec![make_pull_request(99, "Another PR", "active", "backend")],
         "",
@@ -879,7 +910,7 @@ fn right_on_pr_list_drills_into_detail() {
 #[test]
 fn q_on_pr_detail_goes_back_to_pr_list() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
     app.pull_requests.set_data(
         vec![make_pull_request(42, "Test PR", "active", "my-repo")],
         "",
@@ -888,13 +919,13 @@ fn q_on_pr_detail_goes_back_to_pr_list() {
     assert_eq!(app.view, View::PullRequestDetail);
 
     handle_key(&mut app, key(KeyCode::Char('q')));
-    assert_eq!(app.view, View::PullRequests);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
 }
 
 #[test]
 fn esc_on_pr_detail_goes_back_to_pr_list() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
     app.pull_requests.set_data(
         vec![make_pull_request(42, "Test PR", "active", "my-repo")],
         "",
@@ -903,13 +934,13 @@ fn esc_on_pr_detail_goes_back_to_pr_list() {
     assert_eq!(app.view, View::PullRequestDetail);
 
     handle_key(&mut app, key(KeyCode::Esc));
-    assert_eq!(app.view, View::PullRequests);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
 }
 
 #[test]
 fn left_on_pr_detail_goes_back() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
     app.pull_requests.set_data(
         vec![make_pull_request(42, "Test PR", "active", "my-repo")],
         "",
@@ -918,15 +949,15 @@ fn left_on_pr_detail_goes_back() {
     assert_eq!(app.view, View::PullRequestDetail);
 
     handle_key(&mut app, key(KeyCode::Left));
-    assert_eq!(app.view, View::PullRequests);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
 }
 
 #[test]
 fn enter_on_empty_pr_list_is_noop() {
     let mut app = test_app();
-    app.view = View::PullRequests;
+    app.view = View::PullRequestsCreatedByMe;
     // No PRs loaded.
     let action = handle_key(&mut app, key(KeyCode::Enter));
-    assert_eq!(app.view, View::PullRequests);
+    assert_eq!(app.view, View::PullRequestsCreatedByMe);
     assert!(matches!(action, Action::None));
 }

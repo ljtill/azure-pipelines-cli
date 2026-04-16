@@ -9,56 +9,11 @@ use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::render::helpers::{
-    draw_state_message, draw_view_frame, pr_status_icon, row_style, split_with_search_bar, truncate,
+    draw_state_message, draw_view_frame, pr_status_icon, row_style, split_with_search_bar,
+    sub_view_tab_spans, truncate,
 };
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav};
-
-/// Represents the sub-mode filter for the pull requests list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PrViewMode {
-    #[default]
-    CreatedByMe,
-    AssignedToMe,
-    AllActive,
-}
-
-impl PrViewMode {
-    /// Cycles to the next sub-mode.
-    #[must_use]
-    pub fn next(self) -> Self {
-        match self {
-            PrViewMode::CreatedByMe => PrViewMode::AssignedToMe,
-            PrViewMode::AssignedToMe => PrViewMode::AllActive,
-            PrViewMode::AllActive => PrViewMode::CreatedByMe,
-        }
-    }
-
-    /// Cycles to the previous sub-mode.
-    #[must_use]
-    pub fn prev(self) -> Self {
-        match self {
-            PrViewMode::CreatedByMe => PrViewMode::AllActive,
-            PrViewMode::AssignedToMe => PrViewMode::CreatedByMe,
-            PrViewMode::AllActive => PrViewMode::AssignedToMe,
-        }
-    }
-
-    /// Returns a user-facing label for the mode.
-    pub fn label(self) -> &'static str {
-        match self {
-            PrViewMode::CreatedByMe => "Created by me",
-            PrViewMode::AssignedToMe => "Assigned to me",
-            PrViewMode::AllActive => "All active",
-        }
-    }
-}
-
-impl std::fmt::Display for PrViewMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.label())
-    }
-}
 
 /// Stores state for the Pull Requests list view.
 #[derive(Debug, Default)]
@@ -68,7 +23,6 @@ pub struct PullRequests {
     /// Filtered and sorted list for display.
     pub filtered: Vec<crate::client::models::PullRequest>,
     pub nav: ListNav,
-    pub mode: PrViewMode,
     /// Monotonic counter incremented on each fetch request to discard stale responses.
     pub generation: u64,
 }
@@ -114,23 +68,7 @@ impl PullRequests {
     /// Renders the pull requests list using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
-        let mode_spans: Vec<Span> = PrViewMode::ALL
-            .iter()
-            .enumerate()
-            .flat_map(|(i, m)| {
-                let style = if *m == self.mode {
-                    theme::MODE_ACTIVE
-                } else {
-                    theme::MODE_INACTIVE
-                };
-                let mut spans = vec![Span::styled(format!(" {} ", m.label()), style)];
-                if i < PrViewMode::ALL.len() - 1 {
-                    spans.push(Span::styled(" │ ", theme::MUTED));
-                }
-                spans
-            })
-            .collect();
-        let mut subtitle_spans = mode_spans;
+        let mut subtitle_spans = sub_view_tab_spans(app.service, app.view);
         subtitle_spans.push(Span::styled(
             format!("  ·  {} shown", self.filtered.len()),
             theme::MUTED,
@@ -233,22 +171,13 @@ impl PullRequests {
     }
 }
 
-impl PrViewMode {
-    /// All modes in order, for iteration.
-    const ALL: [PrViewMode; 3] = [
-        PrViewMode::CreatedByMe,
-        PrViewMode::AssignedToMe,
-        PrViewMode::AllActive,
-    ];
-}
-
 impl Component for PullRequests {
     fn draw(&self, _frame: &mut Frame, _area: Rect) -> Result<()> {
         Ok(())
     }
 
     fn footer_hints(&self) -> &'static str {
-        "Tab/Shift-Tab mode  ↑↓ navigate  →/Enter detail  / search  o open  r refresh  1–5 areas  ? help"
+        "Tab/Shift-Tab view  ↑↓ navigate  →/Enter detail  / search  o open  r refresh  1–4 areas  ? help"
     }
 }
 
@@ -256,40 +185,6 @@ impl Component for PullRequests {
 mod tests {
     use super::*;
     use crate::test_helpers::*;
-
-    #[test]
-    fn pr_view_mode_cycles() {
-        assert_eq!(PrViewMode::CreatedByMe.next(), PrViewMode::AssignedToMe);
-        assert_eq!(PrViewMode::AssignedToMe.next(), PrViewMode::AllActive);
-        assert_eq!(PrViewMode::AllActive.next(), PrViewMode::CreatedByMe);
-    }
-
-    #[test]
-    fn pr_view_mode_cycles_backwards() {
-        assert_eq!(PrViewMode::CreatedByMe.prev(), PrViewMode::AllActive);
-        assert_eq!(PrViewMode::AssignedToMe.prev(), PrViewMode::CreatedByMe);
-        assert_eq!(PrViewMode::AllActive.prev(), PrViewMode::AssignedToMe);
-    }
-
-    #[test]
-    fn pr_view_mode_labels() {
-        assert_eq!(PrViewMode::CreatedByMe.label(), "Created by me");
-        assert_eq!(PrViewMode::AssignedToMe.label(), "Assigned to me");
-        assert_eq!(PrViewMode::AllActive.label(), "All active");
-    }
-
-    #[test]
-    fn pr_view_mode_display() {
-        assert_eq!(format!("{}", PrViewMode::CreatedByMe), "Created by me");
-    }
-
-    #[test]
-    fn default_mode_is_created_by_me() {
-        let pr = PullRequests::default();
-        assert_eq!(pr.mode, PrViewMode::CreatedByMe);
-        assert!(pr.filtered.is_empty());
-        assert_eq!(pr.nav.index(), 0);
-    }
 
     #[test]
     fn set_data_populates_filtered() {

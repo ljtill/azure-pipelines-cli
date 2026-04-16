@@ -39,7 +39,7 @@ pub fn handle_action(
             if app.view == View::BuildHistory {
                 spawn_build_history_refresh(app, client, tx, None);
             }
-            if app.view == View::PullRequests {
+            if app.view.is_pull_requests() {
                 let generation = app.pull_requests.next_generation();
                 spawn_fetch_pull_requests(app, client, tx, generation);
             }

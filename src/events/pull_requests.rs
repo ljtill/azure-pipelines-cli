@@ -9,16 +9,6 @@ use crate::state::{App, InputMode};
 /// Handles keys specific to the Pull Requests view.
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
-        KeyCode::Tab => {
-            app.pull_requests.mode = app.pull_requests.mode.next();
-            tracing::info!(mode = ?app.pull_requests.mode, "cycling PR view mode");
-            Action::FetchPullRequests
-        }
-        KeyCode::BackTab => {
-            app.pull_requests.mode = app.pull_requests.mode.prev();
-            tracing::info!(mode = ?app.pull_requests.mode, "cycling PR view mode backwards");
-            Action::FetchPullRequests
-        }
         KeyCode::Char('/') => {
             app.search.mode = InputMode::Search;
             Action::None

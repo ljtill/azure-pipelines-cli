@@ -237,17 +237,23 @@ impl Pipelines {
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
         let selected_count = self.selected.len();
-        let subtitle = Line::from(vec![
-            Span::styled(format!(" {} pipelines", self.pipeline_count()), theme::TEXT),
-            Span::styled(
-                format!("  ·  {selected_count} selected"),
-                if selected_count > 0 {
-                    theme::SUCCESS
-                } else {
-                    theme::MUTED
-                },
-            ),
-        ]);
+        let mut subtitle_spans = crate::render::helpers::sub_view_tab_spans(app.service, app.view);
+        if !subtitle_spans.is_empty() {
+            subtitle_spans.push(Span::styled("  ·  ", theme::MUTED));
+        }
+        subtitle_spans.push(Span::styled(
+            format!("{} pipelines", self.pipeline_count()),
+            theme::TEXT,
+        ));
+        subtitle_spans.push(Span::styled(
+            format!("  ·  {selected_count} selected"),
+            if selected_count > 0 {
+                theme::SUCCESS
+            } else {
+                theme::MUTED
+            },
+        ));
+        let subtitle = Line::from(subtitle_spans);
         let frame_area = draw_view_frame(f, area, " Pipelines ", Some(subtitle));
         let list_area = split_with_search_bar(
             f,
@@ -414,7 +420,7 @@ impl Component for Pipelines {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Space select  p pin  Q queue  o open  / search  1–5 areas  ? help"
+        "↑↓ navigate  ←→ collapse/expand  Enter drill-in  Space select  p pin  Q queue  o open  / search  1–4 areas  ? help"
     }
 }
 

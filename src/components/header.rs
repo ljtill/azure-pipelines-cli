@@ -16,11 +16,13 @@ use crate::state::{App, Service, View};
 fn breadcrumb(app: &App) -> Line<'_> {
     let segments: Vec<&str> = match app.view {
         View::Dashboard => vec!["Dashboard"],
-        View::Pipelines => vec!["Pipelines"],
-        View::ActiveRuns => vec!["Active Runs"],
+        View::Pipelines => vec!["Pipelines", "Definitions"],
+        View::ActiveRuns => vec!["Pipelines", "Active Runs"],
         View::BuildHistory => vec!["Pipelines", "Build History"],
         View::LogViewer => vec!["Pipelines", "Log Viewer"],
-        View::PullRequests => vec!["Repos"],
+        View::PullRequestsCreatedByMe => vec!["Repos", "Created by me"],
+        View::PullRequestsAssignedToMe => vec!["Repos", "Assigned to me"],
+        View::PullRequestsAllActive => vec!["Repos", "All active"],
         View::PullRequestDetail => vec!["Repos", "Detail"],
         View::Boards => vec!["Boards"],
     };

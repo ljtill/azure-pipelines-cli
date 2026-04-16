@@ -40,7 +40,9 @@ pub fn handle_open_in_browser(app: &App) -> Action {
             .log_viewer
             .selected_build()
             .map(|b| app.endpoints_web_build(b.id)),
-        View::PullRequests => app
+        View::PullRequestsCreatedByMe
+        | View::PullRequestsAssignedToMe
+        | View::PullRequestsAllActive => app
             .pull_requests
             .filtered
             .get(app.pull_requests.nav.index())

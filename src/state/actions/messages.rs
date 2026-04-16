@@ -555,7 +555,7 @@ pub fn handle_message(
             // Re-fetch dashboard PRs now that we can filter by creator.
             spawn_fetch_dashboard_pull_requests(app, client, tx);
             // Re-fetch PR view data so filtered modes use the resolved identity.
-            if app.view == View::PullRequests {
+            if app.view.is_pull_requests() {
                 let generation = app.pull_requests.next_generation();
                 spawn_fetch_pull_requests(app, client, tx, generation);
             }
@@ -1800,7 +1800,7 @@ mod tests {
     #[test]
     fn pull_requests_loaded_updates_data() {
         let mut app = make_app();
-        app.view = View::PullRequests;
+        app.view = View::PullRequestsCreatedByMe;
 
         let generation = app.pull_requests.next_generation();
         let prs = vec![
@@ -1817,7 +1817,7 @@ mod tests {
     #[test]
     fn pull_requests_loaded_drops_stale_response() {
         let mut app = make_app();
-        app.view = View::PullRequests;
+        app.view = View::PullRequestsCreatedByMe;
 
         // Advance generation twice to simulate rapid tab switching.
         let _old_gen = app.pull_requests.next_generation();
@@ -1838,7 +1838,7 @@ mod tests {
     #[test]
     fn pull_requests_loaded_current_generation_accepted() {
         let mut app = make_app();
-        app.view = View::PullRequests;
+        app.view = View::PullRequestsCreatedByMe;
 
         // Advance to generation 3.
         app.pull_requests.next_generation();

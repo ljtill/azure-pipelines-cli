@@ -78,7 +78,6 @@ pub enum Service {
     Boards,
     Repos,
     Pipelines,
-    ActiveRuns,
 }
 
 /// Represents the active view in the application.
@@ -89,7 +88,9 @@ pub enum View {
     ActiveRuns,
     BuildHistory,
     LogViewer,
-    PullRequests,
+    PullRequestsCreatedByMe,
+    PullRequestsAssignedToMe,
+    PullRequestsAllActive,
     PullRequestDetail,
     Boards,
 }
@@ -102,8 +103,20 @@ impl View {
             View::Dashboard
                 | View::Pipelines
                 | View::ActiveRuns
-                | View::PullRequests
+                | View::PullRequestsCreatedByMe
+                | View::PullRequestsAssignedToMe
+                | View::PullRequestsAllActive
                 | View::Boards
+        )
+    }
+
+    /// Returns `true` when this view is one of the Pull Requests list sub-views.
+    pub fn is_pull_requests(self) -> bool {
+        matches!(
+            self,
+            View::PullRequestsCreatedByMe
+                | View::PullRequestsAssignedToMe
+                | View::PullRequestsAllActive
         )
     }
 
@@ -111,9 +124,13 @@ impl View {
     pub fn service(self) -> Service {
         match self {
             View::Dashboard => Service::Dashboard,
-            View::Pipelines | View::BuildHistory | View::LogViewer => Service::Pipelines,
-            View::ActiveRuns => Service::ActiveRuns,
-            View::PullRequests | View::PullRequestDetail => Service::Repos,
+            View::Pipelines | View::ActiveRuns | View::BuildHistory | View::LogViewer => {
+                Service::Pipelines
+            }
+            View::PullRequestsCreatedByMe
+            | View::PullRequestsAssignedToMe
+            | View::PullRequestsAllActive
+            | View::PullRequestDetail => Service::Repos,
             View::Boards => Service::Boards,
         }
     }
@@ -124,7 +141,9 @@ impl View {
             View::Dashboard => "Overview",
             View::Pipelines => "Definitions",
             View::ActiveRuns => "Active Runs",
-            View::PullRequests => "Pull Requests",
+            View::PullRequestsCreatedByMe => "Created by me",
+            View::PullRequestsAssignedToMe => "Assigned to me",
+            View::PullRequestsAllActive => "All active",
             View::Boards => "Backlog",
             View::BuildHistory | View::LogViewer | View::PullRequestDetail => "",
         }
@@ -133,18 +152,20 @@ impl View {
 
 const DASHBOARD_ROOT_VIEWS: [View; 1] = [View::Dashboard];
 const BOARDS_ROOT_VIEWS: [View; 1] = [View::Boards];
-const REPOS_ROOT_VIEWS: [View; 1] = [View::PullRequests];
-const PIPELINES_ROOT_VIEWS: [View; 1] = [View::Pipelines];
-const ACTIVE_RUNS_ROOT_VIEWS: [View; 1] = [View::ActiveRuns];
+const REPOS_ROOT_VIEWS: [View; 3] = [
+    View::PullRequestsCreatedByMe,
+    View::PullRequestsAssignedToMe,
+    View::PullRequestsAllActive,
+];
+const PIPELINES_ROOT_VIEWS: [View; 2] = [View::Pipelines, View::ActiveRuns];
 
 impl Service {
     /// All top-level areas currently exposed in the shell.
-    pub const ALL: [Service; 5] = [
+    pub const ALL: [Service; 4] = [
         Service::Dashboard,
         Service::Boards,
         Service::Repos,
         Service::Pipelines,
-        Service::ActiveRuns,
     ];
 
     /// Returns the user-facing label for this area.
@@ -154,7 +175,6 @@ impl Service {
             Service::Boards => "Boards",
             Service::Repos => "Repos",
             Service::Pipelines => "Pipelines",
-            Service::ActiveRuns => "Active Runs",
         }
     }
 
@@ -165,7 +185,6 @@ impl Service {
             Service::Boards => '2',
             Service::Repos => '3',
             Service::Pipelines => '4',
-            Service::ActiveRuns => '5',
         }
     }
 
@@ -176,7 +195,6 @@ impl Service {
             Service::Boards => &BOARDS_ROOT_VIEWS,
             Service::Repos => &REPOS_ROOT_VIEWS,
             Service::Pipelines => &PIPELINES_ROOT_VIEWS,
-            Service::ActiveRuns => &ACTIVE_RUNS_ROOT_VIEWS,
         }
     }
 }
@@ -450,12 +468,19 @@ impl App {
         }
     }
 
+    fn pull_request_detail_root_view(&self) -> View {
+        self.pull_request_detail
+            .return_to
+            .filter(|v| v.is_pull_requests())
+            .unwrap_or(View::PullRequestsCreatedByMe)
+    }
+
     /// Returns the current root view for the selected service, even from a drill-in.
     pub fn active_root_view(&self) -> View {
         match self.view {
             View::BuildHistory => self.build_history_root_view(),
             View::LogViewer => self.log_viewer_root_view(),
-            View::PullRequestDetail => View::PullRequests,
+            View::PullRequestDetail => self.pull_request_detail_root_view(),
             view => view,
         }
     }
@@ -494,10 +519,29 @@ impl App {
                 &self.filters.definition_ids,
                 &self.search.query,
             ),
-            View::PullRequests => self.pull_requests.rebuild(&self.search.query),
+            View::PullRequestsCreatedByMe
+            | View::PullRequestsAssignedToMe
+            | View::PullRequestsAllActive => self.pull_requests.rebuild(&self.search.query),
             View::Boards => self.rebuild_boards(),
             View::BuildHistory | View::LogViewer | View::PullRequestDetail => {}
         }
+    }
+
+    /// Cycles to the next (or previous) root view within the currently active service.
+    /// `delta` is `+1` to move forward and `-1` to move backward. Returns the new view.
+    /// No-op when the active service has a single root view.
+    pub fn cycle_root_view(&mut self, delta: i32) -> View {
+        let views = self.service.root_views();
+        if views.len() <= 1 {
+            return self.view;
+        }
+        let current = self.active_root_view();
+        let idx = views.iter().position(|v| *v == current).unwrap_or(0);
+        let len = views.len() as i32;
+        let next_idx = ((idx as i32 + delta).rem_euclid(len)) as usize;
+        let next = views[next_idx];
+        self.activate_root_view(next);
+        next
     }
 
     fn reset_build_history(&mut self) {
@@ -565,9 +609,10 @@ impl App {
                 self.reset_build_history();
             }
             View::PullRequestDetail => {
-                tracing::info!(from = ?self.view, to = ?View::PullRequests, "navigating back");
+                let return_to = self.pull_request_detail_root_view();
+                tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
                 self.service = Service::Repos;
-                self.view = View::PullRequests;
+                self.view = return_to;
                 self.reset_pull_request_detail();
             }
             _ => {}
@@ -602,12 +647,18 @@ impl App {
     /// Navigates to the pull request detail view for the given PR.
     pub fn navigate_to_pr_detail(&mut self, pr: &crate::client::models::PullRequest) {
         tracing::info!(pr_id = pr.pull_request_id, "navigating to PR detail");
+        let return_to = if self.view.is_pull_requests() {
+            Some(self.view)
+        } else {
+            Some(View::PullRequestsCreatedByMe)
+        };
         self.service = Service::Repos;
         self.pull_request_detail = crate::components::pull_request_detail::PullRequestDetail {
             pull_request: None,
             threads: vec![],
             nav: ListNav::default(),
             loading: true,
+            return_to,
         };
         self.view = View::PullRequestDetail;
     }
@@ -619,7 +670,9 @@ impl App {
             View::ActiveRuns => &mut self.active_runs.nav,
             View::BuildHistory => &mut self.build_history.nav,
             View::LogViewer => self.log_viewer.nav_mut(),
-            View::PullRequests => &mut self.pull_requests.nav,
+            View::PullRequestsCreatedByMe
+            | View::PullRequestsAssignedToMe
+            | View::PullRequestsAllActive => &mut self.pull_requests.nav,
             View::PullRequestDetail => &mut self.pull_request_detail.nav,
             View::Boards => &mut self.boards.nav,
         }

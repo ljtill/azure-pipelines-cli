@@ -63,7 +63,7 @@ impl Component for LogViewer {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  1–5 areas  q/Esc back"
+        "↑↓ navigate  ←→ collapse/expand  Enter inspect  f follow  R retry  A approve  D reject  c cancel  o open  1–4 areas  q/Esc back"
     }
 }
 

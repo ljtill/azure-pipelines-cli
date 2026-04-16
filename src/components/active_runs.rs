@@ -75,18 +75,21 @@ impl ActiveRuns {
         let sel_count = self.selected.len();
         let filtered = self.filtered.len();
         let total = app.data.active_builds.len();
-        let subtitle = Line::from(vec![
-            Span::styled(format!(" {filtered} shown"), theme::TEXT),
-            Span::styled(format!("  ·  {total} total"), theme::MUTED),
-            Span::styled(
-                format!("  ·  {sel_count} selected"),
-                if sel_count > 0 {
-                    theme::SUCCESS
-                } else {
-                    theme::MUTED
-                },
-            ),
-        ]);
+        let mut subtitle_spans = crate::render::helpers::sub_view_tab_spans(app.service, app.view);
+        if !subtitle_spans.is_empty() {
+            subtitle_spans.push(Span::styled("  ·  ", theme::MUTED));
+        }
+        subtitle_spans.push(Span::styled(format!("{filtered} shown"), theme::TEXT));
+        subtitle_spans.push(Span::styled(format!("  ·  {total} total"), theme::MUTED));
+        subtitle_spans.push(Span::styled(
+            format!("  ·  {sel_count} selected"),
+            if sel_count > 0 {
+                theme::SUCCESS
+            } else {
+                theme::MUTED
+            },
+        ));
+        let subtitle = Line::from(subtitle_spans);
         let frame_area = draw_view_frame(f, area, " Active Runs ", Some(subtitle));
         let list_area = split_with_search_bar(
             f,
@@ -206,6 +209,6 @@ impl Component for ActiveRuns {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  Space select  c cancel  / filter  →/Enter view logs  o open  1–5 areas  r refresh  , settings  ? help  q/Esc back"
+        "↑↓ navigate  Space select  c cancel  / filter  →/Enter view logs  o open  1–4 areas  r refresh  , settings  ? help  q/Esc back"
     }
 }

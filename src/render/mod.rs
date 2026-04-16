@@ -29,7 +29,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         crate::state::View::LogViewer => {
             crate::components::log_viewer::draw_log_viewer(f, app, chunks[1]);
         }
-        crate::state::View::PullRequests => app.pull_requests.draw_with_app(f, app, chunks[1]),
+        crate::state::View::PullRequestsCreatedByMe
+        | crate::state::View::PullRequestsAssignedToMe
+        | crate::state::View::PullRequestsAllActive => {
+            app.pull_requests.draw_with_app(f, app, chunks[1]);
+        }
         crate::state::View::PullRequestDetail => {
             app.pull_request_detail.draw_with_app(f, app, chunks[1]);
         }
@@ -69,7 +73,9 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         crate::state::View::ActiveRuns => app.active_runs.footer_hints(),
         crate::state::View::BuildHistory => app.build_history.footer_hints(),
         crate::state::View::LogViewer => app.log_viewer.footer_hints(),
-        crate::state::View::PullRequests => app.pull_requests.footer_hints(),
+        crate::state::View::PullRequestsCreatedByMe
+        | crate::state::View::PullRequestsAssignedToMe
+        | crate::state::View::PullRequestsAllActive => app.pull_requests.footer_hints(),
         crate::state::View::PullRequestDetail => app.pull_request_detail.footer_hints(),
         crate::state::View::Boards => app.boards.footer_hints(),
     };

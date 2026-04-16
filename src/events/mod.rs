@@ -95,7 +95,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         View::ActiveRuns => active_runs::handle_key(app, key),
         View::BuildHistory => build_history::handle_key(app, key),
         View::LogViewer => log_viewer::handle_key(app, key),
-        View::PullRequests => pull_requests::handle_key(app, key),
+        View::PullRequestsCreatedByMe
+        | View::PullRequestsAssignedToMe
+        | View::PullRequestsAllActive => pull_requests::handle_key(app, key),
         View::PullRequestDetail => pull_request_detail::handle_key(app, key),
         View::Boards => boards::handle_key(app, key),
     }
@@ -125,7 +127,10 @@ fn handle_common_key(app: &mut App, key: KeyEvent) -> Option<Action> {
         KeyCode::Char('2') => Some(activate_service(app, Service::Boards)),
         KeyCode::Char('3') => Some(activate_service(app, Service::Repos)),
         KeyCode::Char('4') => Some(activate_service(app, Service::Pipelines)),
-        KeyCode::Char('5') => Some(activate_service(app, Service::ActiveRuns)),
+
+        // Sub-view cycling within the current service.
+        KeyCode::Tab if app.view.is_root() => Some(cycle_root_view(app, 1)),
+        KeyCode::BackTab if app.view.is_root() => Some(cycle_root_view(app, -1)),
 
         // Navigation.
         KeyCode::Up => {
@@ -227,11 +232,24 @@ fn activate_service(app: &mut App, service: Service) -> Action {
     action_for_root_view(target)
 }
 
+/// Cycles to the next/prev sub-view within the currently active service and
+/// returns the appropriate `Action` (e.g. trigger a fetch if the new view requires data).
+fn cycle_root_view(app: &mut App, delta: i32) -> Action {
+    // Services with only one root view have nothing to cycle to.
+    if app.service.root_views().len() <= 1 {
+        return Action::None;
+    }
+    let target = app.cycle_root_view(delta);
+    action_for_root_view(target)
+}
+
 fn action_for_root_view(view: View) -> Action {
     match view {
         View::Dashboard => Action::FetchDashboardPullRequests,
         View::Boards => Action::FetchBoards,
-        View::PullRequests => Action::FetchPullRequests,
+        View::PullRequestsCreatedByMe
+        | View::PullRequestsAssignedToMe
+        | View::PullRequestsAllActive => Action::FetchPullRequests,
         View::ActiveRuns
         | View::Pipelines
         | View::BuildHistory
@@ -300,7 +318,7 @@ mod tests {
     fn esc_on_active_runs_is_noop() {
         let mut app = make_app();
         app.view = View::ActiveRuns;
-        app.service = Service::ActiveRuns;
+        app.service = Service::Pipelines;
 
         let action = handle_key(&mut app, key(KeyCode::Esc));
         assert_eq!(app.view, View::ActiveRuns);

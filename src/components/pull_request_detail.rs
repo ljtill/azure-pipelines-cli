@@ -21,6 +21,8 @@ pub struct PullRequestDetail {
     pub threads: Vec<crate::client::models::PullRequestThread>,
     pub nav: ListNav,
     pub loading: bool,
+    /// Root view to return to on back navigation (which PR sub-view was active on drill-in).
+    pub return_to: Option<crate::state::View>,
 }
 
 impl PullRequestDetail {
@@ -147,7 +149,7 @@ impl Component for PullRequestDetail {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "←/q/Esc back  ↑↓ navigate  o open  1–5 areas  ? help"
+        "←/q/Esc back  ↑↓ navigate  o open  1–4 areas  ? help"
     }
 }
 

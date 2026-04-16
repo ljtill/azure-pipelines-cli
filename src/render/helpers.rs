@@ -186,6 +186,32 @@ where
     })
 }
 
+/// Returns styled spans rendering a sub-view tab strip for services with more
+/// than one root view. Produces an empty `Vec` when the service has a single
+/// root view. The `current` view is highlighted with `theme::MODE_ACTIVE`.
+pub fn sub_view_tab_spans<'a>(
+    service: crate::state::Service,
+    current: crate::state::View,
+) -> Vec<Span<'a>> {
+    let views = service.root_views();
+    if views.len() <= 1 {
+        return Vec::new();
+    }
+    let mut spans: Vec<Span<'a>> = Vec::with_capacity(views.len() * 2);
+    for (i, v) in views.iter().enumerate() {
+        let style = if *v == current {
+            theme::MODE_ACTIVE
+        } else {
+            theme::MODE_INACTIVE
+        };
+        spans.push(Span::styled(format!(" {} ", v.root_label()), style));
+        if i < views.len() - 1 {
+            spans.push(Span::styled(" │ ", theme::MUTED));
+        }
+    }
+    spans
+}
+
 /// Renders a concise placeholder message inside an already-framed view body.
 pub fn draw_state_message<'a, T>(f: &mut Frame, area: Rect, message: T, style: Style)
 where

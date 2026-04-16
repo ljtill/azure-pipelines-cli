@@ -95,7 +95,7 @@ pub async fn run(
                 spawn_fetch_dashboard_pull_requests(&mut app, &client, &tx);
             }
             // Refresh PR view data alongside the data refresh.
-            if app.view == View::PullRequests {
+            if app.view.is_pull_requests() {
                 let generation = app.pull_requests.next_generation();
                 spawn_fetch_pull_requests(&app, &client, &tx, generation);
             }

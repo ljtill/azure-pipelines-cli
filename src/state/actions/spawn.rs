@@ -504,28 +504,34 @@ pub fn spawn_fetch_pull_requests(
     tx: &mpsc::Sender<AppMessage>,
     generation: u64,
 ) {
-    use crate::components::pull_requests::PrViewMode;
+    use crate::state::View;
 
-    let mode = app.pull_requests.mode;
+    let view = app.view;
     let user_id = app.current_user.id.clone();
 
-    // Warn when a filtered mode cannot actually filter.
-    if user_id.is_none() && matches!(mode, PrViewMode::CreatedByMe | PrViewMode::AssignedToMe) {
+    // Warn when a filtered view cannot actually filter.
+    if user_id.is_none()
+        && matches!(
+            view,
+            View::PullRequestsCreatedByMe | View::PullRequestsAssignedToMe
+        )
+    {
         tracing::warn!(
-            ?mode,
+            ?view,
             "user identity not resolved — PR filter will be unscoped"
         );
     }
 
     let client = client.clone();
     let tx = tx.clone();
-    let span = tracing::info_span!("fetch_pull_requests", ?mode, generation);
+    let span = tracing::info_span!("fetch_pull_requests", ?view, generation);
     tokio::spawn(
         async move {
-            let (status, creator_id, reviewer_id) = match mode {
-                PrViewMode::CreatedByMe => ("active", user_id.as_deref(), None),
-                PrViewMode::AssignedToMe => ("active", None, user_id.as_deref()),
-                PrViewMode::AllActive => ("active", None, None),
+            let (status, creator_id, reviewer_id) = match view {
+                View::PullRequestsAssignedToMe => ("active", None, user_id.as_deref()),
+                View::PullRequestsAllActive => ("active", None, None),
+                // Default to CreatedByMe semantics for the root PR view.
+                _ => ("active", user_id.as_deref(), None),
             };
             let msg = match client
                 .list_pull_requests(status, creator_id, reviewer_id)

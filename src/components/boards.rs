@@ -494,7 +494,7 @@ impl Component for Boards {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  ←→ collapse/expand  Enter toggle  / search  o open  r refresh  1–5 areas  ? help"
+        "↑↓ navigate  ←→ collapse/expand  Enter toggle  / search  o open  r refresh  1–4 areas  ? help"
     }
 }
 

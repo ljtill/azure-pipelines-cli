@@ -330,7 +330,7 @@ impl Component for Dashboard {
     }
 
     fn footer_hints(&self) -> &'static str {
-        "↑↓ navigate  Enter drill-in  1–5 areas  Q queue  o open  r refresh  , settings  ? help  q quit"
+        "↑↓ navigate  Enter drill-in  1–4 areas  Q queue  o open  r refresh  , settings  ? help  q quit"
     }
 }
 
