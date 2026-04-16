@@ -479,6 +479,12 @@ fn sort_ids_by_rank_and_id(items: &BTreeMap<u32, BoardItem>, ids: &mut [u32]) {
     ids.sort_by(|left_id, right_id| {
         let left = items.get(left_id).unwrap();
         let right = items.get(right_id).unwrap();
+        // Push terminal-state items (Closed / Done / Removed / Cut) below active
+        // items at every level of the hierarchy.
+        let terminal_order = is_terminal_state(&left.state).cmp(&is_terminal_state(&right.state));
+        if terminal_order != Ordering::Equal {
+            return terminal_order;
+        }
         match (left.stack_rank, right.stack_rank) {
             (Some(left_rank), Some(right_rank)) => left_rank
                 .partial_cmp(&right_rank)
@@ -489,6 +495,15 @@ fn sort_ids_by_rank_and_id(items: &BTreeMap<u32, BoardItem>, ids: &mut [u32]) {
             (None, None) => left_id.cmp(right_id),
         }
     });
+}
+
+/// Returns `true` for work item states considered terminal (Closed, Done,
+/// Removed, Cut). Used to sort completed items below active work.
+fn is_terminal_state(state: &str) -> bool {
+    matches!(
+        state.to_ascii_lowercase().as_str(),
+        "closed" | "done" | "removed" | "cut"
+    )
 }
 
 fn work_item_type_style(work_item_type: &str) -> Style {
@@ -821,5 +836,69 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    fn item_with_state(id: u32, state: &str, rank: Option<f64>) -> BoardItem {
+        BoardItem {
+            id,
+            title: format!("item {id}"),
+            work_item_type: "Task".to_string(),
+            state: state.to_string(),
+            assigned_to: None,
+            iteration_path: None,
+            parent_id: None,
+            child_ids: vec![],
+            stack_rank: rank,
+        }
+    }
+
+    #[test]
+    fn sort_places_terminal_states_after_active_regardless_of_rank() {
+        let items: BTreeMap<u32, BoardItem> = [
+            item_with_state(1, "Closed", Some(1.0)),
+            item_with_state(2, "Active", Some(5.0)),
+            item_with_state(3, "Done", Some(2.0)),
+            item_with_state(4, "New", Some(10.0)),
+        ]
+        .into_iter()
+        .map(|i| (i.id, i))
+        .collect();
+
+        let mut ids = vec![1, 2, 3, 4];
+        sort_ids_by_rank_and_id(&items, &mut ids);
+        // Active (rank 5, 10) before terminal (rank 1, 2).
+        assert_eq!(ids, vec![2, 4, 1, 3]);
+    }
+
+    #[test]
+    fn sort_matches_terminal_states_case_insensitively() {
+        assert!(is_terminal_state("Closed"));
+        assert!(is_terminal_state("closed"));
+        assert!(is_terminal_state("DONE"));
+        assert!(is_terminal_state("Removed"));
+        assert!(is_terminal_state("Cut"));
+        assert!(!is_terminal_state("Active"));
+        assert!(!is_terminal_state("In Progress"));
+        assert!(!is_terminal_state(""));
+    }
+
+    #[test]
+    fn sort_falls_back_to_rank_then_id_within_same_state_bucket() {
+        let items: BTreeMap<u32, BoardItem> = [
+            item_with_state(1, "Active", None),
+            item_with_state(2, "Active", Some(5.0)),
+            item_with_state(3, "Active", Some(5.0)),
+            item_with_state(4, "Closed", Some(1.0)),
+            item_with_state(5, "Closed", None),
+        ]
+        .into_iter()
+        .map(|i| (i.id, i))
+        .collect();
+
+        let mut ids = vec![1, 2, 3, 4, 5];
+        sort_ids_by_rank_and_id(&items, &mut ids);
+        // Active: rank-first (2,3 tied -> id), then rankless (1).
+        // Closed last: rank-first (4), then rankless (5).
+        assert_eq!(ids, vec![2, 3, 1, 4, 5]);
     }
 }
