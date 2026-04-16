@@ -647,6 +647,7 @@ impl App {
     /// Used to populate the settings overlay.
     pub fn current_config(&self) -> crate::config::Config {
         crate::config::Config {
+            schema_version: Some(crate::config::CURRENT_SCHEMA_VERSION),
             azure_devops: crate::config::AzureDevOpsConfig {
                 organization: self
                     .org_project_label

@@ -288,6 +288,7 @@ impl SettingsState {
         };
 
         Config {
+            schema_version: Some(crate::config::CURRENT_SCHEMA_VERSION),
             azure_devops: AzureDevOpsConfig {
                 organization: get("Organization").to_string(),
                 project: get("Project").to_string(),

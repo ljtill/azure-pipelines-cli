@@ -7,6 +7,17 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
+    /// Optional config schema version. The current binary understands `1`.
+    ///
+    /// Older configs without this field are treated as version 1. Newer values
+    /// produce a warning at load time but do not prevent the config from
+    /// loading; unknown keys in the TOML are still allowed per `serde`'s
+    /// default behavior.
+    #[serde(
+        default = "default_schema_version",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub schema_version: Option<u32>,
     pub azure_devops: AzureDevOpsConfig,
     #[serde(default)]
     pub filters: FiltersConfig,
@@ -18,6 +29,17 @@ pub struct Config {
     pub notifications: NotificationsConfig,
     #[serde(default)]
     pub display: DisplayConfig,
+}
+
+/// The config schema version the current binary understands.
+pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
+// Always deserialize as Some(CURRENT_SCHEMA_VERSION) when the field is missing
+// from TOML. Serde can't directly default to `Some(value)` without this helper,
+// so the Option wrapper is intentional and not actually unnecessary.
+#[allow(clippy::unnecessary_wraps)]
+fn default_schema_version() -> Option<u32> {
+    Some(CURRENT_SCHEMA_VERSION)
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -165,6 +187,17 @@ impl Config {
 
         let config: Config = toml::from_str(&contents)
             .with_context(|| format!("Failed to parse config from {}", config_path.display()))?;
+
+        if let Some(v) = config.schema_version
+            && v > CURRENT_SCHEMA_VERSION
+        {
+            tracing::warn!(
+                schema_version = v,
+                supported = CURRENT_SCHEMA_VERSION,
+                "config schema_version is newer than this binary supports; \
+                 proceeding, but some fields may be ignored"
+            );
+        }
 
         tracing::debug!(path = %config_path.display(), "config loaded");
         Ok(config)
@@ -527,5 +560,44 @@ log_refresh_interval_secs = 20
         assert_eq!(reloaded.display.log_refresh_interval_secs, 20);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn config_without_schema_version_loads_as_v1() {
+        let toml = r#"
+[azure_devops]
+organization = "myorg"
+project = "myproject"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.schema_version, Some(CURRENT_SCHEMA_VERSION));
+    }
+
+    #[test]
+    fn config_with_explicit_schema_version_round_trips() {
+        let toml = r#"
+schema_version = 1
+
+[azure_devops]
+organization = "myorg"
+project = "myproject"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.schema_version, Some(1));
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        assert!(serialized.contains("schema_version = 1"));
+    }
+
+    #[test]
+    fn config_with_newer_schema_version_still_loads() {
+        let toml = r#"
+schema_version = 99
+
+[azure_devops]
+organization = "myorg"
+project = "myproject"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.schema_version, Some(99));
     }
 }

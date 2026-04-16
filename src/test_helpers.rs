@@ -234,6 +234,7 @@ pub fn make_pr_thread(id: u32, status: &str, comment_count: usize) -> PullReques
 /// Creates a minimal [`Config`] with default test values.
 pub fn make_config() -> Config {
     Config {
+        schema_version: Some(crate::config::CURRENT_SCHEMA_VERSION),
         azure_devops: AzureDevOpsConfig {
             organization: "testorg".to_string(),
             project: "testproj".to_string(),
