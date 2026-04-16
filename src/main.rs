@@ -170,10 +170,26 @@ fn init_tracing(level: &str, log_dir_override: Option<&str>, max_log_files: usiz
                 .unwrap_or_else(|_| tracing::level_filters::LevelFilter::INFO.into()),
         )
         .from_env_lossy()
-        .add_directive("hyper_util=warn".parse().unwrap())
-        .add_directive("hyper=warn".parse().unwrap())
-        .add_directive("reqwest=warn".parse().unwrap())
-        .add_directive("mio=warn".parse().unwrap());
+        .add_directive(
+            "hyper_util=warn"
+                .parse()
+                .expect("static tracing directive must parse"),
+        )
+        .add_directive(
+            "hyper=warn"
+                .parse()
+                .expect("static tracing directive must parse"),
+        )
+        .add_directive(
+            "reqwest=warn"
+                .parse()
+                .expect("static tracing directive must parse"),
+        )
+        .add_directive(
+            "mio=warn"
+                .parse()
+                .expect("static tracing directive must parse"),
+        );
 
     let log_dir = if let Some(dir) = log_dir_override {
         std::path::PathBuf::from(dir)

@@ -41,7 +41,12 @@ pub async fn run(
         config,
         config_path,
     );
-    let mut last_data_fetch = Instant::now().checked_sub(app.refresh_interval).unwrap(); // Trigger immediate fetch.
+    // Trigger an immediate fetch on startup. Fall back to `now` if the refresh
+    // interval is larger than the system's uptime (e.g. on a freshly-booted host
+    // or after a clock adjustment).
+    let mut last_data_fetch = Instant::now()
+        .checked_sub(app.refresh_interval)
+        .unwrap_or_else(Instant::now);
     let mut last_log_fetch: Option<Instant> = None;
 
     let (tx, mut rx) = mpsc::channel::<AppMessage>(64);
