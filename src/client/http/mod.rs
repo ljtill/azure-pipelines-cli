@@ -111,12 +111,25 @@ impl AdoClient {
         &self,
         url: &str,
     ) -> Result<Vec<T>> {
+        // Defensive cap to prevent runaway pagination if the server misbehaves
+        // and keeps returning a non-empty continuation token indefinitely.
+        // Well above any realistic ADO list endpoint response.
+        const MAX_PAGES: u32 = 1000;
+
         let mut all_items = Vec::new();
         let mut continuation_token: Option<String> = None;
         let mut page_count: u32 = 0;
         let start = Instant::now();
 
         loop {
+            if page_count >= MAX_PAGES {
+                anyhow::bail!(
+                    "pagination safety cap exceeded: fetched {MAX_PAGES} pages from \
+                     {} without exhausting continuation tokens",
+                    url_without_query(url)
+                );
+            }
+
             let full_url = paginated_url(url, continuation_token.as_deref())?;
 
             let token = self.auth.token().await?;
