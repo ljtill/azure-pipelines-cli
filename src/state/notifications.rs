@@ -189,4 +189,47 @@ mod tests {
         assert!(second_time > first_time);
         assert_eq!(n.queue.len(), 1);
     }
+
+    #[test]
+    fn error_dedup_compares_only_most_recent_notification() {
+        // Documents the intentional behavior: `error_dedup` only compares
+        // against the last entry in the queue. If an unrelated notification
+        // lands in between, the "duplicate" will be re-enqueued. This is the
+        // contract code that relies on dedup (e.g. repeated network errors
+        // from a polling loop) depends on, so keep it stable.
+        let mut n = Notifications::new(60);
+        n.error_dedup("network down");
+        assert_eq!(n.queue.len(), 1);
+
+        // An unrelated notification breaks the adjacency.
+        n.success("ok");
+        assert_eq!(n.queue.len(), 2);
+
+        // The same message now re-enqueues because it's no longer adjacent.
+        n.error_dedup("network down");
+        assert_eq!(n.queue.len(), 3);
+    }
+
+    #[test]
+    fn error_dedup_across_sources_within_window() {
+        // Simulate two unrelated code paths (different sources) hitting the
+        // same failure mode in quick succession — e.g. two builds both
+        // failing with "token expired". The second call should collapse into
+        // the first, not surface twice.
+        let mut n = Notifications::new(60);
+        n.error_dedup("token expired");
+        n.error_dedup("token expired");
+        n.error_dedup("token expired");
+        assert_eq!(n.queue.len(), 1);
+        assert_eq!(n.current().unwrap().message, "token expired");
+    }
+
+    #[test]
+    fn push_does_not_dedup() {
+        // The non-dedup `push`/`error` paths intentionally stack duplicates.
+        let mut n = Notifications::new(60);
+        n.error("oops");
+        n.error("oops");
+        assert_eq!(n.queue.len(), 2);
+    }
 }

@@ -316,4 +316,61 @@ mod tests {
         assert_eq!(app.view, View::Dashboard);
         assert!(matches!(action, Action::None));
     }
+
+    // --- Mouse scroll with stale cached rects (post-resize) ---
+
+    fn mouse(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn scroll_outside_stale_tree_area_falls_through_to_log_scroll() {
+        use ratatui::layout::Rect;
+
+        // Set up a LogViewer with cached layout rects that no longer match
+        // the current viewport — e.g. after the terminal was resized smaller
+        // between the last render and this mouse event.
+        let mut app = make_app();
+        app.view = View::LogViewer;
+        app.log_viewer
+            .set_layout_areas(Rect::new(0, 0, 30, 10), Rect::new(30, 0, 50, 10));
+
+        // Scroll event far outside the cached tree_area (as if the terminal
+        // shrank and the column is beyond anything we know about).
+        let ev = mouse(MouseEventKind::ScrollDown, 200, 200);
+        let action = handle_mouse(&mut app, ev);
+        assert!(matches!(action, Action::None));
+        // Falls through to log_scroll, which accumulates as a no-op-safe
+        // offset (no panic, no out-of-bounds access).
+        assert_eq!(app.log_viewer.log_scroll_offset(), 3);
+
+        let ev = mouse(MouseEventKind::ScrollUp, 200, 200);
+        let action = handle_mouse(&mut app, ev);
+        assert!(matches!(action, Action::None));
+        // scroll_up decreases by 3, back to 0.
+        assert_eq!(app.log_viewer.log_scroll_offset(), 0);
+    }
+
+    #[test]
+    fn scroll_inside_tree_area_drives_nav_not_log_scroll() {
+        use ratatui::layout::Rect;
+
+        let mut app = make_app();
+        app.view = View::LogViewer;
+        app.log_viewer
+            .set_layout_areas(Rect::new(0, 0, 30, 10), Rect::new(30, 0, 50, 10));
+
+        // Point inside tree_area.
+        let ev = mouse(MouseEventKind::ScrollDown, 5, 5);
+        let action = handle_mouse(&mut app, ev);
+        assert!(matches!(action, Action::None));
+        // Log scroll offset should NOT have advanced when the hit was inside
+        // the tree pane.
+        assert_eq!(app.log_viewer.log_scroll_offset(), 0);
+    }
 }
