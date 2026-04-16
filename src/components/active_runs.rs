@@ -4,17 +4,19 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::client::models::Build;
+use crate::render::columns::{BuildRowOpts, build_row};
 use crate::render::helpers::{
     build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
     effective_status_label, row_style, split_with_search_bar, truncate,
 };
+use crate::render::table::resolve_widths;
 use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, InputMode};
@@ -109,22 +111,13 @@ impl ActiveRuns {
             return;
         }
 
-        let rects = Layout::horizontal([
-            Constraint::Length(2),
-            Constraint::Length(4),
-            Constraint::Length(12),
-            Constraint::Fill(2),
-            Constraint::Length(18),
-            Constraint::Length(2),
-            Constraint::Fill(2),
-            Constraint::Fill(2),
-            Constraint::Length(15),
-        ])
-        .split(list_area);
-        let mut widths: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
-        widths[3] = widths[3].min(40);
-        widths[6] = widths[6].min(35);
-        widths[7] = widths[7].min(35);
+        let schema = build_row(BuildRowOpts {
+            select: true,
+            name: true,
+            retained: true,
+        });
+        let resolved = resolve_widths(&schema.columns, list_area.width);
+        let widths: Vec<usize> = resolved.iter().map(|&w| w as usize).collect();
 
         let items: Vec<ListItem> = self
             .filtered

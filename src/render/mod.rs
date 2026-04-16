@@ -1,5 +1,6 @@
 //! Top-level render dispatch for all application views.
 
+pub mod columns;
 pub mod helpers;
 pub mod setup;
 pub mod table;
