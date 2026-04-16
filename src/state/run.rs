@@ -15,7 +15,8 @@ use crate::events::{handle_key, handle_mouse};
 use crate::render;
 
 use super::actions::spawn::{
-    spawn_fetch_dashboard_pull_requests, spawn_fetch_pull_requests, spawn_fetch_user_identity,
+    spawn_fetch_boards, spawn_fetch_dashboard_pull_requests, spawn_fetch_pull_requests,
+    spawn_fetch_user_identity,
 };
 use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_log_refresh};
 use super::messages::AppMessage;
@@ -92,6 +93,10 @@ pub async fn run(
             if app.view == View::PullRequests {
                 let generation = app.pull_requests.next_generation();
                 spawn_fetch_pull_requests(&app, &client, &tx, generation);
+            }
+            if app.view == View::Boards {
+                let generation = app.boards.next_generation();
+                spawn_fetch_boards(&mut app, &client, &tx, generation);
             }
         }
 

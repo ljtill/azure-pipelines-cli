@@ -335,6 +335,13 @@ mod tests {
     }
 
     #[test]
+    fn settings_do_not_expose_boards_fields() {
+        let s = make_settings();
+        assert!(s.fields.iter().all(|field| field.section != "Boards"));
+        assert!(s.fields.iter().all(|field| !field.label.contains("Board")));
+    }
+
+    #[test]
     fn navigate_up_down() {
         let mut s = make_settings();
         assert_eq!(s.selected, 0);

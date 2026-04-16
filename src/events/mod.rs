@@ -50,6 +50,7 @@ pub enum Action {
         pr_id: u32,
     },
     FetchDashboardPullRequests,
+    FetchBoards,
 }
 
 /// Dispatches a key event to the appropriate view-specific handler.
@@ -239,10 +240,10 @@ fn cycle_service_view(app: &mut App, direction: i8) -> Action {
 fn action_for_root_view(view: View) -> Action {
     match view {
         View::Dashboard => Action::FetchDashboardPullRequests,
+        View::Boards => Action::FetchBoards,
         View::PullRequests => Action::FetchPullRequests,
         View::Pipelines
         | View::ActiveRuns
-        | View::Boards
         | View::BuildHistory
         | View::LogViewer
         | View::PullRequestDetail => Action::None,

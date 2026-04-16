@@ -12,7 +12,7 @@ use super::super::TimelineRow;
 use super::super::View;
 use super::super::messages::AppMessage;
 use super::spawn::{
-    open_url, spawn_api, spawn_build_history_refresh, spawn_data_refresh,
+    open_url, spawn_api, spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_boards,
     spawn_fetch_dashboard_pull_requests, spawn_fetch_pr_detail, spawn_fetch_pull_requests,
     spawn_log_fetch, spawn_timeline_fetch,
 };
@@ -42,6 +42,10 @@ pub fn handle_action(
             if app.view == View::PullRequests {
                 let generation = app.pull_requests.next_generation();
                 spawn_fetch_pull_requests(app, client, tx, generation);
+            }
+            if app.view == View::Boards {
+                let generation = app.boards.next_generation();
+                spawn_fetch_boards(app, client, tx, generation);
             }
         }
         Action::FetchBuildHistory(def_id) => {
@@ -227,6 +231,10 @@ pub fn handle_action(
         }
         Action::FetchDashboardPullRequests => {
             spawn_fetch_dashboard_pull_requests(app, client, tx);
+        }
+        Action::FetchBoards => {
+            let generation = app.boards.next_generation();
+            spawn_fetch_boards(app, client, tx, generation);
         }
         Action::None => {}
     }

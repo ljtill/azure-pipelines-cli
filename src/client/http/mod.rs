@@ -5,6 +5,7 @@
 //! request/response cycle.
 
 mod approvals;
+mod boards;
 mod builds;
 mod definitions;
 mod pull_requests;
@@ -13,7 +14,7 @@ mod retention;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use reqwest::{Client, Url};
+use reqwest::{Client, StatusCode, Url};
 
 use super::auth::AdoAuth;
 use super::endpoints::Endpoints;
@@ -222,8 +223,8 @@ impl AdoClient {
             .bearer_auth(&token)
             .json(body)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        let resp = ensure_success_with_body(resp, "POST", display_url).await?;
         let status = resp.status().as_u16();
         let body = resp.json::<T>().await?;
         tracing::debug!(
@@ -258,6 +259,73 @@ impl AdoClient {
             "api response"
         );
         Ok(())
+    }
+}
+
+const MAX_ERROR_BODY_CHARS: usize = 300;
+
+async fn ensure_success_with_body(
+    response: reqwest::Response,
+    method: &'static str,
+    display_url: &str,
+) -> Result<reqwest::Response> {
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+
+    let body = response.text().await.unwrap_or_default();
+    let error = format_http_status_error(status, &body);
+
+    if let Some(body_preview) = summarize_error_body(&body) {
+        tracing::warn!(
+            method,
+            url = display_url,
+            status = status.as_u16(),
+            body = body_preview,
+            "api error response"
+        );
+    } else {
+        tracing::warn!(
+            method,
+            url = display_url,
+            status = status.as_u16(),
+            "api error response"
+        );
+    }
+
+    Err(anyhow::anyhow!(error))
+}
+
+fn format_http_status_error(status: StatusCode, body: &str) -> String {
+    let category = if status.is_client_error() {
+        "client error"
+    } else if status.is_server_error() {
+        "server error"
+    } else {
+        "error"
+    };
+    let base = format!("HTTP status {category} ({status})");
+
+    if let Some(preview) = summarize_error_body(body) {
+        format!("{base}: {preview}")
+    } else {
+        base
+    }
+}
+
+fn summarize_error_body(body: &str) -> Option<String> {
+    let flattened = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = flattened.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let truncated: String = trimmed.chars().take(MAX_ERROR_BODY_CHARS).collect();
+    if trimmed.chars().count() > MAX_ERROR_BODY_CHARS {
+        Some(format!("{truncated}…"))
+    } else {
+        Some(truncated)
     }
 }
 
@@ -324,6 +392,29 @@ mod tests {
         assert_eq!(
             url.as_str(),
             "https://example.test/builds?api-version=7.1&continuationToken=abc%2B%2F%3D%3F%26value"
+        );
+    }
+
+    #[test]
+    fn summarize_error_body_flattens_and_truncates() {
+        let input = format!("  {{\n  \"message\": \"{}\"\n}}  ", "x".repeat(350));
+        let summary = summarize_error_body(&input).unwrap();
+
+        assert!(summary.starts_with("{ \"message\": \""));
+        assert!(summary.ends_with('…'));
+        assert_eq!(summary.chars().count(), MAX_ERROR_BODY_CHARS + 1);
+    }
+
+    #[test]
+    fn format_http_status_error_includes_body_preview() {
+        let message = format_http_status_error(
+            StatusCode::BAD_REQUEST,
+            "{\n  \"message\": \"Field 'Foo' is invalid.\"\n}",
+        );
+
+        assert_eq!(
+            message,
+            "HTTP status client error (400 Bad Request): { \"message\": \"Field 'Foo' is invalid.\" }"
         );
     }
 }

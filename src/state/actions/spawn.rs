@@ -3,10 +3,12 @@
 use std::future::Future;
 
 use anyhow::Result;
+use futures::future::join_all;
 use tokio::sync::mpsc;
 use tracing::Instrument;
 
 use crate::client::http::AdoClient;
+use crate::client::models::{BacklogLevelConfiguration, ProjectTeam, WorkItem};
 
 use super::super::messages::{AppMessage, RefreshSource};
 use super::super::{App, DashboardPullRequestsState, ExactUserIdentity};
@@ -14,6 +16,18 @@ use super::super::{App, DashboardPullRequestsState, ExactUserIdentity};
 const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
     "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
 const DASHBOARD_PULL_REQUESTS_UNAVAILABLE_MESSAGE: &str = "Failed to load My Pull Requests";
+const BOARDS_FETCH_FAILED_MESSAGE: &str = "Failed to load backlog";
+const BOARD_FIELDS: &[&str] = &[
+    "System.Title",
+    "System.WorkItemType",
+    "System.State",
+    "System.AssignedTo",
+    "System.IterationPath",
+    "System.AreaPath",
+    "System.Parent",
+    "System.BoardColumn",
+    "Microsoft.VSTS.Common.StackRank",
+];
 
 fn dashboard_identity_unavailable_message(detail: &str) -> String {
     format!("{DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE}: {detail}")
@@ -51,6 +65,74 @@ fn describe_connection_data_error(error: &anyhow::Error) -> String {
     }
 
     format!("connection data request failed: {flattened_message}")
+}
+
+fn choose_boards_team<'a>(teams: &'a [ProjectTeam], project: &str) -> Option<&'a ProjectTeam> {
+    teams
+        .iter()
+        .find(|team| team.is_default_project_team())
+        .or_else(|| {
+            let default_name = format!("{project} Team");
+            teams
+                .iter()
+                .find(|team| team.name.eq_ignore_ascii_case(&default_name))
+        })
+        .or_else(|| teams.first())
+}
+
+fn collect_backlog_work_item_ids(work_items: &[crate::client::models::WorkItemLink]) -> Vec<u32> {
+    let mut ids = std::collections::BTreeSet::new();
+    for work_item in work_items {
+        if let Some(source) = &work_item.source {
+            ids.insert(source.id);
+        }
+        if let Some(target) = &work_item.target {
+            ids.insert(target.id);
+        }
+    }
+    ids.into_iter().collect()
+}
+
+async fn load_boards_snapshot(
+    client: &AdoClient,
+    project: &str,
+) -> Result<(String, Vec<BacklogLevelConfiguration>, Vec<WorkItem>)> {
+    let teams = client.list_project_teams().await?;
+    let team = choose_boards_team(&teams, project)
+        .ok_or_else(|| anyhow::anyhow!("Azure DevOps returned no teams for project `{project}`"))?;
+    let team_name = team.name.clone();
+
+    let mut backlogs = client.list_backlogs(&team_name).await?;
+    backlogs.sort_by_key(|backlog| backlog.rank);
+
+    let backlog_results = join_all(backlogs.iter().map(|backlog| {
+        let client = client.clone();
+        let team_name = team_name.clone();
+        let backlog_id = backlog.id.clone();
+        async move {
+            let work_items = client
+                .list_backlog_level_work_items(&team_name, &backlog_id)
+                .await?;
+            Ok::<_, anyhow::Error>((backlog_id, work_items))
+        }
+    }))
+    .await;
+
+    let mut work_item_ids = std::collections::BTreeSet::new();
+    for backlog_result in backlog_results {
+        let (_, backlog_work_items) = backlog_result?;
+        work_item_ids.extend(collect_backlog_work_item_ids(&backlog_work_items));
+    }
+
+    let work_items = client
+        .get_work_items_batch(
+            &work_item_ids.into_iter().collect::<Vec<_>>(),
+            BOARD_FIELDS,
+            None,
+        )
+        .await?;
+
+    Ok((team_name, backlogs, work_items))
 }
 
 // --- Drop guard for async refresh tasks ---
@@ -596,6 +678,40 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
     );
 }
 
+/// Spawns a one-shot task that loads the configured project's backlog tree snapshot.
+pub fn spawn_fetch_boards(
+    app: &mut App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    generation: u64,
+) {
+    app.boards.start_loading();
+
+    let client = client.clone();
+    let tx = tx.clone();
+    let project = app.current_config().azure_devops.project;
+    let span = tracing::info_span!("fetch_boards", generation, project = %project);
+    tokio::spawn(
+        async move {
+            let message = match load_boards_snapshot(&client, &project).await {
+                Ok((team_name, backlogs, work_items)) => AppMessage::BoardsLoaded {
+                    team_name,
+                    backlogs,
+                    work_items,
+                    generation,
+                },
+                Err(error) => AppMessage::BoardsFailed {
+                    message: format!("{BOARDS_FETCH_FAILED_MESSAGE}: {error}"),
+                    generation,
+                },
+            };
+
+            let _ = tx.send(message).await;
+        }
+        .instrument(span),
+    );
+}
+
 /// Opens a URL in the platform's default browser.
 pub(super) fn open_url(url: &str) -> std::io::Result<std::process::Child> {
     // Only allow https:// URLs to prevent command injection.
@@ -631,6 +747,51 @@ pub(super) fn open_url(url: &str) -> std::io::Result<std::process::Child> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn choose_boards_team_prefers_default_project_team_then_project_named_team() {
+        let named_team = ProjectTeam {
+            id: "named".to_string(),
+            name: "Project Team".to_string(),
+            description: None,
+            project_id: None,
+            project_name: None,
+            url: None,
+        };
+        let default_team = ProjectTeam {
+            id: "default".to_string(),
+            name: "Delivery".to_string(),
+            description: Some("The default project team.".to_string()),
+            project_id: None,
+            project_name: None,
+            url: None,
+        };
+
+        let teams = [named_team.clone(), default_team.clone()];
+        let chosen = choose_boards_team(&teams, "Project").unwrap();
+        assert_eq!(chosen.id, default_team.id);
+
+        let chosen = choose_boards_team(std::slice::from_ref(&named_team), "Project").unwrap();
+        assert_eq!(chosen.id, named_team.id);
+    }
+
+    #[test]
+    fn collect_backlog_work_item_ids_deduplicates_sources_and_targets() {
+        let ids = collect_backlog_work_item_ids(&[
+            crate::client::models::WorkItemLink {
+                rel: None,
+                source: Some(crate::client::models::WorkItemReference { id: 7, url: None }),
+                target: Some(crate::client::models::WorkItemReference { id: 9, url: None }),
+            },
+            crate::client::models::WorkItemLink {
+                rel: None,
+                source: Some(crate::client::models::WorkItemReference { id: 7, url: None }),
+                target: Some(crate::client::models::WorkItemReference { id: 11, url: None }),
+            },
+        ]);
+
+        assert_eq!(ids, vec![7, 9, 11]);
+    }
 
     #[test]
     fn describe_connection_data_error_shortens_auth_failures() {

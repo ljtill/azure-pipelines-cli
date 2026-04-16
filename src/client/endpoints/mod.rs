@@ -1,6 +1,7 @@
 //! URL builders for the Azure DevOps REST API.
 
 pub mod approvals;
+pub mod boards;
 pub mod builds;
 pub mod definitions;
 pub mod pull_requests;

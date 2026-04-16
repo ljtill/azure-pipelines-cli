@@ -125,7 +125,7 @@ impl View {
             View::Pipelines => "Definitions",
             View::ActiveRuns => "Active Runs",
             View::PullRequests => "Pull Requests",
-            View::Boards => "Coming soon",
+            View::Boards => "Backlog",
             View::BuildHistory | View::LogViewer | View::PullRequestDetail => "",
         }
     }
@@ -424,6 +424,11 @@ impl App {
         );
     }
 
+    /// Rebuilds the Boards view from current state.
+    pub fn rebuild_boards(&mut self) {
+        self.boards.rebuild(&self.search.query);
+    }
+
     fn build_history_root_view(&self) -> View {
         match self.build_history.return_to.unwrap_or(View::Pipelines) {
             View::ActiveRuns => View::ActiveRuns,
@@ -513,7 +518,8 @@ impl App {
                 &self.search.query,
             ),
             View::PullRequests => self.pull_requests.rebuild(&self.search.query),
-            View::Boards | View::BuildHistory | View::LogViewer | View::PullRequestDetail => {}
+            View::Boards => self.rebuild_boards(),
+            View::BuildHistory | View::LogViewer | View::PullRequestDetail => {}
         }
     }
 
@@ -662,6 +668,11 @@ impl App {
     /// Constructs the web portal URL for viewing a pull request.
     pub fn endpoints_web_pull_request(&self, repo_name: &str, pr_id: u32) -> String {
         self.endpoints.web_pull_request(repo_name, pr_id)
+    }
+
+    /// Constructs the web portal URL for viewing a work item.
+    pub fn endpoints_web_work_item(&self, work_item_id: u32) -> String {
+        self.endpoints.web_work_item(work_item_id)
     }
 
     /// Builds a snapshot `Config` reflecting the current runtime state.
@@ -868,6 +879,70 @@ mod tests {
         app.go_back();
         assert_eq!(app.search.mode, InputMode::Normal);
         assert!(app.search.query.is_empty());
+    }
+
+    #[test]
+    fn activate_root_view_rebuilds_boards_after_clearing_search() {
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("/tmp/test.toml"),
+        );
+        app.boards.items = BTreeMap::from([
+            (
+                1,
+                crate::components::boards::BoardItem {
+                    id: 1,
+                    title: "Root".to_string(),
+                    work_item_type: "Epic".to_string(),
+                    state: "Active".to_string(),
+                    assigned_to: None,
+                    iteration_path: None,
+                    parent_id: None,
+                    child_ids: vec![2],
+                    stack_rank: Some(1.0),
+                },
+            ),
+            (
+                2,
+                crate::components::boards::BoardItem {
+                    id: 2,
+                    title: "Needle child".to_string(),
+                    work_item_type: "Feature".to_string(),
+                    state: "Active".to_string(),
+                    assigned_to: None,
+                    iteration_path: None,
+                    parent_id: Some(1),
+                    child_ids: vec![],
+                    stack_rank: Some(2.0),
+                },
+            ),
+            (
+                3,
+                crate::components::boards::BoardItem {
+                    id: 3,
+                    title: "Other root".to_string(),
+                    work_item_type: "Epic".to_string(),
+                    state: "New".to_string(),
+                    assigned_to: None,
+                    iteration_path: None,
+                    parent_id: None,
+                    child_ids: vec![],
+                    stack_rank: Some(3.0),
+                },
+            ),
+        ]);
+        app.boards.root_ids = vec![1, 3];
+        app.search.query = "needle".to_string();
+        app.boards.rebuild(&app.search.query);
+
+        assert_eq!(app.boards.rows.len(), 2);
+
+        app.activate_root_view(View::Boards);
+
+        assert!(app.search.query.is_empty());
+        assert_eq!(app.boards.rows.len(), 3);
     }
 
     #[test]

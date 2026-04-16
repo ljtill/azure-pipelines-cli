@@ -1,6 +1,8 @@
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use azure_devops_cli::client::models::*;
+use azure_devops_cli::components::boards::BoardItem;
 use azure_devops_cli::events::{Action, handle_key};
 use azure_devops_cli::state::{
     App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, Service, View,
@@ -24,6 +26,20 @@ fn test_app() -> App {
     App::new("o", "p", &make_config(), PathBuf::from("/tmp/test.toml"))
 }
 
+fn board_item(id: u32, parent_id: Option<u32>, title: &str, child_ids: Vec<u32>) -> BoardItem {
+    BoardItem {
+        id,
+        title: title.to_string(),
+        work_item_type: "Task".to_string(),
+        state: "Active".to_string(),
+        assigned_to: None,
+        iteration_path: None,
+        parent_id,
+        child_ids,
+        stack_rank: Some(f64::from(id)),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Area switching
 // ---------------------------------------------------------------------------
@@ -44,7 +60,44 @@ fn key_2_switches_to_boards() {
     let action = handle_key(&mut app, key(KeyCode::Char('2')));
     assert_eq!(app.view, View::Boards);
     assert_eq!(app.service, Service::Boards);
-    assert!(matches!(action, Action::None));
+    assert!(matches!(action, Action::FetchBoards));
+}
+
+#[test]
+fn key_2_switches_to_boards_and_rebuilds_after_clearing_search() {
+    let mut app = test_app();
+    app.boards.items = BTreeMap::from([
+        (1, board_item(1, None, "Root", vec![2])),
+        (2, board_item(2, Some(1), "Needle child", vec![])),
+        (3, board_item(3, None, "Other root", vec![])),
+    ]);
+    app.boards.root_ids = vec![1, 3];
+    app.boards.collapsed = HashSet::new();
+    app.search.query = "needle".to_string();
+    app.boards.rebuild(&app.search.query);
+
+    assert_eq!(
+        app.boards
+            .rows
+            .iter()
+            .map(|row| row.work_item_id)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+
+    let action = handle_key(&mut app, key(KeyCode::Char('2')));
+
+    assert_eq!(app.view, View::Boards);
+    assert!(app.search.query.is_empty());
+    assert_eq!(
+        app.boards
+            .rows
+            .iter()
+            .map(|row| row.work_item_id)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    assert!(matches!(action, Action::FetchBoards));
 }
 
 #[test]
@@ -548,6 +601,16 @@ fn slash_enters_search_on_active_runs() {
     assert!(matches!(action, Action::None));
 }
 
+#[test]
+fn slash_enters_search_on_boards() {
+    let mut app = test_app();
+    app.view = View::Boards;
+
+    let action = handle_key(&mut app, key(KeyCode::Char('/')));
+    assert_eq!(app.search.mode, InputMode::Search);
+    assert!(matches!(action, Action::None));
+}
+
 // ---------------------------------------------------------------------------
 // Esc goes back from views
 // ---------------------------------------------------------------------------
@@ -728,6 +791,51 @@ fn o_opens_browser_on_pull_requests() {
     assert!(
         matches!(action, Action::OpenInBrowser(url) if url.contains("my-repo") && url.contains("42"))
     );
+}
+
+#[test]
+fn o_opens_browser_on_boards() {
+    let mut app = test_app();
+    app.view = View::Boards;
+    app.boards.items = BTreeMap::from([
+        (1, board_item(1, None, "Root", vec![2])),
+        (2, board_item(2, Some(1), "Child", vec![])),
+    ]);
+    app.boards.root_ids = vec![1];
+    app.boards.collapsed = HashSet::new();
+    app.boards.rebuild("");
+    app.boards.nav.set_index(1);
+
+    let action = handle_key(&mut app, key(KeyCode::Char('o')));
+    assert!(matches!(action, Action::OpenInBrowser(url) if url.contains("/_workitems/edit/2")));
+}
+
+#[test]
+fn boards_tree_keys_toggle_rows_and_select_parent() {
+    let mut app = test_app();
+    app.view = View::Boards;
+    app.boards.items = BTreeMap::from([
+        (1, board_item(1, None, "Root", vec![2])),
+        (2, board_item(2, Some(1), "Child", vec![])),
+    ]);
+    app.boards.root_ids = vec![1];
+    app.boards.collapsed = HashSet::new();
+    app.boards.rebuild("");
+
+    let action = handle_key(&mut app, key(KeyCode::Enter));
+    assert!(matches!(action, Action::None));
+    assert_eq!(app.boards.rows.len(), 1);
+    assert!(app.boards.rows[0].collapsed);
+
+    let action = handle_key(&mut app, key(KeyCode::Right));
+    assert!(matches!(action, Action::None));
+    assert_eq!(app.boards.rows.len(), 2);
+    assert!(!app.boards.rows[0].collapsed);
+
+    app.boards.nav.set_index(1);
+    let action = handle_key(&mut app, key(KeyCode::Left));
+    assert!(matches!(action, Action::None));
+    assert_eq!(app.boards.nav.index(), 0);
 }
 
 // ---------------------------------------------------------------------------

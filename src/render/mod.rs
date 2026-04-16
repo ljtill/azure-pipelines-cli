@@ -33,7 +33,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         crate::state::View::PullRequestDetail => {
             app.pull_request_detail.draw_with_app(f, app, chunks[1]);
         }
-        crate::state::View::Boards => app.boards.draw_with_app(f, chunks[1]),
+        crate::state::View::Boards => app.boards.draw_with_app(f, app, chunks[1]),
     }
 
     draw_footer(f, app, chunks[2]);

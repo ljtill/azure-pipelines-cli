@@ -1,8 +1,8 @@
 //! Asynchronous message types for state updates.
 
 use crate::client::models::{
-    Approval, Build, BuildTimeline, PipelineDefinition, PullRequest, PullRequestThread,
-    RetentionLease,
+    Approval, BacklogLevelConfiguration, Build, BuildTimeline, PipelineDefinition, PullRequest,
+    PullRequestThread, RetentionLease, WorkItem,
 };
 
 use super::ExactUserIdentity;
@@ -91,5 +91,15 @@ pub enum AppMessage {
     },
     UserIdentityFailed {
         message: String,
+    },
+    BoardsLoaded {
+        team_name: String,
+        backlogs: Vec<BacklogLevelConfiguration>,
+        work_items: Vec<WorkItem>,
+        generation: u64,
+    },
+    BoardsFailed {
+        message: String,
+        generation: u64,
     },
 }

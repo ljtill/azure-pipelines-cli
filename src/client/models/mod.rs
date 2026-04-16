@@ -1,12 +1,14 @@
 //! Shared Azure DevOps model types and enums.
 
 pub mod approvals;
+pub mod boards;
 pub mod builds;
 pub mod definitions;
 pub mod pull_requests;
 pub mod retention;
 
 pub use approvals::*;
+pub use boards::*;
 pub use builds::*;
 pub use definitions::*;
 pub use pull_requests::*;

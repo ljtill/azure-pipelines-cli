@@ -13,8 +13,9 @@ use super::super::messages::{AppMessage, RefreshSource};
 use super::super::notifications::NotificationLevel;
 use super::super::{App, DashboardPullRequestsState, ExactUserIdentity, TimelineRow, View};
 use super::spawn::{
-    spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_dashboard_pull_requests,
-    spawn_fetch_pull_requests, spawn_log_fetch, spawn_timeline_fetch,
+    spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_boards,
+    spawn_fetch_dashboard_pull_requests, spawn_fetch_pull_requests, spawn_log_fetch,
+    spawn_timeline_fetch,
 };
 
 const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
@@ -509,6 +510,45 @@ pub fn handle_message(
             tracing::info!(count = pull_requests.len(), "pull requests loaded");
             app.pull_requests.set_data(pull_requests, &app.search.query);
         }
+        AppMessage::BoardsLoaded {
+            team_name,
+            backlogs,
+            work_items,
+            generation,
+        } => {
+            if generation < app.boards.generation {
+                tracing::debug!(
+                    generation,
+                    current = app.boards.generation,
+                    "dropping stale boards response"
+                );
+                return;
+            }
+            tracing::info!(
+                team = %team_name,
+                backlogs = backlogs.len(),
+                work_items = work_items.len(),
+                "boards loaded"
+            );
+            app.boards
+                .set_data(team_name, backlogs, work_items, &app.search.query);
+        }
+        AppMessage::BoardsFailed {
+            message,
+            generation,
+        } => {
+            if generation < app.boards.generation {
+                tracing::debug!(
+                    generation,
+                    current = app.boards.generation,
+                    "dropping stale boards failure"
+                );
+                return;
+            }
+            tracing::warn!(%message, "boards fetch failed");
+            app.boards.set_error(message.clone());
+            app.notifications.error_dedup(message);
+        }
         AppMessage::UserIdentity { identity } => {
             tracing::info!("user identity resolved");
             app.current_user = identity;
@@ -518,6 +558,10 @@ pub fn handle_message(
             if app.view == View::PullRequests {
                 let generation = app.pull_requests.next_generation();
                 spawn_fetch_pull_requests(app, client, tx, generation);
+            }
+            if app.view == View::Boards {
+                let generation = app.boards.next_generation();
+                spawn_fetch_boards(app, client, tx, generation);
             }
         }
         AppMessage::PullRequestDetailLoaded {
@@ -572,6 +616,60 @@ mod tests {
     use crate::client::models::*;
     use crate::state::{DashboardPullRequestsState, ExactUserIdentity, View};
     use crate::test_helpers::*;
+
+    fn board_backlog(name: &str, rank: u32, is_hidden: bool) -> BacklogLevelConfiguration {
+        BacklogLevelConfiguration {
+            id: format!("backlog-{name}"),
+            name: name.to_string(),
+            rank,
+            work_item_count_limit: None,
+            work_item_types: vec![WorkItemTypeReference {
+                name: name.to_string(),
+                url: None,
+            }],
+            default_work_item_type: None,
+            color: None,
+            is_hidden,
+            backlog_type: None,
+        }
+    }
+
+    fn board_work_item(
+        id: u32,
+        parent_id: Option<u32>,
+        child_ids: Vec<u32>,
+        title: &str,
+        stack_rank: f64,
+    ) -> WorkItem {
+        WorkItem {
+            id,
+            rev: None,
+            fields: WorkItemFields {
+                title: title.to_string(),
+                work_item_type: if parent_id.is_none() {
+                    "Epic".to_string()
+                } else {
+                    "Feature".to_string()
+                },
+                state: Some("Active".to_string()),
+                assigned_to: None,
+                iteration_path: Some("Project\\Iteration".to_string()),
+                area_path: None,
+                parent: parent_id,
+                board_column: None,
+                stack_rank: Some(stack_rank),
+            },
+            relations: child_ids
+                .into_iter()
+                .map(|child_id| WorkItemRelation {
+                    rel: Some("System.LinkTypes.Hierarchy-Forward".to_string()),
+                    url: format!("https://dev.azure.com/org/_apis/wit/workItems/{child_id}"),
+                    attributes: std::collections::HashMap::new(),
+                })
+                .collect(),
+            url: None,
+        }
+    }
 
     #[test]
     fn exact_identity_matches_rejects_conflicting_shared_identifiers() {
@@ -1510,6 +1608,191 @@ mod tests {
         simulate_notification_diff(&mut app, &map);
 
         assert!(app.notifications.clone_current().is_none());
+    }
+
+    // --- BoardsLoaded stale-response guard ---
+
+    #[test]
+    fn boards_loaded_updates_data_and_applies_search_query() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        app.search.query = "needle".to_string();
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::BoardsLoaded {
+                team_name: "Project Team".to_string(),
+                backlogs: vec![
+                    board_backlog("Hidden", 0, true),
+                    board_backlog("Epics", 1, false),
+                ],
+                work_items: vec![
+                    board_work_item(1, None, vec![2], "Root", 1.0),
+                    board_work_item(2, Some(1), vec![], "Needle child", 2.0),
+                    board_work_item(3, None, vec![], "Other root", 3.0),
+                ],
+                generation: 0,
+            },
+        );
+
+        assert_eq!(app.boards.team_name.as_deref(), Some("Project Team"));
+        assert_eq!(app.boards.backlog_names, vec!["Epics"]);
+        assert_eq!(
+            app.boards
+                .rows
+                .iter()
+                .map(|row| row.work_item_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert!(!app.boards.rows[0].collapsed);
+    }
+
+    #[test]
+    fn boards_loaded_derives_children_from_parent_field_over_stale_relations() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::BoardsLoaded {
+                team_name: "Project Team".to_string(),
+                backlogs: vec![board_backlog("Epics", 1, false)],
+                work_items: vec![
+                    board_work_item(10, None, vec![30], "Stale relation parent", 10.0),
+                    board_work_item(20, None, vec![], "Authoritative parent", 20.0),
+                    board_work_item(30, Some(20), vec![], "Child", 30.0),
+                ],
+                generation: 0,
+            },
+        );
+
+        assert_eq!(
+            app.boards
+                .items
+                .get(&10)
+                .map(|item| item.child_ids.as_slice()),
+            Some(&[][..])
+        );
+        assert_eq!(
+            app.boards
+                .items
+                .get(&20)
+                .map(|item| item.child_ids.as_slice()),
+            Some(&[30][..])
+        );
+        assert_eq!(
+            app.boards
+                .rows
+                .iter()
+                .map(|row| row.work_item_id)
+                .collect::<Vec<_>>(),
+            vec![10, 20]
+        );
+
+        assert!(app.boards.expand_row(1, ""));
+        assert_eq!(
+            app.boards
+                .rows
+                .iter()
+                .map(|row| row.work_item_id)
+                .collect::<Vec<_>>(),
+            vec![10, 20, 30]
+        );
+        assert_eq!(
+            app.boards
+                .rows
+                .iter()
+                .filter(|row| row.work_item_id == 30)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn boards_loaded_drops_stale_response() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        app.boards.next_generation();
+        app.boards.next_generation();
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::BoardsLoaded {
+                team_name: "Stale Team".to_string(),
+                backlogs: vec![board_backlog("Epics", 1, false)],
+                work_items: vec![board_work_item(1, None, vec![], "Stale root", 1.0)],
+                generation: 1,
+            },
+        );
+
+        assert!(app.boards.items.is_empty());
+        assert!(app.boards.team_name.is_none());
+    }
+
+    #[test]
+    fn boards_failed_preserves_diagnostics_and_notifies() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        let generation = app.boards.next_generation();
+        app.boards.start_loading();
+        let message = "Failed to load backlog: HTTP status client error (400 Bad Request): { \"message\": \"Field 'System.BoardColumn' is invalid.\" }";
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::BoardsFailed {
+                message: message.to_string(),
+                generation,
+            },
+        );
+
+        assert_eq!(app.boards.error.as_deref(), Some(message));
+        assert!(!app.boards.loading);
+        assert_eq!(app.notifications.clone_current().unwrap().message, message);
+    }
+
+    #[test]
+    fn boards_failed_drops_stale_failure() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        app.boards.set_error("Current backlog error".to_string());
+        app.notifications
+            .error_dedup("Current backlog error".to_string());
+        app.boards.next_generation();
+        app.boards.next_generation();
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::BoardsFailed {
+                message: "Failed to load backlog: stale failure".to_string(),
+                generation: 1,
+            },
+        );
+
+        assert_eq!(app.boards.error.as_deref(), Some("Current backlog error"));
+        assert_eq!(
+            app.notifications.clone_current().unwrap().message,
+            "Current backlog error"
+        );
     }
 
     // --- PullRequestsLoaded stale-response guard ---

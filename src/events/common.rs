@@ -202,6 +202,10 @@ pub fn rebuild_search_results(app: &mut App) {
             app.pull_requests.rebuild(&app.search.query);
             app.pull_requests.nav.set_index(0);
         }
+        View::Boards => {
+            app.boards.rebuild(&app.search.query);
+            app.boards.nav.set_index(0);
+        }
         _ => {}
     }
 }

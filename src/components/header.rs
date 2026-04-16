@@ -28,7 +28,7 @@ fn breadcrumb(app: &App) -> String {
         ),
         View::PullRequests => "Repos / Pull Requests".to_string(),
         View::PullRequestDetail => "Repos / Pull Requests / Detail".to_string(),
-        View::Boards => "Boards / Coming soon".to_string(),
+        View::Boards => "Boards / Backlog".to_string(),
     }
 }
 

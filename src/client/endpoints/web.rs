@@ -15,6 +15,11 @@ impl Endpoints {
             self.web_base_url, definition_id
         )
     }
+
+    /// Constructs the web portal URL for viewing a work item.
+    pub fn web_work_item(&self, work_item_id: u32) -> String {
+        format!("{}/_workitems/edit/{work_item_id}", self.web_base_url)
+    }
 }
 
 #[cfg(test)]
@@ -40,6 +45,14 @@ mod tests {
         assert_eq!(
             ep().web_definition(10),
             format!("{WEB_BASE}/_build?definitionId=10")
+        );
+    }
+
+    #[test]
+    fn web_work_item_url() {
+        assert_eq!(
+            ep().web_work_item(555),
+            format!("{WEB_BASE}/_workitems/edit/555")
         );
     }
 }
