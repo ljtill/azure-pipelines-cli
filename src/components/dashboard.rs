@@ -154,7 +154,7 @@ impl Dashboard {
             .iter()
             .map(|&w| w as usize)
             .collect();
-        let pr_schema = pull_request_row();
+        let pr_schema = pull_request_row(crate::render::columns::PullRequestRowOpts::default());
         let pr_widths: Vec<usize> = resolve_widths(&pr_schema.columns, content_area.width)
             .iter()
             .map(|&w| w as usize)

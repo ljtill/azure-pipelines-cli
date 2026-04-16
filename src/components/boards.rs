@@ -5,16 +5,18 @@ use std::collections::{BTreeMap, HashSet};
 
 use anyhow::Result;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::client::models::{BacklogLevelConfiguration, WorkItem};
+use crate::render::columns::board_row;
 use crate::render::helpers::{
     draw_state_message, draw_view_frame, row_style, split_with_search_bar, truncate,
 };
+use crate::render::table::resolve_widths;
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav};
 
@@ -282,15 +284,11 @@ impl Boards {
             return;
         }
 
-        let widths = Layout::horizontal([
-            Constraint::Length(14),
-            Constraint::Length(8),
-            Constraint::Fill(4),
-            Constraint::Length(14),
-            Constraint::Length(20),
-            Constraint::Length(24),
-        ])
-        .split(list_area);
+        let schema = board_row();
+        let widths: Vec<usize> = resolve_widths(&schema.columns, list_area.width)
+            .iter()
+            .map(|&w| w as usize)
+            .collect();
 
         let items: Vec<ListItem> = self
             .rows
@@ -305,57 +303,37 @@ impl Boards {
                 };
                 let indent = "  ".repeat(row.depth);
                 let title = format!("{indent}{arrow} {}", item.title);
+                let w_type = widths[schema.work_item_type];
+                let w_id = widths[schema.id];
+                let w_title = widths[schema.title];
+                let w_state = widths[schema.state];
+                let w_assigned = widths[schema.assigned];
+                let w_iter = widths[schema.iteration];
 
                 Some(
                     ListItem::new(Line::from(vec![
                         Span::styled(
-                            format!(
-                                "{:<width$}",
-                                truncate(&item.work_item_type, widths[0].width as usize),
-                                width = widths[0].width as usize
-                            ),
+                            format!("{:<w_type$}", truncate(&item.work_item_type, w_type)),
                             work_item_type_style(&item.work_item_type),
                         ),
+                        Span::styled(format!("{:<w_id$}", format!("#{}", item.id)), theme::MUTED),
                         Span::styled(
-                            format!(
-                                "{:<width$}",
-                                format!("#{}", item.id),
-                                width = widths[1].width as usize
-                            ),
-                            theme::MUTED,
-                        ),
-                        Span::styled(
-                            format!(
-                                "{:<width$}",
-                                truncate(&title, widths[2].width as usize),
-                                width = widths[2].width as usize
-                            ),
+                            format!("{:<w_title$}", truncate(&title, w_title)),
                             theme::TEXT,
                         ),
                         Span::styled(
-                            format!(
-                                "{:<width$}",
-                                truncate(&item.state, widths[3].width as usize),
-                                width = widths[3].width as usize
-                            ),
+                            format!("{:<w_state$}", truncate(&item.state, w_state)),
                             state_style(&item.state),
                         ),
                         Span::styled(
                             format!(
-                                "{:<width$}",
-                                truncate(
-                                    item.assigned_to.as_deref().unwrap_or(""),
-                                    widths[4].width as usize
-                                ),
-                                width = widths[4].width as usize
+                                "{:<w_assigned$}",
+                                truncate(item.assigned_to.as_deref().unwrap_or(""), w_assigned)
                             ),
                             theme::MUTED,
                         ),
                         Span::styled(
-                            truncate(
-                                item.iteration_path.as_deref().unwrap_or(""),
-                                widths[5].width as usize,
-                            ),
+                            truncate(item.iteration_path.as_deref().unwrap_or(""), w_iter),
                             theme::BRANCH,
                         ),
                     ]))

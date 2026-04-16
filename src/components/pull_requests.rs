@@ -2,16 +2,18 @@
 
 use anyhow::Result;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
+use crate::render::columns::{PullRequestRowOpts, pull_request_row};
 use crate::render::helpers::{
     draw_state_message, draw_view_frame, pr_status_icon, row_style, split_with_search_bar,
     sub_view_tab_spans, truncate,
 };
+use crate::render::table::resolve_widths;
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav};
 
@@ -94,16 +96,12 @@ impl PullRequests {
             return;
         }
 
-        // Compute column widths.
-        let widths = Layout::horizontal([
-            Constraint::Length(3),  // status icon
-            Constraint::Fill(3),    // title
-            Constraint::Fill(1),    // repo
-            Constraint::Length(12), // author
-            Constraint::Length(10), // target branch
-            Constraint::Length(12), // votes summary
-        ])
-        .split(list_area);
+        // Compute column widths via the shared pull-request schema (with author).
+        let schema = pull_request_row(PullRequestRowOpts { author: true });
+        let widths: Vec<usize> = resolve_widths(&schema.columns, list_area.width)
+            .iter()
+            .map(|&w| w as usize)
+            .collect();
 
         let items: Vec<ListItem> = self
             .filtered
@@ -120,45 +118,41 @@ impl PullRequests {
                 };
 
                 let draft_marker = if pr.is_draft { " [draft]" } else { "" };
+                let w_icon = widths[schema.icon];
+                let w_title = widths[schema.title];
+                let w_repo = widths[schema.repo];
+                let w_author = widths[schema.author.unwrap()];
+                let w_branch = widths[schema.branch];
+                let w_votes = widths[schema.votes];
 
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!(" {icon} "), Style::new().fg(color)),
+                    Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(color)),
                     Span::styled(
                         format!(
-                            "{:<w$} ",
+                            "{:<w_title$}",
                             truncate(
                                 &format!("#{} {}{}", pr.pull_request_id, pr.title, draft_marker),
-                                widths[1].width as usize
-                            ),
-                            w = widths[1].width as usize
+                                w_title
+                            )
                         ),
                         theme::TEXT,
                     ),
                     Span::styled(
-                        format!(
-                            "{:<w$} ",
-                            truncate(pr.repo_name(), widths[2].width as usize),
-                            w = widths[2].width as usize
-                        ),
+                        format!("{:<w_repo$}", truncate(pr.repo_name(), w_repo)),
+                        theme::MUTED,
+                    ),
+                    Span::styled(
+                        format!("{:<w_author$}", truncate(pr.author(), w_author)),
                         theme::MUTED,
                     ),
                     Span::styled(
                         format!(
-                            "{:<w$} ",
-                            truncate(pr.author(), widths[3].width as usize),
-                            w = widths[3].width as usize
-                        ),
-                        theme::MUTED,
-                    ),
-                    Span::styled(
-                        format!(
-                            "{:<w$} ",
-                            truncate(pr.short_target_branch(), widths[4].width as usize),
-                            w = widths[4].width as usize
+                            "{:<w_branch$}",
+                            truncate(pr.short_target_branch(), w_branch)
                         ),
                         theme::BRANCH,
                     ),
-                    Span::styled(vote_summary, theme::MUTED),
+                    Span::styled(format!("{vote_summary:<w_votes$}"), theme::MUTED),
                 ]))
                 .style(row_style(i == self.nav.index()))
             })
