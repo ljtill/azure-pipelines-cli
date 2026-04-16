@@ -99,9 +99,9 @@ impl PullRequestDetail {
         let header = Paragraph::new(header_lines);
         f.render_widget(header, chunks[0]);
 
-        // Reviewers + threads section.
-        let bottom = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(chunks[1]);
+        // Reviewers + threads section (reviewers gets 2/5, threads gets 3/5).
+        let bottom =
+            Layout::horizontal([Constraint::Ratio(2, 5), Constraint::Ratio(3, 5)]).split(chunks[1]);
 
         // Reviewers panel.
         let mut reviewer_lines = Vec::new();
