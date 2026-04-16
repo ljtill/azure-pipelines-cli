@@ -2,6 +2,7 @@
 
 pub mod helpers;
 pub mod setup;
+pub mod table;
 pub mod theme;
 
 use ratatui::Frame;
