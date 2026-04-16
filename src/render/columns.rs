@@ -132,6 +132,72 @@ pub fn build_row(opts: BuildRowOpts) -> BuildRowSchema {
     }
 }
 
+/// A resolved pull-request row schema.
+#[derive(Debug, Clone)]
+pub struct PullRequestSchema {
+    pub columns: Vec<Column>,
+    pub icon: usize,
+    pub title: usize,
+    pub repo: usize,
+    pub branch: usize,
+    pub votes: usize,
+}
+
+/// Builds the canonical pull-request row column schema.
+///
+/// Ordering (left to right):
+/// `icon title repo branch votes`.
+#[must_use]
+pub fn pull_request_row() -> PullRequestSchema {
+    let columns = vec![
+        Column {
+            label: "",
+            width: ColumnWidth::Fixed(4),
+            align: Align::Left,
+        },
+        Column {
+            label: "Title",
+            width: ColumnWidth::Flex {
+                weight: 3,
+                min: 30,
+                max: None,
+            },
+            align: Align::Left,
+        },
+        Column {
+            label: "Repo",
+            width: ColumnWidth::Flex {
+                weight: 1,
+                min: 12,
+                max: Some(24),
+            },
+            align: Align::Left,
+        },
+        Column {
+            label: "Target",
+            width: ColumnWidth::Flex {
+                weight: 2,
+                min: 14,
+                max: Some(28),
+            },
+            align: Align::Left,
+        },
+        Column {
+            label: "Votes",
+            width: ColumnWidth::Fixed(14),
+            align: Align::Left,
+        },
+    ];
+    PullRequestSchema {
+        columns,
+        icon: 0,
+        title: 1,
+        repo: 2,
+        branch: 3,
+        votes: 4,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +244,16 @@ mod tests {
         assert_eq!(s.select, Some(0));
         assert!(s.name.is_none());
         assert_eq!(s.retained, Some(4));
+    }
+
+    #[test]
+    fn pull_request_row_has_expected_columns() {
+        let s = pull_request_row();
+        assert_eq!(s.columns.len(), 5);
+        assert_eq!(s.icon, 0);
+        assert_eq!(s.title, 1);
+        assert_eq!(s.repo, 2);
+        assert_eq!(s.branch, 3);
+        assert_eq!(s.votes, 4);
     }
 }

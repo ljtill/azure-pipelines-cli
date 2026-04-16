@@ -4,17 +4,19 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
 use crate::client::models::{Build, PipelineDefinition, PullRequest};
+use crate::render::columns::{BuildRowOpts, build_row, pull_request_row};
 use crate::render::helpers::{
     build_elapsed, draw_view_frame, effective_status_icon, effective_status_label, pr_status_icon,
     row_style, truncate,
 };
+use crate::render::table::resolve_widths;
 use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, DashboardPullRequestsState};
@@ -142,19 +144,21 @@ impl Dashboard {
         ]);
         let content_area = draw_view_frame(f, area, " Dashboard ", Some(subtitle));
 
-        // Shared column grid for both Pinned Pipeline and PR rows.
-        let rects = Layout::horizontal([
-            Constraint::Length(3),  // col 0: indent
-            Constraint::Length(2),  // col 1: status icon
-            Constraint::Length(11), // col 2: status label / PR id
-            Constraint::Fill(2),    // col 3: name / title
-            Constraint::Length(16), // col 4: build number / repo
-            Constraint::Fill(1),    // col 5: branch
-            Constraint::Fill(1),    // col 6: requestor / votes
-            Constraint::Length(12), // col 7: elapsed
-        ])
-        .split(content_area);
-        let w: Vec<usize> = rects.iter().map(|r| r.width as usize).collect();
+        // Two schemas — dashboard has heterogeneous row kinds.
+        let pinned_schema = build_row(BuildRowOpts {
+            select: false,
+            name: true,
+            retained: false,
+        });
+        let pinned_widths: Vec<usize> = resolve_widths(&pinned_schema.columns, content_area.width)
+            .iter()
+            .map(|&w| w as usize)
+            .collect();
+        let pr_schema = pull_request_row();
+        let pr_widths: Vec<usize> = resolve_widths(&pr_schema.columns, content_area.width)
+            .iter()
+            .map(|&w| w as usize)
+            .collect();
 
         let items: Vec<ListItem> = self
             .rows
@@ -165,8 +169,7 @@ impl Dashboard {
 
                 match row {
                     DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
-                        Span::raw(pad(w[0])),
-                        Span::raw(pad(w[1])),
+                        Span::raw(pad(pinned_widths[pinned_schema.icon])),
                         Span::styled(message.clone(), theme::MUTED),
                     ]))
                     .style(sel_style),
@@ -189,19 +192,22 @@ impl Dashboard {
                         } else {
                             theme::MUTED
                         };
+                        let w_icon = pinned_widths[pinned_schema.icon];
+                        let w_status = pinned_widths[pinned_schema.status];
+                        let w_name = pinned_widths[pinned_schema.name.unwrap()];
+                        let w_build = pinned_widths[pinned_schema.build_number];
+                        let w_branch = pinned_widths[pinned_schema.branch];
+                        let w_req = pinned_widths[pinned_schema.requestor];
+                        let w_elapsed = pinned_widths[pinned_schema.elapsed];
 
                         let mut spans = vec![
-                            Span::raw(pad(w[0])),
+                            Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(icon_color)),
                             Span::styled(
-                                format!("{:<w$}", icon, w = w[1]),
+                                format!("{label:<w_status$}"),
                                 Style::new().fg(icon_color),
                             ),
                             Span::styled(
-                                format!("{:<w$}", label, w = w[2]),
-                                Style::new().fg(icon_color),
-                            ),
-                            Span::styled(
-                                format!("{:<w$}", truncate(&definition.name, w[3]), w = w[3]),
+                                format!("{:<w_name$}", truncate(&definition.name, w_name)),
                                 name_style,
                             ),
                         ];
@@ -212,24 +218,23 @@ impl Dashboard {
                             spans.extend([
                                 Span::styled(
                                     format!(
-                                        "{:<w$}",
+                                        "{:<w_build$}",
                                         format!(
                                             "#{}",
-                                            truncate(&b.build_number, w[4].saturating_sub(2))
-                                        ),
-                                        w = w[4]
+                                            truncate(&b.build_number, w_build.saturating_sub(1))
+                                        )
                                     ),
                                     theme::MUTED,
                                 ),
                                 Span::styled(
-                                    format!("{:<w$}", truncate(&branch, w[5]), w = w[5]),
+                                    format!("{:<w_branch$}", truncate(&branch, w_branch)),
                                     theme::BRANCH,
                                 ),
                                 Span::styled(
-                                    format!("{:<w$}", truncate(b.requestor(), w[6]), w = w[6]),
+                                    format!("{:<w_req$}", truncate(b.requestor(), w_req)),
                                     theme::MUTED,
                                 ),
-                                Span::styled(format!("{:>w$}", elapsed, w = w[7]), theme::MUTED),
+                                Span::styled(format!("{elapsed:>w_elapsed$}"), theme::MUTED),
                             ]);
                         } else {
                             spans.push(Span::styled("no builds", theme::MUTED));
@@ -256,42 +261,36 @@ impl Dashboard {
                             "#{} {}{}",
                             pull_request.pull_request_id, pull_request.title, draft_marker
                         );
+                        let w_icon = pr_widths[pr_schema.icon];
+                        let w_title = pr_widths[pr_schema.title];
+                        let w_repo = pr_widths[pr_schema.repo];
+                        let w_branch = pr_widths[pr_schema.branch];
+                        let w_votes = pr_widths[pr_schema.votes];
 
                         ListItem::new(Line::from(vec![
-                            Span::raw(pad(w[0])),
-                            Span::styled(format!("{:<w$}", icon, w = w[1]), Style::new().fg(color)),
-                            // PR id + title span across col 2 + col 3.
+                            Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(color)),
                             Span::styled(
-                                format!(
-                                    "{:<w$}",
-                                    truncate(&title_text, w[2] + w[3]),
-                                    w = w[2] + w[3]
-                                ),
+                                format!("{:<w_title$}", truncate(&title_text, w_title)),
                                 theme::TEXT,
                             ),
                             Span::styled(
-                                format!(
-                                    "{:<w$}",
-                                    truncate(pull_request.repo_name(), w[4]),
-                                    w = w[4]
-                                ),
+                                format!("{:<w_repo$}", truncate(pull_request.repo_name(), w_repo)),
                                 theme::MUTED,
                             ),
                             Span::styled(
                                 format!(
-                                    "{:<w$}",
+                                    "{:<w_branch$}",
                                     format!(
                                         "→ {}",
                                         truncate(
                                             pull_request.short_target_branch(),
-                                            w[5].saturating_sub(2)
+                                            w_branch.saturating_sub(2)
                                         )
-                                    ),
-                                    w = w[5]
+                                    )
                                 ),
                                 theme::BRANCH,
                             ),
-                            Span::styled(format!("{:<w$}", vote_summary, w = w[6]), theme::MUTED),
+                            Span::styled(format!("{vote_summary:<w_votes$}"), theme::MUTED),
                         ]))
                         .style(sel_style)
                     }
