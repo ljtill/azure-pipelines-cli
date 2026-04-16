@@ -112,6 +112,10 @@ pub struct DisplayConfig {
     pub refresh_interval_secs: u64,
     #[serde(default = "default_log_refresh_interval_secs")]
     pub log_refresh_interval_secs: u64,
+    /// Caps the number of log lines held in memory by the log viewer.
+    /// Clamped to at least [`crate::shared::log_buffer::MIN_CAPACITY`] on load.
+    #[serde(default = "default_max_log_lines")]
+    pub max_log_lines: usize,
 }
 
 impl Default for DisplayConfig {
@@ -119,6 +123,7 @@ impl Default for DisplayConfig {
         Self {
             refresh_interval_secs: default_refresh_interval_secs(),
             log_refresh_interval_secs: default_log_refresh_interval_secs(),
+            max_log_lines: default_max_log_lines(),
         }
     }
 }
@@ -129,6 +134,10 @@ fn default_refresh_interval_secs() -> u64 {
 
 fn default_log_refresh_interval_secs() -> u64 {
     5
+}
+
+fn default_max_log_lines() -> usize {
+    crate::shared::log_buffer::DEFAULT_CAPACITY
 }
 
 impl Config {

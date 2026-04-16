@@ -124,6 +124,7 @@ pub fn handle_settings_save(app: &mut App) -> Action {
                 app.refresh_interval = Duration::from_secs(config.display.refresh_interval_secs);
                 app.log_refresh_interval =
                     Duration::from_secs(config.display.log_refresh_interval_secs);
+                app.max_log_lines = config.display.max_log_lines;
 
                 // Rebuild filtered views with new filters.
                 app.rebuild_dashboard();

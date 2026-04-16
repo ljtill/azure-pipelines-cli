@@ -186,12 +186,21 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             .block(view_block(title));
         f.render_widget(hint, area);
     } else {
-        let lines: Vec<Line> = app
-            .log_viewer
-            .log_content()
-            .iter()
-            .map(|l| Line::from(Span::raw(l.as_str())))
-            .collect();
+        let dropped = app.log_viewer.log_content().dropped();
+        let mut lines: Vec<Line> =
+            Vec::with_capacity(app.log_viewer.log_content().len() + usize::from(dropped > 0));
+        if dropped > 0 {
+            lines.push(Line::styled(
+                format!("… {dropped} earlier line(s) dropped (buffer limit)"),
+                theme::MUTED,
+            ));
+        }
+        lines.extend(
+            app.log_viewer
+                .log_content()
+                .iter()
+                .map(|l| Line::from(Span::raw(l.as_str()))),
+        );
 
         let total_lines = lines.len() as u32;
         let visible_height = u32::from(area.height.saturating_sub(2));
@@ -377,7 +386,8 @@ mod tests {
         let mut state = LogViewer::default();
         state.scroll_down(10);
         state.set_log_content("line1\nline2\nline3");
-        assert_eq!(state.log_content(), &["line1", "line2", "line3"]);
+        let lines: Vec<&str> = state.log_content().iter().map(String::as_str).collect();
+        assert_eq!(lines, vec!["line1", "line2", "line3"]);
         assert!(state.log_auto_scroll());
         assert_eq!(state.log_scroll_offset(), 0);
     }
@@ -397,6 +407,40 @@ mod tests {
         assert_eq!(state.generation(), 0);
         state.set_generation(99);
         assert_eq!(state.generation(), 99);
+    }
+
+    #[test]
+    fn log_buffer_drops_oldest_when_cap_exceeded() {
+        use crate::client::models::BuildStatus;
+        use crate::shared::log_buffer::{LogBuffer, MIN_CAPACITY};
+
+        // Use the smallest allowed cap so the test stays cheap.
+        let build = make_build(1, BuildStatus::Completed, None);
+        let mut state =
+            LogViewer::new_for_build_with_cap(build, View::BuildHistory, 1, MIN_CAPACITY);
+        // Replace the buffer with one sized to the test's cap — the
+        // `new_for_build_with_cap` wiring must carry the cap through.
+        assert_eq!(state.log_content.cap(), MIN_CAPACITY);
+
+        let _ = LogBuffer::new(MIN_CAPACITY); // sanity check the symbol is reachable.
+
+        let over = MIN_CAPACITY + 37;
+        let input = (0..over)
+            .map(|i| format!("l{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        state.set_log_content(&input);
+
+        assert_eq!(state.log_content().len(), MIN_CAPACITY);
+        assert_eq!(state.log_content().dropped(), 37);
+        // Tail is preserved.
+        assert_eq!(
+            state.log_content().iter().last().unwrap(),
+            &format!("l{}", over - 1)
+        );
+        // Scroll offset is reset on replace regardless of truncation.
+        assert_eq!(state.log_scroll_offset(), 0);
+        assert!(state.log_auto_scroll());
     }
 
     // --- Group 2: Timeline tree building tests ---

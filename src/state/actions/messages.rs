@@ -1188,8 +1188,8 @@ mod tests {
         app.log_viewer.set_log_content("line1\nline2\nline3");
 
         assert_eq!(app.log_viewer.log_content().len(), 3);
-        assert_eq!(app.log_viewer.log_content()[0], "line1");
-        assert_eq!(app.log_viewer.log_content()[2], "line3");
+        assert_eq!(app.log_viewer.log_content().get(0).unwrap(), "line1");
+        assert_eq!(app.log_viewer.log_content().get(2).unwrap(), "line3");
         assert!(app.log_viewer.log_auto_scroll());
     }
 

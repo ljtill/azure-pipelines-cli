@@ -6,6 +6,7 @@ use ratatui::layout::Rect;
 
 use crate::client::models::{Build, BuildTimeline};
 
+use crate::shared::log_buffer::LogBuffer;
 use crate::state::View;
 use crate::state::nav::ListNav;
 
@@ -18,7 +19,7 @@ pub struct LogViewer {
     pub timeline_rows: Vec<TimelineRow>,
     pub collapsed_stages: HashSet<String>,
     pub collapsed_jobs: HashSet<String>,
-    pub log_content: Vec<String>,
+    pub log_content: LogBuffer,
     pub log_auto_scroll: bool,
     pub log_generation: u64,
     pub timeline_initialized: bool,
@@ -42,7 +43,7 @@ impl Default for LogViewer {
             timeline_rows: Vec::new(),
             collapsed_stages: HashSet::new(),
             collapsed_jobs: HashSet::new(),
-            log_content: Vec::new(),
+            log_content: LogBuffer::default(),
             log_auto_scroll: false,
             log_generation: 0,
             timeline_initialized: false,
@@ -60,10 +61,29 @@ impl Default for LogViewer {
 
 // --- Construction ---
 impl LogViewer {
-    /// Creates a new log viewer state for navigating to a specific build.
+    /// Creates a new log viewer state for navigating to a specific build,
+    /// using the default log-buffer capacity.
     pub fn new_for_build(build: Build, return_to: View, generation: u64) -> Self {
+        Self::new_for_build_with_cap(
+            build,
+            return_to,
+            generation,
+            crate::shared::log_buffer::DEFAULT_CAPACITY,
+        )
+    }
+
+    /// Creates a new log viewer state with an explicit log-buffer capacity.
+    /// Used by `App` so the user-configured `[display].max_log_lines` value
+    /// applies to each new build's log buffer.
+    pub fn new_for_build_with_cap(
+        build: Build,
+        return_to: View,
+        generation: u64,
+        log_cap: usize,
+    ) -> Self {
         Self {
             selected_build: Some(build),
+            log_content: LogBuffer::new(log_cap),
             log_auto_scroll: true,
             follow_mode: true,
             log_generation: generation,
@@ -88,7 +108,7 @@ impl LogViewer {
         &self.timeline_rows
     }
 
-    pub fn log_content(&self) -> &[String] {
+    pub fn log_content(&self) -> &LogBuffer {
         &self.log_content
     }
 
@@ -144,7 +164,7 @@ impl LogViewer {
     }
 
     pub fn set_log_content(&mut self, content: &str) {
-        self.log_content = content.lines().map(String::from).collect();
+        self.log_content.replace_from_str(content);
         self.log_auto_scroll = true;
         self.log_scroll_offset = 0;
     }

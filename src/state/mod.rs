@@ -323,6 +323,9 @@ pub struct App {
     pub refresh_interval: Duration,
     pub log_refresh_interval: Duration,
 
+    // --- Log Viewer ---
+    pub max_log_lines: usize,
+
     // --- Reload ---
     pub reload_requested: bool,
 
@@ -393,6 +396,8 @@ impl App {
 
             refresh_interval: Duration::from_secs(config.display.refresh_interval_secs),
             log_refresh_interval: Duration::from_secs(config.display.log_refresh_interval_secs),
+
+            max_log_lines: config.display.max_log_lines,
 
             reload_requested: false,
 
@@ -589,7 +594,8 @@ impl App {
         let return_to = self.view;
         self.service = return_to.service();
         let next_gen = self.log_viewer.generation() + 1;
-        self.log_viewer = LogViewer::new_for_build(build, return_to, next_gen);
+        self.log_viewer =
+            LogViewer::new_for_build_with_cap(build, return_to, next_gen, self.max_log_lines);
         self.view = View::LogViewer;
     }
 

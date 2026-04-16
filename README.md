@@ -57,6 +57,28 @@ cargo install --path .
 
 On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project. Boards uses that same project and resolves the default team/backlog at runtime, so there is no separate Boards section to configure. All settings can be adjusted in-app with `,` (settings).
 
+### Configuration stability
+
+The 1.0 config schema — keys under `[azure_devops]`, `[filters]`, `[update]`, `[logging]`, `[notifications]`, and `[display]` — is frozen for the 1.x line. New keys may be added (always with defaults so existing configs keep working); renames and removals will wait for a major version bump. An optional top-level `schema_version` field is accepted (default `1`); unknown values are warned about but do not prevent the config from loading.
+
+### Display options
+
+The `[display]` section controls refresh and log-viewer behavior:
+
+```toml
+[display]
+refresh_interval_secs = 15      # Data refresh cadence. Min 5.
+log_refresh_interval_secs = 5   # Log refresh cadence. Min 1.
+max_log_lines = 100000          # Ring-buffer cap for live log output. Min 1000.
+```
+
+`max_log_lines` bounds the memory used by the log viewer. When a task emits more lines than the cap, the oldest lines are dropped (FIFO) so the tail of the log — the part users actually want to see in follow mode — is always preserved. A subtle banner at the top of the log pane surfaces how many lines were dropped.
+
+### Known limitations
+
+- **Log buffer cap.** The log viewer keeps at most `max_log_lines` lines in memory (default 100000). For builds that produce more output than this, the oldest lines are truncated with a visible banner.
+- **Pagination safety cap.** The Azure DevOps REST client refuses to follow more than 1000 continuation-token pages for a single list endpoint, as a defense against server-side loops. This limit is well above any realistic production workload.
+
 ## Usage
 
 ```bash

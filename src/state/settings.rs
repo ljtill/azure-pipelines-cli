@@ -50,6 +50,11 @@ pub struct SettingsState {
     pub config_path: PathBuf,
     /// Stores the cursor position within the edit buffer.
     pub cursor: usize,
+    /// Preserves the current `[display].max_log_lines` so it survives a
+    /// settings-form save. The field is not editable via the TUI but must
+    /// round-trip through `to_config` to avoid silently resetting a
+    /// user-configured value.
+    pub preserved_max_log_lines: usize,
 }
 
 impl SettingsState {
@@ -149,6 +154,7 @@ impl SettingsState {
             editing: false,
             config_path,
             cursor: 0,
+            preserved_max_log_lines: config.display.max_log_lines,
         }
     }
 
@@ -305,6 +311,7 @@ impl SettingsState {
             display: DisplayConfig {
                 refresh_interval_secs: parse_u64("Refresh interval (secs)", 15).max(5),
                 log_refresh_interval_secs: parse_u64("Log refresh interval (secs)", 5).max(1),
+                max_log_lines: self.preserved_max_log_lines,
             },
         }
     }
