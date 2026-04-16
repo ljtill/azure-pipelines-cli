@@ -94,6 +94,49 @@ fn collect_backlog_work_item_ids(work_items: &[crate::client::models::WorkItemLi
     ids.into_iter().collect()
 }
 
+/// Builds a recursive `WorkItemLinks` WIQL query that returns every
+/// `Hierarchy-Forward` (parent → child) link in the project whose target is
+/// not in a terminal state. Used to discover descendants (Tasks, Bugs, Test
+/// Cases, etc.) below the configured backlog levels.
+pub(crate) fn build_board_descendants_wiql(project: &str) -> String {
+    let escaped = project.replace('\'', "''");
+    format!(
+        "SELECT [System.Id] FROM WorkItemLinks \
+WHERE [Source].[System.TeamProject] = '{escaped}' \
+AND [Target].[System.TeamProject] = '{escaped}' \
+AND [Target].[System.State] NOT IN ('Closed', 'Removed', 'Done', 'Cut') \
+AND [System.Links.LinkType] = 'System.LinkTypes.Hierarchy-Forward' \
+MODE (Recursive)"
+    )
+}
+
+/// Returns the set of work item IDs transitively reachable from the `seeds`
+/// via the supplied `(source, target)` hierarchy links. Safe against cycles.
+pub(crate) fn hierarchy_descendant_ids(
+    seeds: &[u32],
+    links: &[crate::client::models::WorkItemLink],
+) -> std::collections::BTreeSet<u32> {
+    use std::collections::{BTreeSet, HashMap};
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    for link in links {
+        if let (Some(src), Some(tgt)) = (link.source.as_ref(), link.target.as_ref()) {
+            children.entry(src.id).or_default().push(tgt.id);
+        }
+    }
+
+    let mut visited: BTreeSet<u32> = BTreeSet::new();
+    let mut stack: Vec<u32> = seeds.to_vec();
+    while let Some(id) = stack.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        if let Some(kids) = children.get(&id) {
+            stack.extend(kids.iter().copied());
+        }
+    }
+    visited
+}
+
 async fn load_boards_snapshot(
     client: &AdoClient,
     project: &str,
@@ -123,6 +166,26 @@ async fn load_boards_snapshot(
     for backlog_result in backlog_results {
         let (_, backlog_work_items) = backlog_result?;
         work_item_ids.extend(collect_backlog_work_item_ids(&backlog_work_items));
+    }
+
+    // Discover descendants (e.g. Tasks) below the configured backlog levels by
+    // running a recursive Hierarchy-Forward WorkItemLinks query and restricting
+    // results to the transitive closure of the backlog seeds.
+    let seed_ids: Vec<u32> = work_item_ids.iter().copied().collect();
+    if !seed_ids.is_empty() {
+        let wiql = build_board_descendants_wiql(project);
+        match client.query_by_wiql(&wiql).await {
+            Ok(result) => {
+                let reachable = hierarchy_descendant_ids(&seed_ids, &result.work_item_relations);
+                work_item_ids.extend(reachable);
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "failed to fetch board descendants; rendering backlog items only"
+                );
+            }
+        }
     }
 
     let work_items = client
@@ -937,5 +1000,70 @@ mod tests {
             build_my_work_items_wiql(super::super::super::View::Dashboard, "MyProject").is_none()
         );
         assert!(build_my_work_items_wiql(super::super::super::View::Boards, "MyProject").is_none());
+    }
+
+    #[test]
+    fn build_board_descendants_wiql_scopes_recursively_to_project_and_excludes_terminal_states() {
+        let wiql = build_board_descendants_wiql("MyProject");
+        assert!(wiql.contains("FROM WorkItemLinks"));
+        assert!(wiql.contains("[Source].[System.TeamProject] = 'MyProject'"));
+        assert!(wiql.contains("[Target].[System.TeamProject] = 'MyProject'"));
+        assert!(
+            wiql.contains("[Target].[System.State] NOT IN ('Closed', 'Removed', 'Done', 'Cut')")
+        );
+        assert!(wiql.contains("'System.LinkTypes.Hierarchy-Forward'"));
+        assert!(wiql.contains("MODE (Recursive)"));
+    }
+
+    #[test]
+    fn build_board_descendants_wiql_escapes_single_quotes_in_project() {
+        let wiql = build_board_descendants_wiql("it's mine");
+        assert!(wiql.contains("'it''s mine'"));
+    }
+
+    fn link(source: Option<u32>, target: Option<u32>) -> crate::client::models::WorkItemLink {
+        crate::client::models::WorkItemLink {
+            rel: Some("System.LinkTypes.Hierarchy-Forward".to_string()),
+            source: source.map(|id| crate::client::models::WorkItemReference { id, url: None }),
+            target: target.map(|id| crate::client::models::WorkItemReference { id, url: None }),
+        }
+    }
+
+    #[test]
+    fn hierarchy_descendant_ids_walks_multi_level_tree_from_seeds() {
+        // 1 -> 2 -> 3, 1 -> 4, 5 -> 6 (disjoint), 7 (orphan seed).
+        let links = vec![
+            link(Some(1), Some(2)),
+            link(Some(2), Some(3)),
+            link(Some(1), Some(4)),
+            link(Some(5), Some(6)),
+        ];
+        let got = hierarchy_descendant_ids(&[1, 7], &links);
+        assert!(got.contains(&1) && got.contains(&2) && got.contains(&3) && got.contains(&4));
+        assert!(got.contains(&7));
+        assert!(!got.contains(&5) && !got.contains(&6));
+    }
+
+    #[test]
+    fn hierarchy_descendant_ids_is_safe_against_cycles() {
+        // 1 -> 2 -> 1 (cycle), with an off-cycle child 2 -> 3.
+        let links = vec![
+            link(Some(1), Some(2)),
+            link(Some(2), Some(1)),
+            link(Some(2), Some(3)),
+        ];
+        let got = hierarchy_descendant_ids(&[1], &links);
+        assert!(got.contains(&1) && got.contains(&2) && got.contains(&3));
+    }
+
+    #[test]
+    fn hierarchy_descendant_ids_ignores_links_with_missing_endpoints() {
+        let links = vec![
+            link(None, Some(2)),
+            link(Some(1), None),
+            link(Some(1), Some(2)),
+        ];
+        let got = hierarchy_descendant_ids(&[1], &links);
+        assert!(got.contains(&1) && got.contains(&2));
     }
 }
