@@ -57,9 +57,14 @@ cargo install --path .
 
 On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project. Boards uses that same project and resolves the default team/backlog at runtime, so there is no separate Boards section to configure. All settings can be adjusted in-app with `,` (settings).
 
-### Configuration stability
+### Stability
 
-The 1.0 config schema — keys under `[azure_devops]`, `[filters]`, `[update]`, `[logging]`, `[notifications]`, and `[display]` — is frozen for the 1.x line. New keys may be added (always with defaults so existing configs keep working); renames and removals will wait for a major version bump. An optional top-level `schema_version` field is accepted (default `1`); unknown values are warned about but do not prevent the config from loading.
+The following public surfaces are frozen for the 1.x line. New behavior may be added, but nothing below will be renamed, removed, or repurposed without a major version bump.
+
+- **Config schema** — Keys under `[azure_devops]`, `[filters]`, `[update]`, `[logging]`, `[notifications]`, and `[display]`. New keys may be added (always with defaults so existing configs keep working). An optional top-level `schema_version` field is accepted (default `1`); unknown values are warned about but do not prevent the config from loading.
+- **Keybindings** — Every binding in the table below keeps its current action for 1.x. New bindings may be added; existing keys will not be reassigned.
+- **File paths** — `~/.config/devops/config.toml` (config), `~/.local/state/devops/` (persistent state), `~/.local/share/devops/versions/` (installed release binaries), and `~/.local/bin/devops` (symlink to the active version) are stable and safe to script against.
+- **CLI surface** — The `devops`, `devops version`, and `devops update` subcommands, along with the `--config` flag, are stable. New flags and subcommands may be introduced.
 
 ### Display options
 
