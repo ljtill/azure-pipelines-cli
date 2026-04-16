@@ -69,6 +69,7 @@ The codebase follows the [ratatui Component Architecture](https://ratatui.rs/con
 - **Log viewer modes.** Follow mode tracks the active task and auto-refreshes; inspect mode pins the selected task after Enter.
 - **Per-view sub-states.** `App` is decomposed into `data` (`CoreData`), `filters` (`FilterConfig`), `search` (`SearchState`), and view-specific component structs (e.g., `dashboard: Dashboard`, `pipelines: Pipelines`). Rebuild methods live on the component and take `&CoreData`/`&FilterConfig` parameters — do not add new fields directly to `App` when they belong to a specific view.
 - **Test helpers.** `src/test_helpers.rs` provides factory functions (`make_app`, `make_build`, `make_definition`, `make_config`, `make_simple_timeline`) used by both unit tests in `src/` and integration tests in `tests/`.
+- **List view column layout.** All list views source their column widths from shared schemas in `src/render/columns.rs` (`build_row`, `pull_request_row`, `work_item_row`, `board_row`) built on the `Column` / `ColumnWidth::{Fixed, Flex}` primitive in `src/render/table.rs`. Views call `render_header(f, area, &schema.columns)` to draw a muted single-line header and receive the body rect, then reuse `resolve_widths` with the same schema so the header and rows line up exactly. New columns belong in the schema, not in per-view `Layout::horizontal` calls — `Flex { weight, min, max }` keeps extra horizontal space in the primary text columns instead of sprawling into the last column.
 
 ## Code comments
 
