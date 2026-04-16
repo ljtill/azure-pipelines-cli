@@ -14,7 +14,8 @@ use super::Component;
 use crate::client::models::{BacklogLevelConfiguration, WorkItem};
 use crate::render::columns::board_row;
 use crate::render::helpers::{
-    draw_state_message, draw_view_frame, row_style, split_with_search_bar, truncate,
+    draw_state_message, draw_view_frame, row_style, split_with_search_bar, sub_view_tab_spans,
+    truncate,
 };
 use crate::render::table::{render_header, resolve_widths};
 use crate::render::theme;
@@ -253,7 +254,21 @@ impl Boards {
     /// Renders the Boards view using data from the App.
     pub fn draw_with_app(&self, f: &mut Frame, app: &App, area: Rect) {
         let show_search = app.search.mode == InputMode::Search || !app.search.query.is_empty();
-        let frame_area = draw_view_frame(f, area, " Boards ", Some(self.subtitle_line()));
+        let mut subtitle_spans = sub_view_tab_spans(app.service, app.view);
+        if !subtitle_spans.is_empty() {
+            subtitle_spans.push(Span::styled("  ·  ", theme::MUTED));
+        }
+        let team = self.team_name.as_deref().unwrap_or("Backlog");
+        subtitle_spans.push(Span::styled(format!(" {team}"), theme::TEXT));
+        if !self.backlog_names.is_empty() {
+            subtitle_spans.push(Span::styled("  ·  ", theme::MUTED));
+            subtitle_spans.push(Span::styled(self.backlog_names.join(" / "), theme::MUTED));
+        }
+        subtitle_spans.push(Span::styled(
+            format!("  ·  {} items", self.rows.len()),
+            theme::MUTED,
+        ));
+        let frame_area = draw_view_frame(f, area, " Boards ", Some(Line::from(subtitle_spans)));
         let list_area = split_with_search_bar(
             f,
             frame_area,
@@ -347,23 +362,6 @@ impl Boards {
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
         f.render_stateful_widget(list, list_area, &mut state);
-    }
-
-    fn subtitle_line(&self) -> Line<'static> {
-        let team = self.team_name.as_deref().unwrap_or("Backlog");
-        if self.backlog_names.is_empty() {
-            Line::from(vec![
-                Span::styled(format!(" {team}"), theme::TEXT),
-                Span::styled(format!("  ·  {} items", self.rows.len()), theme::MUTED),
-            ])
-        } else {
-            Line::from(vec![
-                Span::styled(format!(" {team}"), theme::TEXT),
-                Span::styled("  ·  ", theme::MUTED),
-                Span::styled(self.backlog_names.join(" / "), theme::MUTED),
-                Span::styled(format!("  ·  {} items", self.rows.len()), theme::MUTED),
-            ])
-        }
     }
 
     fn visible_ids(&self, search_query: &str) -> Option<HashSet<u32>> {
