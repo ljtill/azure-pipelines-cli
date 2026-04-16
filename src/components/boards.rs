@@ -16,7 +16,7 @@ use crate::render::columns::board_row;
 use crate::render::helpers::{
     draw_state_message, draw_view_frame, row_style, split_with_search_bar, truncate,
 };
-use crate::render::table::resolve_widths;
+use crate::render::table::{render_header, resolve_widths};
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav};
 
@@ -285,6 +285,7 @@ impl Boards {
         }
 
         let schema = board_row();
+        let list_area = render_header(f, list_area, &schema.columns);
         let widths: Vec<usize> = resolve_widths(&schema.columns, list_area.width)
             .iter()
             .map(|&w| w as usize)

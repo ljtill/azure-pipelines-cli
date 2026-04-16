@@ -16,7 +16,7 @@ use crate::render::helpers::{
     build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
     effective_status_label, row_style, split_with_search_bar, truncate,
 };
-use crate::render::table::resolve_widths;
+use crate::render::table::{render_header, resolve_widths};
 use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, InputMode};
@@ -280,6 +280,7 @@ impl Pipelines {
             name: true,
             retained: false,
         });
+        let list_area = render_header(f, list_area, &schema.columns);
         let resolved = resolve_widths(&schema.columns, list_area.width);
         let widths: Vec<usize> = resolved.iter().map(|&w| w as usize).collect();
 

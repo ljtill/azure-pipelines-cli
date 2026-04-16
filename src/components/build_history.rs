@@ -16,7 +16,7 @@ use crate::render::helpers::{
     build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
     effective_status_label, row_style, truncate,
 };
-use crate::render::table::resolve_widths;
+use crate::render::table::{render_header, resolve_widths};
 use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, View};
@@ -83,6 +83,7 @@ impl BuildHistory {
             name: false,
             retained: true,
         });
+        let content_area = render_header(f, content_area, &schema.columns);
         let resolved = resolve_widths(&schema.columns, content_area.width);
         let widths: Vec<usize> = resolved.iter().map(|&w| w as usize).collect();
 

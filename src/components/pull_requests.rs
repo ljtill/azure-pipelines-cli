@@ -13,7 +13,7 @@ use crate::render::helpers::{
     draw_state_message, draw_view_frame, pr_status_icon, row_style, split_with_search_bar,
     sub_view_tab_spans, truncate,
 };
-use crate::render::table::resolve_widths;
+use crate::render::table::{render_header, resolve_widths};
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav};
 
@@ -98,6 +98,7 @@ impl PullRequests {
 
         // Compute column widths via the shared pull-request schema (with author).
         let schema = pull_request_row(PullRequestRowOpts { author: true });
+        let list_area = render_header(f, list_area, &schema.columns);
         let widths: Vec<usize> = resolve_widths(&schema.columns, list_area.width)
             .iter()
             .map(|&w| w as usize)
