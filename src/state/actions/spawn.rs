@@ -3,7 +3,6 @@
 use std::future::Future;
 
 use anyhow::Result;
-use futures::future::join_all;
 use tokio::sync::mpsc;
 use tracing::Instrument;
 
@@ -81,23 +80,23 @@ fn choose_boards_team<'a>(teams: &'a [ProjectTeam], project: &str) -> Option<&'a
         .or_else(|| teams.first())
 }
 
-fn collect_backlog_work_item_ids(work_items: &[crate::client::models::WorkItemLink]) -> Vec<u32> {
-    let mut ids = std::collections::BTreeSet::new();
-    for work_item in work_items {
-        if let Some(source) = &work_item.source {
-            ids.insert(source.id);
-        }
-        if let Some(target) = &work_item.target {
-            ids.insert(target.id);
-        }
-    }
-    ids.into_iter().collect()
+/// Builds a WIQL query returning every Epic in the project, ordered by
+/// stack rank then id. Used as the root seed for the Boards hierarchy so the
+/// tree covers the entire project, not just one team's configured backlog.
+pub(crate) fn build_board_epic_roots_wiql(project: &str) -> String {
+    let escaped = project.replace('\'', "''");
+    format!(
+        "SELECT [System.Id] FROM WorkItems \
+WHERE [System.TeamProject] = '{escaped}' \
+AND [System.WorkItemType] = 'Epic' \
+ORDER BY [Microsoft.VSTS.Common.StackRank], [System.Id]"
+    )
 }
 
 /// Builds a recursive `WorkItemLinks` WIQL query that returns every
 /// `Hierarchy-Forward` (parent → child) link in the project whose target is
 /// not in a terminal state. Used to discover descendants (Tasks, Bugs, Test
-/// Cases, etc.) below the configured backlog levels.
+/// Cases, etc.) below the Epic roots.
 pub(crate) fn build_board_descendants_wiql(project: &str) -> String {
     let escaped = project.replace('\'', "''");
     format!(
@@ -149,28 +148,21 @@ async fn load_boards_snapshot(
     let mut backlogs = client.list_backlogs(&team_name).await?;
     backlogs.sort_by_key(|backlog| backlog.rank);
 
-    let backlog_results = join_all(backlogs.iter().map(|backlog| {
-        let client = client.clone();
-        let team_name = team_name.clone();
-        let backlog_id = backlog.id.clone();
-        async move {
-            let work_items = client
-                .list_backlog_level_work_items(&team_name, &backlog_id)
-                .await?;
-            Ok::<_, anyhow::Error>((backlog_id, work_items))
-        }
-    }))
-    .await;
+    // Seed the tree with every Epic in the project so the backlog view is not
+    // constrained to a single team's backlog configuration. Descendants
+    // (Features, Stories, Tasks, Bugs, etc.) are pulled in via the recursive
+    // Hierarchy-Forward query below.
+    let epic_wiql = build_board_epic_roots_wiql(project);
+    let epic_query = client.query_by_wiql(&epic_wiql).await?;
+    let mut work_item_ids: std::collections::BTreeSet<u32> = epic_query
+        .work_items
+        .iter()
+        .map(|reference| reference.id)
+        .collect();
 
-    let mut work_item_ids = std::collections::BTreeSet::new();
-    for backlog_result in backlog_results {
-        let (_, backlog_work_items) = backlog_result?;
-        work_item_ids.extend(collect_backlog_work_item_ids(&backlog_work_items));
-    }
-
-    // Discover descendants (e.g. Tasks) below the configured backlog levels by
-    // running a recursive Hierarchy-Forward WorkItemLinks query and restricting
-    // results to the transitive closure of the backlog seeds.
+    // Discover descendants (e.g. Tasks) below the Epic roots by running a
+    // recursive Hierarchy-Forward WorkItemLinks query and restricting results
+    // to the transitive closure of the Epic seeds.
     let seed_ids: Vec<u32> = work_item_ids.iter().copied().collect();
     if !seed_ids.is_empty() {
         let wiql = build_board_descendants_wiql(project);
@@ -182,7 +174,7 @@ async fn load_boards_snapshot(
             Err(error) => {
                 tracing::warn!(
                     %error,
-                    "failed to fetch board descendants; rendering backlog items only"
+                    "failed to fetch board descendants; rendering Epics only"
                 );
             }
         }
@@ -928,24 +920,6 @@ mod tests {
     }
 
     #[test]
-    fn collect_backlog_work_item_ids_deduplicates_sources_and_targets() {
-        let ids = collect_backlog_work_item_ids(&[
-            crate::client::models::WorkItemLink {
-                rel: None,
-                source: Some(crate::client::models::WorkItemReference { id: 7, url: None }),
-                target: Some(crate::client::models::WorkItemReference { id: 9, url: None }),
-            },
-            crate::client::models::WorkItemLink {
-                rel: None,
-                source: Some(crate::client::models::WorkItemReference { id: 7, url: None }),
-                target: Some(crate::client::models::WorkItemReference { id: 11, url: None }),
-            },
-        ]);
-
-        assert_eq!(ids, vec![7, 9, 11]);
-    }
-
-    #[test]
     fn describe_connection_data_error_shortens_auth_failures() {
         let error = anyhow::anyhow!(
             "Authentication failed — ensure you are logged in with `az login` or `azd auth login`.\n\nUnderlying error: boom"
@@ -1018,6 +992,21 @@ mod tests {
     #[test]
     fn build_board_descendants_wiql_escapes_single_quotes_in_project() {
         let wiql = build_board_descendants_wiql("it's mine");
+        assert!(wiql.contains("'it''s mine'"));
+    }
+
+    #[test]
+    fn build_board_epic_roots_wiql_selects_epics_scoped_to_project() {
+        let wiql = build_board_epic_roots_wiql("MyProject");
+        assert!(wiql.contains("FROM WorkItems"));
+        assert!(wiql.contains("[System.TeamProject] = 'MyProject'"));
+        assert!(wiql.contains("[System.WorkItemType] = 'Epic'"));
+        assert!(wiql.contains("ORDER BY [Microsoft.VSTS.Common.StackRank], [System.Id]"));
+    }
+
+    #[test]
+    fn build_board_epic_roots_wiql_escapes_single_quotes_in_project() {
+        let wiql = build_board_epic_roots_wiql("it's mine");
         assert!(wiql.contains("'it''s mine'"));
     }
 
