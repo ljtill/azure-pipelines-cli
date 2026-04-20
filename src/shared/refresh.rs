@@ -78,9 +78,9 @@ mod tests {
     fn backoff_scales_exponentially() {
         assert_eq!(refresh_backoff(0, 30, 300), Duration::from_secs(30));
         assert_eq!(refresh_backoff(1, 30, 300), Duration::from_secs(30));
-        assert_eq!(refresh_backoff(2, 30, 300), Duration::from_secs(60));
-        assert_eq!(refresh_backoff(3, 30, 300), Duration::from_secs(120));
-        assert_eq!(refresh_backoff(4, 30, 300), Duration::from_secs(240));
-        assert_eq!(refresh_backoff(5, 30, 300), Duration::from_secs(300)); // Clamped.
+        assert_eq!(refresh_backoff(2, 30, 300), Duration::from_mins(1));
+        assert_eq!(refresh_backoff(3, 30, 300), Duration::from_mins(2));
+        assert_eq!(refresh_backoff(4, 30, 300), Duration::from_mins(4));
+        assert_eq!(refresh_backoff(5, 30, 300), Duration::from_mins(5)); // Clamped.
     }
 }

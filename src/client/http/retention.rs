@@ -75,7 +75,7 @@ impl super::AdoClient {
         }
 
         let mut leases: Vec<RetentionLease> = all_leases.into_values().collect();
-        leases.sort_by(|a, b| a.lease_id.cmp(&b.lease_id));
+        leases.sort_by_key(|l| l.lease_id);
         Ok(leases)
     }
 

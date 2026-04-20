@@ -141,7 +141,7 @@ impl Pipelines {
         }
 
         for (key, mut pipelines) in by_folder {
-            pipelines.sort_by(|(a, _), (b, _)| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            pipelines.sort_by_key(|(a, _)| a.name.to_lowercase());
             let collapsed = search_query.is_empty() && self.collapsed_folders.contains(&key);
             rows.push(PipelineRow::FolderHeader {
                 path: folder_display(&key),

@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 const ADO_RESOURCE: &str = "499b84ac-1321-427f-aa17-267ca6975798";
 
 /// Specifies the margin before actual expiry to trigger a refresh, avoiding edge-case failures.
-const EXPIRY_MARGIN: std::time::Duration = std::time::Duration::from_secs(120);
+const EXPIRY_MARGIN: std::time::Duration = std::time::Duration::from_mins(2);
 
 /// Holds a cached bearer token alongside its computed expiry instant.
 struct CachedToken {

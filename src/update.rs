@@ -336,7 +336,7 @@ pub async fn self_update() -> Result<UpdateResult> {
     // Downloads the archive.
     tracing::info!(url = &*download_url, "downloading archive");
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_mins(1))
         .build()?;
 
     let token = github_token();

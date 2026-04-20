@@ -76,7 +76,7 @@ impl Dashboard {
                     .map(|d| (d.clone(), latest_builds_by_def.get(id).cloned()))
             })
             .collect();
-        pinned.sort_by(|(a, _), (b, _)| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        pinned.sort_by_key(|(a, _)| a.name.to_lowercase());
 
         if pinned.is_empty() {
             rows.push(DashboardRow::EmptyHint {
