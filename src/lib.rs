@@ -18,7 +18,7 @@
 //! | [`components`] | Self-contained UI components following the ratatui Component trait pattern. Each view (Dashboard, Pipelines, Active Runs, Build History, Log Viewer) plus overlays (Header, Help, Settings) has its own module. |
 //! | [`config`]     | TOML configuration loading and validation (`--config` flag or XDG default). |
 //! | [`events`]     | Keyboard/mouse event handling — split per-view (`events/dashboard.rs`, etc.) with shared handlers in `events/common.rs`. |
-//! | [`shared`]     | Cross-cutting infrastructure: `RefreshState`, `ListNav`, `Notifications`. |
+//! | [`shared`]     | Cross-cutting infrastructure: `RefreshState`, `ListNav`, `Notifications`, `SecretString`. |
 //! | [`render`]     | Shared rendering utilities: `helpers.rs` (status icons, elapsed time), `theme.rs` (color constants), `setup.rs` (first-run wizard). |
 //! | [`update`]     | Self-update mechanism that pulls new releases from GitHub. |
 //!
