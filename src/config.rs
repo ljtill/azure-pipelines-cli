@@ -60,6 +60,9 @@ pub struct FiltersConfig {
     /// Pipeline definition IDs pinned to the Dashboard.
     #[serde(default)]
     pub pinned_definition_ids: Vec<u32>,
+    /// Work item IDs pinned to the Dashboard.
+    #[serde(default)]
+    pub pinned_work_item_ids: Vec<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

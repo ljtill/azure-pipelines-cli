@@ -118,6 +118,7 @@ pub fn handle_settings_save(app: &mut App) -> Action {
                 app.filters.folders = config.filters.folders;
                 app.filters.definition_ids = config.filters.definition_ids.clone();
                 app.filters.pinned_definition_ids = config.filters.pinned_definition_ids.clone();
+                app.filters.pinned_work_item_ids = config.filters.pinned_work_item_ids.clone();
                 app.notifications_enabled = config.notifications.enabled;
 
                 // Apply display settings live.

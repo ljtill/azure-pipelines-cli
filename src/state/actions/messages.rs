@@ -12,7 +12,8 @@ use crate::components::log_viewer::ActiveTaskResult;
 use super::super::messages::{AppMessage, RefreshSource};
 use super::super::notifications::NotificationLevel;
 use super::super::{
-    App, DashboardPullRequestsState, DashboardWorkItemsState, ExactUserIdentity, TimelineRow, View,
+    App, DashboardPullRequestsState, DashboardWorkItemsState, ExactUserIdentity,
+    PinnedWorkItemsState, TimelineRow, View,
 };
 use super::spawn::{
     spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_boards,
@@ -730,6 +731,17 @@ pub fn handle_message(
             tracing::warn!(%message, "dashboard work items fetch failed");
             app.notifications.error_dedup(message.clone());
             app.dashboard_work_items = DashboardWorkItemsState::Unavailable(message);
+            app.rebuild_dashboard();
+        }
+        AppMessage::PinnedWorkItems { work_items } => {
+            tracing::info!(count = work_items.len(), "pinned work items loaded");
+            app.pinned_work_items = PinnedWorkItemsState::Ready(work_items);
+            app.rebuild_dashboard();
+        }
+        AppMessage::PinnedWorkItemsFailed { message } => {
+            tracing::warn!(%message, "pinned work items fetch failed");
+            app.notifications.error_dedup(message.clone());
+            app.pinned_work_items = PinnedWorkItemsState::Unavailable(message);
             app.rebuild_dashboard();
         }
         AppMessage::UserIdentityFailed { message } => {

@@ -70,6 +70,7 @@ pub struct FilterConfig {
     pub folders: Vec<String>,
     pub definition_ids: Vec<u32>,
     pub pinned_definition_ids: Vec<u32>,
+    pub pinned_work_item_ids: Vec<u32>,
 }
 
 /// Represents the active top-level area in the shell.
@@ -305,6 +306,15 @@ pub enum DashboardWorkItemsState {
     Unavailable(String),
 }
 
+/// Represents the dashboard pinned-work-items section state.
+#[derive(Debug, Clone, Default)]
+pub enum PinnedWorkItemsState {
+    #[default]
+    Loading,
+    Ready(Vec<WorkItem>),
+    Unavailable(String),
+}
+
 /// Holds the central application state, including views, data, and configuration.
 pub struct App {
     pub service: Service,
@@ -347,6 +357,7 @@ pub struct App {
     pub current_user: ExactUserIdentity,
     pub dashboard_pull_requests: DashboardPullRequestsState,
     pub dashboard_work_items: DashboardWorkItemsState,
+    pub pinned_work_items: PinnedWorkItemsState,
 
     // --- Boards ---
     pub boards: crate::components::boards::Boards,
@@ -409,6 +420,7 @@ impl App {
                 folders: config.filters.folders.clone(),
                 definition_ids: config.filters.definition_ids.clone(),
                 pinned_definition_ids: config.filters.pinned_definition_ids.clone(),
+                pinned_work_item_ids: config.filters.pinned_work_item_ids.clone(),
             },
 
             data: CoreData::default(),
@@ -431,6 +443,7 @@ impl App {
             current_user: ExactUserIdentity::default(),
             dashboard_pull_requests: DashboardPullRequestsState::Loading,
             dashboard_work_items: DashboardWorkItemsState::Loading,
+            pinned_work_items: PinnedWorkItemsState::Loading,
             boards: crate::components::boards::Boards::default(),
             my_work_items: crate::components::my_work_items::MyWorkItems::default(),
             work_item_detail: crate::components::work_item_detail::WorkItemDetail::default(),
@@ -481,6 +494,7 @@ impl App {
             &self.filters.pinned_definition_ids,
             &self.dashboard_pull_requests,
             &self.dashboard_work_items,
+            &self.pinned_work_items,
         );
     }
 
@@ -814,6 +828,7 @@ impl App {
                 folders: self.filters.folders.clone(),
                 definition_ids: self.filters.definition_ids.clone(),
                 pinned_definition_ids: self.filters.pinned_definition_ids.clone(),
+                pinned_work_item_ids: self.filters.pinned_work_item_ids.clone(),
             },
             update: crate::config::UpdateConfig::default(),
             logging: crate::config::LoggingConfig::default(),

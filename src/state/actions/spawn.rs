@@ -10,12 +10,16 @@ use crate::client::http::AdoClient;
 use crate::client::models::{BacklogLevelConfiguration, ProjectTeam, WorkItem};
 
 use super::super::messages::{AppMessage, RefreshSource};
-use super::super::{App, DashboardPullRequestsState, DashboardWorkItemsState, ExactUserIdentity};
+use super::super::{
+    App, DashboardPullRequestsState, DashboardWorkItemsState, ExactUserIdentity,
+    PinnedWorkItemsState,
+};
 
 const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
     "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
 const DASHBOARD_PULL_REQUESTS_UNAVAILABLE_MESSAGE: &str = "Failed to load My Pull Requests";
 const DASHBOARD_WORK_ITEMS_UNAVAILABLE_MESSAGE: &str = "Failed to load My Work Items";
+const PINNED_WORK_ITEMS_UNAVAILABLE_MESSAGE: &str = "Failed to load pinned work items";
 const BOARDS_FETCH_FAILED_MESSAGE: &str = "Failed to load backlog";
 const MY_WORK_ITEMS_FETCH_FAILED_MESSAGE: &str = "Failed to load work items";
 const BOARD_FIELDS: &[&str] = &[
@@ -709,6 +713,59 @@ pub fn spawn_fetch_dashboard_work_items(
                     tracing::debug!(error = %e, "dashboard work items fetch failed (non-fatal)");
                     AppMessage::DashboardWorkItemsFailed {
                         message: format!("{DASHBOARD_WORK_ITEMS_UNAVAILABLE_MESSAGE}: {e}"),
+                    }
+                }
+            };
+            let _ = tx.send(msg).await;
+        }
+        .instrument(span),
+    );
+}
+
+/// Spawns an async task that fetches the user's pinned work items by ID.
+///
+/// Short-circuits when no pins are configured, emitting an empty `Ready` state.
+pub fn spawn_fetch_pinned_work_items(
+    app: &mut App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+) {
+    let ids: Vec<u32> = app.filters.pinned_work_item_ids.clone();
+    if ids.is_empty() {
+        app.pinned_work_items = PinnedWorkItemsState::Ready(Vec::new());
+        app.rebuild_dashboard();
+        return;
+    }
+
+    app.pinned_work_items = PinnedWorkItemsState::Loading;
+    app.rebuild_dashboard();
+
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::info_span!("fetch_pinned_work_items", id_count = ids.len());
+    tokio::spawn(
+        async move {
+            let fields = &[
+                "System.Title",
+                "System.WorkItemType",
+                "System.State",
+                "System.AssignedTo",
+                "System.IterationPath",
+            ];
+            let msg = match client.get_work_items_batch(&ids, fields, None).await {
+                Ok(items) => {
+                    let mut by_id: std::collections::HashMap<u32, WorkItem> =
+                        items.into_iter().map(|w| (w.id, w)).collect();
+                    let ordered: Vec<WorkItem> =
+                        ids.into_iter().filter_map(|id| by_id.remove(&id)).collect();
+                    AppMessage::PinnedWorkItems {
+                        work_items: ordered,
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(error = %e, "pinned work items fetch failed (non-fatal)");
+                    AppMessage::PinnedWorkItemsFailed {
+                        message: format!("{PINNED_WORK_ITEMS_UNAVAILABLE_MESSAGE}: {e}"),
                     }
                 }
             };

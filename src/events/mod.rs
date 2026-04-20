@@ -8,6 +8,7 @@ mod dashboard;
 mod log_viewer;
 mod my_work_items;
 mod navigation;
+mod pins;
 mod pipelines;
 mod pull_request_detail;
 mod pull_requests;
@@ -56,6 +57,7 @@ pub enum Action {
     },
     FetchDashboardPullRequests,
     FetchDashboardWorkItems,
+    FetchPinnedWorkItems,
     FetchBoards,
     FetchMyWorkItems,
 }

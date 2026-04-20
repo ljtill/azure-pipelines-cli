@@ -37,6 +37,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 Action::None
             }
         }
+        KeyCode::Char('P') => app
+            .boards
+            .selected_work_item_id()
+            .map_or(Action::None, |id| {
+                super::pins::toggle_work_item_pin(app, id)
+            }),
         KeyCode::Char('o') => navigation::handle_open_in_browser(app),
         _ => Action::None,
     }

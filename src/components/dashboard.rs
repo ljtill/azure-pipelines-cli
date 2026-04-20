@@ -19,7 +19,9 @@ use crate::render::helpers::{
 use crate::render::table::resolve_widths;
 use crate::render::theme;
 use crate::state::nav::ListNav;
-use crate::state::{App, DashboardPullRequestsState, DashboardWorkItemsState};
+use crate::state::{
+    App, DashboardPullRequestsState, DashboardWorkItemsState, PinnedWorkItemsState,
+};
 
 /// Represents a row in the dashboard view.
 #[derive(Debug, Clone)]
@@ -63,6 +65,7 @@ impl Dashboard {
         pinned_ids: &[u32],
         dashboard_prs: &DashboardPullRequestsState,
         dashboard_wis: &DashboardWorkItemsState,
+        pinned_wis: &PinnedWorkItemsState,
     ) {
         let mut rows = Vec::new();
 
@@ -92,6 +95,34 @@ impl Dashboard {
                     definition: def,
                     latest_build: build.map(Box::new),
                 });
+            }
+        }
+
+        rows.push(DashboardRow::SectionHeader {
+            label: "Pinned Work Items".to_string(),
+        });
+
+        // --- Pinned Work Items section ---
+        match pinned_wis {
+            PinnedWorkItemsState::Loading => rows.push(DashboardRow::EmptyHint {
+                message: "Loading pinned work items...".to_string(),
+            }),
+            PinnedWorkItemsState::Unavailable(message) => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: message.clone(),
+                });
+            }
+            PinnedWorkItemsState::Ready(wis) if wis.is_empty() => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: "No work items pinned — press 'P' in a Boards view to pin".to_string(),
+                });
+            }
+            PinnedWorkItemsState::Ready(wis) => {
+                for wi in wis {
+                    rows.push(DashboardRow::DashboardWorkItem {
+                        work_item: Box::new(wi.clone()),
+                    });
+                }
             }
         }
 
@@ -470,9 +501,13 @@ mod tests {
             &[1, 3],
             &DashboardPullRequestsState::EmptyVerified,
             &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        // Header + 2 pinned + Header + EmptyHint(no PRs) + Header + EmptyHint(no WIs) = 7
-        assert_eq!(d.rows.len(), 7);
+        // Pinned Pipelines: Header + 2 pinned
+        // Pinned Work Items: Header + EmptyHint
+        // Pull Requests: Header + EmptyHint
+        // Work Items: Header + EmptyHint = 9
+        assert_eq!(d.rows.len(), 9);
         assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
         assert!(
             matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
@@ -494,9 +529,13 @@ mod tests {
             &[],
             &DashboardPullRequestsState::EmptyVerified,
             &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        // Header + EmptyHint(no pins) + Header + EmptyHint(no PRs) + Header + EmptyHint(no WIs) = 6
-        assert_eq!(d.rows.len(), 6);
+        // Pinned Pipelines: Header + EmptyHint
+        // Pinned Work Items: Header + EmptyHint
+        // Pull Requests: Header + EmptyHint
+        // Work Items: Header + EmptyHint = 8
+        assert_eq!(d.rows.len(), 8);
         assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
         assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
         assert!(matches!(&d.rows[2], DashboardRow::SectionHeader { .. }));
@@ -517,14 +556,20 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
             &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        // Header + EmptyHint(no pins) + Header + 2 PRs + Header + EmptyHint(no WIs) = 7
-        assert_eq!(d.rows.len(), 7);
+        // Pinned Pipelines: Header + EmptyHint (no pins)
+        // Pinned Work Items: Header + EmptyHint
+        // Pull Requests: Header + 2 PRs
+        // Work Items: Header + EmptyHint = 9
+        assert_eq!(d.rows.len(), 9);
         assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
         assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
         assert!(matches!(&d.rows[2], DashboardRow::SectionHeader { .. }));
+        assert!(matches!(&d.rows[3], DashboardRow::EmptyHint { .. }));
+        assert!(matches!(&d.rows[4], DashboardRow::SectionHeader { .. }));
         assert!(matches!(
-            &d.rows[3],
+            &d.rows[5],
             DashboardRow::DashboardPullRequest { .. }
         ));
     }
@@ -539,6 +584,7 @@ mod tests {
             &[1],
             &DashboardPullRequestsState::EmptyVerified,
             &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
         );
         assert_eq!(d.pinned_definition_at(1).unwrap().id, 1);
         assert!(d.pinned_definition_at(0).is_none()); // SectionHeader
@@ -555,12 +601,13 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
             &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        // Row 0 = Header, 1 = EmptyHint(no pins), 2 = Header, 3 = PR.
+        // Row 5 is the first PR (after Pinned Pipelines, Pinned WIs, PR header).
         assert!(d.pull_request_at(0).is_none());
-        assert!(d.pull_request_at(1).is_none());
-        assert!(d.pull_request_at(2).is_none());
-        assert_eq!(d.pull_request_at(3).unwrap().pull_request_id, 42);
+        assert!(d.pull_request_at(3).is_none());
+        assert!(d.pull_request_at(4).is_none());
+        assert_eq!(d.pull_request_at(5).unwrap().pull_request_id, 42);
     }
 
     #[test]
@@ -575,6 +622,7 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Ready(prs),
             &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
         );
         let pr_count = d
             .rows
@@ -593,9 +641,10 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Loading,
             &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
         );
         assert!(matches!(
-            &d.rows[3],
+            &d.rows[5],
             DashboardRow::EmptyHint { message } if message == "Loading pull requests..."
         ));
     }
@@ -609,9 +658,10 @@ mod tests {
             &[],
             &DashboardPullRequestsState::Unavailable("Unavailable".to_string()),
             &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
         );
         assert!(matches!(
-            &d.rows[3],
+            &d.rows[5],
             DashboardRow::EmptyHint { message } if message == "Unavailable"
         ));
     }

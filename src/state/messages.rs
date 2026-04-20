@@ -105,6 +105,12 @@ pub enum AppMessage {
     DashboardWorkItemsFailed {
         message: String,
     },
+    PinnedWorkItems {
+        work_items: Vec<WorkItem>,
+    },
+    PinnedWorkItemsFailed {
+        message: String,
+    },
     UserIdentityFailed {
         message: String,
     },
