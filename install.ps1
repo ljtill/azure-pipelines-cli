@@ -39,11 +39,7 @@ $CosignCertIdentityRegex = '^https://github\.com/ljtill/azure-devops-cli/\.githu
 $CosignOidcIssuer = 'https://token.actions.githubusercontent.com'
 $IssuesUrl = "https://github.com/$Repo/issues"
 
-# --- validate platform is published -----------------------------------------
-#
-# Query the GitHub Releases API to confirm this os/arch is published for the
-# requested tag. If the API call fails, fall back silently so a transient API
-# issue does not block install.
+# --- validate platform is published
 
 $ApiHeaders = @{}
 if ($env:GITHUB_TOKEN) {
@@ -86,10 +82,7 @@ $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("devops-extract-" + [Sys
 $TempChecksums = [System.IO.Path]::GetTempFileName()
 $TempBundle = [System.IO.Path]::GetTempFileName()
 
-# --- verify cosign / Sigstore signature over SHA256SUMS ---------------------
-#
-# Fails closed: if cosign is not installed, or verification fails for any
-# reason, installation is aborted. There is no skip flag.
+# --- verify cosign / Sigstore signature over SHA256SUMS
 
 if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
     throw "'cosign' is required to verify release signatures. Install it from https://docs.sigstore.dev/cosign/installation/ and retry."

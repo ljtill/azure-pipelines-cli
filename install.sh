@@ -99,11 +99,7 @@ COSIGN_CERT_IDENTITY_RE='^https://github\.com/ljtill/azure-devops-cli/\.github/w
 COSIGN_OIDC_ISSUER='https://token.actions.githubusercontent.com'
 ISSUES_URL="https://github.com/${REPO}/issues"
 
-# --- validate platform is published -----------------------------------------
-#
-# Query the GitHub Releases API to confirm this os/arch is actually published
-# for the requested tag. If the API call fails (network/rate limit), fall back
-# silently to the existing flow so a transient API issue does not block install.
+# --- validate platform is published
 
 RELEASE_API_URL="https://api.github.com/repos/${REPO}/releases/tags/${TAG}"
 API_AUTH_HEADER=""
@@ -159,10 +155,7 @@ download "$URL" "$TMP"
 download "$CHECKSUMS_URL" "$TMP_CHECKSUMS"
 download "$COSIGN_BUNDLE_URL" "$TMP_BUNDLE"
 
-# --- verify cosign / Sigstore signature over SHA256SUMS ---------------------
-#
-# Fails closed: if cosign is not installed, or verification fails for any
-# reason, installation is aborted. There is no skip flag.
+# --- verify cosign / Sigstore signature over SHA256SUMS
 
 if ! has cosign; then
   echo "ERROR: 'cosign' is required to verify release signatures." >&2
