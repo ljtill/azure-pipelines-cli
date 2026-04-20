@@ -1,7 +1,7 @@
 //! Core application state and the `App` struct.
 
 pub mod actions;
-mod messages;
+pub(crate) mod messages;
 pub mod nav;
 pub mod notifications;
 pub mod run;
@@ -10,6 +10,14 @@ pub mod settings;
 pub use crate::components::dashboard::DashboardRow;
 pub use crate::components::log_viewer::{LogViewer, TimelineRow};
 pub use nav::ListNav;
+
+/// Captures the most recent pagination progress event for display in the UI.
+#[derive(Debug, Clone)]
+pub struct PaginationStatus {
+    pub endpoint: &'static str,
+    pub page: usize,
+    pub items: usize,
+}
 
 /// Stores cached retention lease data, refreshed alongside the periodic data refresh.
 #[derive(Debug, Default)]
@@ -381,6 +389,9 @@ pub struct App {
     pub loading: bool,
     pub data_refresh: crate::shared::refresh::RefreshState,
     pub log_refresh: crate::shared::refresh::RefreshState,
+    /// Tracks the most recent pagination progress from long-running list
+    /// operations. Cleared when the operation completes.
+    pub pagination_status: Option<PaginationStatus>,
 
     // --- Refresh Timing ---
     pub refresh_interval: Duration,
@@ -461,6 +472,7 @@ impl App {
             loading: false,
             data_refresh: crate::shared::refresh::RefreshState::default(),
             log_refresh: crate::shared::refresh::RefreshState::default(),
+            pagination_status: None,
 
             refresh_interval: Duration::from_secs(config.display.refresh_interval_secs),
             log_refresh_interval: Duration::from_secs(config.display.log_refresh_interval_secs),
@@ -472,6 +484,11 @@ impl App {
             notifications_enabled: config.notifications.enabled,
             prev_latest_builds: BTreeMap::new(),
         }
+    }
+
+    /// Overrides the REST API version used by this app's endpoint URL builders.
+    pub fn set_api_version(&mut self, api_version: &str) {
+        self.endpoints.set_api_version(api_version);
     }
 
     /// Rebuilds the Pipelines view from current state.
@@ -842,7 +859,9 @@ impl App {
     /// Opens the settings overlay, populated from the on-disk config.
     pub fn open_settings(&mut self) {
         // Load the current config from disk to get the true persisted state.
-        let config = crate::config::Config::load(Some(&self.config_path))
+        // `load_blocking` uses `block_in_place` so the fs read runs on tokio's
+        // blocking pool while this worker yields.
+        let config = crate::config::Config::load_blocking(Some(&self.config_path))
             .unwrap_or_else(|_| self.current_config());
         self.settings = Some(settings::SettingsState::from_config(
             &config,

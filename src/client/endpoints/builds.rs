@@ -1,69 +1,77 @@
 //! URL builders for the Azure DevOps builds API.
 
-use super::{API_VERSION, Endpoints, TOP_BUILDS, TOP_DEFINITION_BUILDS};
+use super::{Endpoints, TOP_BUILDS, TOP_DEFINITION_BUILDS};
 
 impl Endpoints {
     /// Constructs the URL for fetching recent builds across all definitions.
     pub fn builds_recent(&self) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/build/builds?api-version={API_VERSION}&$top={TOP_BUILDS}&queryOrder=queueTimeDescending",
+            "{}/build/builds?api-version={api_version}&$top={TOP_BUILDS}&queryOrder=queueTimeDescending",
             self.base_url
         )
     }
 
     /// Constructs the URL for fetching recent builds for a specific definition.
     pub fn builds_for_definition(&self, definition_id: u32) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={TOP_DEFINITION_BUILDS}&queryOrder=queueTimeDescending",
+            "{}/build/builds?definitions={definition_id}&api-version={api_version}&$top={TOP_DEFINITION_BUILDS}&queryOrder=queueTimeDescending",
             self.base_url
         )
     }
 
     /// Constructs the URL for fetching builds for a definition with a custom page size.
     pub fn builds_for_definition_with_top(&self, definition_id: u32, top: u32) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/build/builds?definitions={definition_id}&api-version={API_VERSION}&$top={top}&queryOrder=queueTimeDescending",
+            "{}/build/builds?definitions={definition_id}&api-version={api_version}&$top={top}&queryOrder=queueTimeDescending",
             self.base_url
         )
     }
 
     /// Constructs the URL for fetching a single build by ID.
     pub fn build(&self, build_id: u32) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/build/builds/{build_id}?api-version={API_VERSION}",
+            "{}/build/builds/{build_id}?api-version={api_version}",
             self.base_url
         )
     }
 
     /// Constructs the URL for fetching a build's timeline records.
     pub fn build_timeline(&self, build_id: u32) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/build/builds/{build_id}/timeline?api-version={API_VERSION}",
+            "{}/build/builds/{build_id}/timeline?api-version={api_version}",
             self.base_url
         )
     }
 
     /// Constructs the URL for fetching a specific build log by log ID.
     pub fn build_log(&self, build_id: u32, log_id: u32) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/build/builds/{build_id}/logs/{log_id}?api-version={API_VERSION}",
+            "{}/build/builds/{build_id}/logs/{log_id}?api-version={api_version}",
             self.base_url
         )
     }
 
     /// Constructs the URL for updating a build stage by reference name.
     pub fn build_stage(&self, build_id: u32, stage_ref_name: &str) -> String {
+        let api_version = &self.api_version;
         let stage_ref_name = super::encode_path_segment(stage_ref_name);
         format!(
-            "{}/build/builds/{build_id}/stages/{stage_ref_name}?api-version={API_VERSION}-preview.1",
+            "{}/build/builds/{build_id}/stages/{stage_ref_name}?api-version={api_version}-preview.1",
             self.base_url
         )
     }
 
     /// Constructs the URL for creating a new run of a pipeline.
     pub fn pipeline_runs(&self, pipeline_id: u32) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/pipelines/{pipeline_id}/runs?api-version={API_VERSION}",
+            "{}/pipelines/{pipeline_id}/runs?api-version={api_version}",
             self.base_url
         )
     }
@@ -83,7 +91,7 @@ mod tests {
     fn builds_recent_url() {
         assert_eq!(
             ep().builds_recent(),
-            format!("{BASE}/build/builds?api-version=7.1&$top=100&queryOrder=queueTimeDescending")
+            format!("{BASE}/build/builds?api-version=7.1&$top=1000&queryOrder=queueTimeDescending")
         );
     }
 

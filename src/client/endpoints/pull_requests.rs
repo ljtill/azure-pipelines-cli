@@ -1,6 +1,6 @@
 //! URL builders for the Azure DevOps Git pull requests API.
 
-use super::{API_VERSION, Endpoints};
+use super::Endpoints;
 
 const CONNECTION_DATA_API_VERSION: &str = "7.2-preview.1";
 const CONNECTION_DATA_CONNECT_OPTIONS_INCLUDE_SERVICES: u8 = 1;
@@ -17,8 +17,9 @@ impl Endpoints {
         creator_id: Option<&str>,
         reviewer_id: Option<&str>,
     ) -> String {
+        let api_version = &self.api_version;
         let mut url = format!(
-            "{}/git/pullrequests?api-version={API_VERSION}&searchCriteria.status={status}&$top={TOP_PULL_REQUESTS}",
+            "{}/git/pullrequests?api-version={api_version}&searchCriteria.status={status}&$top={TOP_PULL_REQUESTS}",
             self.base_url
         );
         if let Some(id) = creator_id {
@@ -34,16 +35,18 @@ impl Endpoints {
 
     /// Constructs the URL for fetching a single pull request by repository and PR ID.
     pub fn pull_request(&self, repo_id: &str, pr_id: u32) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/git/repositories/{repo_id}/pullrequests/{pr_id}?api-version={API_VERSION}",
+            "{}/git/repositories/{repo_id}/pullrequests/{pr_id}?api-version={api_version}",
             self.base_url
         )
     }
 
     /// Constructs the URL for fetching comment threads on a pull request.
     pub fn pull_request_threads(&self, repo_id: &str, pr_id: u32) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/git/repositories/{repo_id}/pullrequests/{pr_id}/threads?api-version={API_VERSION}",
+            "{}/git/repositories/{repo_id}/pullrequests/{pr_id}/threads?api-version={api_version}",
             self.base_url
         )
     }

@@ -1,56 +1,62 @@
 //! URL builders for Azure Boards and work item tracking APIs.
 
-use super::{API_VERSION, Endpoints, encode_path_segment};
+use super::{Endpoints, encode_path_segment};
 
 impl Endpoints {
     /// Constructs the URL for listing project teams.
     pub fn project_teams(&self) -> String {
+        let api_version = &self.api_version;
         let (org_base, project) = self
             .web_base_url
             .rsplit_once('/')
             .unwrap_or((self.web_base_url.as_str(), ""));
-        format!("{org_base}/_apis/projects/{project}/teams?api-version={API_VERSION}")
+        format!("{org_base}/_apis/projects/{project}/teams?api-version={api_version}")
     }
 
     /// Constructs the URL for listing backlog levels for a team.
     pub fn backlogs(&self, team: &str) -> String {
+        let api_version = &self.api_version;
         let team = encode_path_segment(team);
         format!(
-            "{}/{team}/_apis/work/backlogs?api-version={API_VERSION}",
+            "{}/{team}/_apis/work/backlogs?api-version={api_version}",
             self.web_base_url
         )
     }
 
     /// Constructs the URL for listing work item IDs in a specific backlog level.
     pub fn backlog_level_work_items(&self, team: &str, backlog_id: &str) -> String {
+        let api_version = &self.api_version;
         let team = encode_path_segment(team);
         let backlog_id = encode_path_segment(backlog_id);
         format!(
-            "{}/{team}/_apis/work/backlogs/{backlog_id}/workItems?api-version={API_VERSION}",
+            "{}/{team}/_apis/work/backlogs/{backlog_id}/workItems?api-version={api_version}",
             self.web_base_url
         )
     }
 
     /// Constructs the URL for listing project work item type categories.
     pub fn work_item_type_categories(&self) -> String {
+        let api_version = &self.api_version;
         format!(
-            "{}/wit/workitemtypecategories?api-version={API_VERSION}",
+            "{}/wit/workitemtypecategories?api-version={api_version}",
             self.base_url
         )
     }
 
     /// Constructs the URL for executing a WIQL query.
     pub fn wiql(&self) -> String {
-        format!("{}/wit/wiql?api-version={API_VERSION}", self.base_url)
+        let api_version = &self.api_version;
+        format!("{}/wit/wiql?api-version={api_version}", self.base_url)
     }
 
     /// Constructs the URL for fetching work items in batch.
     pub fn work_items_batch(&self) -> String {
+        let api_version = &self.api_version;
         let (org_base, _) = self
             .web_base_url
             .rsplit_once('/')
             .unwrap_or((self.web_base_url.as_str(), ""));
-        format!("{org_base}/_apis/wit/workitemsbatch?api-version={API_VERSION}")
+        format!("{org_base}/_apis/wit/workitemsbatch?api-version={api_version}")
     }
 
     /// Constructs the URL for listing comments on a work item.

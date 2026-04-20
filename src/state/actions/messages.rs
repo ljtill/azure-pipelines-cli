@@ -633,6 +633,45 @@ pub fn handle_message(
             tracing::warn!(?view, %message, "my work items fetch failed");
             app.notifications.error_dedup(message);
         }
+        AppMessage::TaskPanicked { task_name, message } => {
+            tracing::error!(task_name, %message, "background task panicked");
+            app.notifications.push_persistent(
+                NotificationLevel::Error,
+                format!(
+                    "Background task '{task_name}' panicked: {message}. \
+                     Attach logs from ~/.local/state/devops/ when reporting."
+                ),
+            );
+        }
+        AppMessage::AdoApiVersionUnsupported {
+            requested,
+            server_message,
+        } => {
+            tracing::error!(
+                requested_api_version = %requested,
+                server_message = %server_message,
+                "Azure DevOps rejected requested api-version"
+            );
+            app.notifications.push_persistent(
+                NotificationLevel::Error,
+                format!(
+                    "Azure DevOps rejected api-version={requested}: {server_message}. \
+                     Pass --api-version or set DEVOPS_API_VERSION."
+                ),
+            );
+        }
+        AppMessage::PaginationProgress {
+            endpoint,
+            page,
+            items,
+        } => {
+            tracing::debug!(endpoint, page, items, "pagination progress");
+            app.pagination_status = Some(crate::state::PaginationStatus {
+                endpoint,
+                page,
+                items,
+            });
+        }
         AppMessage::UserIdentity { identity } => {
             tracing::info!("user identity resolved");
             app.current_user = identity;

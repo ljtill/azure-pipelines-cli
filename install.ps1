@@ -34,6 +34,43 @@ if ($env:VERSION) {
 $Tag = "v$Version"
 $Url = "https://github.com/$Repo/releases/download/$Tag/$Artifact"
 $ChecksumsUrl = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS"
+$CosignBundleUrl = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS.cosign.bundle"
+$CosignCertIdentityRegex = '^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/tags/v.+$'
+$CosignOidcIssuer = 'https://token.actions.githubusercontent.com'
+$IssuesUrl = "https://github.com/$Repo/issues"
+
+# --- validate platform is published -----------------------------------------
+#
+# Query the GitHub Releases API to confirm this os/arch is published for the
+# requested tag. If the API call fails, fall back silently so a transient API
+# issue does not block install.
+
+$ApiHeaders = @{}
+if ($env:GITHUB_TOKEN) {
+    $ApiHeaders['Authorization'] = "Bearer $($env:GITHUB_TOKEN)"
+}
+
+$Release = $null
+try {
+    $Release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/tags/$Tag" -Headers $ApiHeaders
+} catch {
+    Write-Warning "Could not reach GitHub API to validate platform ($($_.Exception.Message)); continuing."
+}
+
+if ($null -ne $Release -and $Release.assets) {
+    $AssetNames = @($Release.assets | ForEach-Object { $_.name })
+    if ($AssetNames -notcontains $Artifact) {
+        Write-Host "ERROR: Platform windows/$Arch is not published for $Tag." -ForegroundColor Red
+        Write-Host 'Available artifacts:'
+        $ArchiveList = @($AssetNames | Where-Object { $_ -match '\.(tar\.gz|zip)$' })
+        if ($ArchiveList.Count -eq 0) { $ArchiveList = $AssetNames }
+        foreach ($name in $ArchiveList) {
+            Write-Host "  - $name"
+        }
+        Write-Host "If you need this platform, please file an issue at $IssuesUrl"
+        exit 1
+    }
+}
 
 # --- download and install ---------------------------------------------------
 
@@ -46,12 +83,33 @@ if (-not (Test-Path $InstallDir)) {
 $Dest = Join-Path $InstallDir "$BinaryName.exe"
 $Temp = [System.IO.Path]::GetTempFileName()
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("devops-extract-" + [System.IO.Path]::GetRandomFileName())
-$RawContent = (Invoke-WebRequest -Uri $ChecksumsUrl -UseBasicParsing).Content
-$ChecksumBody = if ($RawContent -is [byte[]]) {
-    [System.Text.Encoding]::UTF8.GetString($RawContent)
-} else {
-    $RawContent
+$TempChecksums = [System.IO.Path]::GetTempFileName()
+$TempBundle = [System.IO.Path]::GetTempFileName()
+
+# --- verify cosign / Sigstore signature over SHA256SUMS ---------------------
+#
+# Fails closed: if cosign is not installed, or verification fails for any
+# reason, installation is aborted. There is no skip flag.
+
+if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
+    throw "'cosign' is required to verify release signatures. Install it from https://docs.sigstore.dev/cosign/installation/ and retry."
 }
+
+Invoke-WebRequest -Uri $ChecksumsUrl -OutFile $TempChecksums -UseBasicParsing
+Invoke-WebRequest -Uri $CosignBundleUrl -OutFile $TempBundle -UseBasicParsing
+
+Write-Host 'Verifying cosign signature for SHA256SUMS...'
+& cosign verify-blob `
+    --bundle $TempBundle `
+    --certificate-identity-regexp $CosignCertIdentityRegex `
+    --certificate-oidc-issuer $CosignOidcIssuer `
+    $TempChecksums | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "cosign signature verification failed for SHA256SUMS ($Tag)"
+}
+Write-Host 'Signature verified.'
+
+$ChecksumBody = Get-Content -Raw -LiteralPath $TempChecksums
 $ExpectedHash = $null
 foreach ($line in ($ChecksumBody -split "`r?`n")) {
     $parts = $line -split '\s+', 2
@@ -61,7 +119,7 @@ foreach ($line in ($ChecksumBody -split "`r?`n")) {
     }
 }
 if (-not $ExpectedHash) {
-    throw "Could not find checksum for $Artifact"
+    throw "Could not find checksum for $Artifact. If you need this platform, please file an issue at $IssuesUrl"
 }
 
 try {
@@ -81,6 +139,12 @@ finally {
     }
     if (Test-Path $TempDir) {
         Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $TempChecksums) {
+        Remove-Item -Force $TempChecksums -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $TempBundle) {
+        Remove-Item -Force $TempBundle -ErrorAction SilentlyContinue
     }
 }
 

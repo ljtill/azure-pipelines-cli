@@ -139,7 +139,7 @@ fn handle_pin(app: &mut App) -> Action {
 
     // Persist to config.
     let config = app.current_config();
-    if let Err(e) = config.save(&app.config_path) {
+    if let Err(e) = config.save_blocking(&app.config_path) {
         tracing::error!(%e, "failed to save config after pin toggle");
         app.notifications
             .error(format!("Failed to save config: {e}"));

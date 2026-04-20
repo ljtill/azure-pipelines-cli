@@ -13,6 +13,7 @@ use crate::client::http::AdoClient;
 use crate::config::Config;
 use crate::events::{handle_key, handle_mouse};
 use crate::render;
+use crate::state::notifications::NotificationLevel;
 
 use super::actions::spawn::{
     spawn_fetch_boards, spawn_fetch_dashboard_pull_requests, spawn_fetch_pull_requests,
@@ -29,11 +30,28 @@ pub enum RunResult {
     Reload,
 }
 
+/// Represents the result of initializing file-based logging.
+///
+/// Carried from `main` into the TUI run loop so the user-facing notification
+/// queue can surface log-init failures even though stderr is hidden by the TUI.
+#[derive(Debug, Clone)]
+pub enum LogInitStatus {
+    /// Logging initialized at the primary log directory.
+    Ok,
+    /// Primary log directory creation failed; logging fell back to a temp-dir path.
+    Fallback(std::path::PathBuf),
+    /// Logging is disabled because both primary and fallback directories failed.
+    Failed,
+}
+
 pub async fn run(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     client: AdoClient,
     config: &Config,
     config_path: std::path::PathBuf,
+    api_version: &str,
+    log_init_status: LogInitStatus,
+    rollback_report: Option<crate::update::RollbackReport>,
 ) -> Result<RunResult> {
     let mut app = App::new(
         &config.azure_devops.organization,
@@ -41,6 +59,39 @@ pub async fn run(
         config,
         config_path,
     );
+    app.set_api_version(api_version);
+
+    // Surface any log-init failure in the UI, since stderr is hidden by the TUI.
+    match &log_init_status {
+        LogInitStatus::Ok => {}
+        LogInitStatus::Fallback(path) => {
+            app.notifications.push_persistent(
+                NotificationLevel::Info,
+                format!(
+                    "Logging fell back to temporary directory: {}. Diagnostics may be rotated away on reboot.",
+                    path.display()
+                ),
+            );
+        }
+        LogInitStatus::Failed => {
+            app.notifications.push_persistent(
+                NotificationLevel::Error,
+                "Logging disabled (failed to create log directory). Diagnostics will not be available.",
+            );
+        }
+    }
+
+    // Surface any startup rollback from a previously-interrupted self-update.
+    if let Some(report) = rollback_report {
+        app.notifications.push_persistent(
+            NotificationLevel::Error,
+            format!(
+                "Previous update from v{} to v{} was interrupted and rolled back.",
+                report.from_version, report.to_version
+            ),
+        );
+    }
+
     // Trigger an immediate fetch on startup. Fall back to `now` if the refresh
     // interval is larger than the system's uptime (e.g. on a freshly-booted host
     // or after a clock adjustment).

@@ -5,14 +5,45 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+/// The highest config schema version this binary understands.
+pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
+/// Error returned when loading or parsing a config file.
+#[derive(Debug)]
+pub enum ConfigError {
+    /// TOML parsing failed.
+    Parse(toml::de::Error),
+    /// The config declares a `schema_version` newer than this binary supports.
+    SchemaTooNew { found: u32, supported: u32 },
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse(e) => write!(f, "{e}"),
+            Self::SchemaTooNew { found, supported } => write!(
+                f,
+                "Config was written by a newer devops (schema v{found}, this binary supports v{supported}). Upgrade the CLI to v2+ or remove the `schema_version` line from your config to reset to defaults."
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Parse(e) => Some(e),
+            Self::SchemaTooNew { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
-    /// Optional config schema version. The current binary understands `1`.
-    ///
-    /// Older configs without this field are treated as version 1. Newer values
-    /// produce a warning at load time but do not prevent the config from
-    /// loading; unknown keys in the TOML are still allowed per `serde`'s
-    /// default behavior.
+    /// Optional config schema version. The current binary understands
+    /// [`CURRENT_SCHEMA_VERSION`]. Older configs without this field are
+    /// treated as the current version. A value greater than
+    /// [`CURRENT_SCHEMA_VERSION`] is rejected at load time.
     #[serde(
         default = "default_schema_version",
         skip_serializing_if = "Option::is_none"
@@ -30,9 +61,6 @@ pub struct Config {
     #[serde(default)]
     pub display: DisplayConfig,
 }
-
-/// The config schema version the current binary understands.
-pub const CURRENT_SCHEMA_VERSION: u32 = 1;
 
 // Always deserialize as Some(CURRENT_SCHEMA_VERSION) when the field is missing
 // from TOML. Serde can't directly default to `Some(value)` without this helper,
@@ -166,7 +194,24 @@ fn default_max_log_lines() -> usize {
 }
 
 impl Config {
-    pub fn load(path: Option<&PathBuf>) -> Result<Self> {
+    /// Parses a config from a TOML string and enforces `schema_version`
+    /// compatibility. Unknown top-level fields other than `schema_version`
+    /// remain non-fatal (serde's default behavior) — only a `schema_version`
+    /// higher than [`CURRENT_SCHEMA_VERSION`] is rejected.
+    pub fn parse_str(s: &str) -> Result<Self, ConfigError> {
+        let config: Config = toml::from_str(s).map_err(ConfigError::Parse)?;
+        if let Some(found) = config.schema_version
+            && found > CURRENT_SCHEMA_VERSION
+        {
+            return Err(ConfigError::SchemaTooNew {
+                found,
+                supported: CURRENT_SCHEMA_VERSION,
+            });
+        }
+        Ok(config)
+    }
+
+    pub async fn load(path: Option<&PathBuf>) -> Result<Self> {
         let config_path = match path {
             Some(p) => p.clone(),
             None => default_config_path()?,
@@ -174,7 +219,7 @@ impl Config {
 
         tracing::debug!(path = %config_path.display(), "loading config");
 
-        if !config_path.exists() {
+        if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
             tracing::warn!(path = %config_path.display(), "config file not found");
             anyhow::bail!(
                 "Config file not found at {}. Create it with:\n\n\
@@ -185,40 +230,30 @@ impl Config {
             );
         }
 
-        let contents = std::fs::read_to_string(&config_path)
+        let contents = tokio::fs::read_to_string(&config_path)
+            .await
             .with_context(|| format!("Failed to read config from {}", config_path.display()))?;
 
-        let config: Config = toml::from_str(&contents)
+        let config = Self::parse_str(&contents)
             .with_context(|| format!("Failed to parse config from {}", config_path.display()))?;
-
-        if let Some(v) = config.schema_version
-            && v > CURRENT_SCHEMA_VERSION
-        {
-            tracing::warn!(
-                schema_version = v,
-                supported = CURRENT_SCHEMA_VERSION,
-                "config schema_version is newer than this binary supports; \
-                 proceeding, but some fields may be ignored"
-            );
-        }
 
         tracing::debug!(path = %config_path.display(), "config loaded");
         Ok(config)
     }
 
     /// Resolves the config file path, returning whether it exists.
-    pub fn resolve_path(cli_path: Option<&PathBuf>) -> Result<(PathBuf, bool)> {
+    pub async fn resolve_path(cli_path: Option<&PathBuf>) -> Result<(PathBuf, bool)> {
         let path = match cli_path {
             Some(p) => p.clone(),
             None => default_config_path()?,
         };
-        let exists = path.exists();
+        let exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
         tracing::debug!(path = %path.display(), exists, "resolved config path");
         Ok((path, exists))
     }
 
     /// Writes a minimal config file with the given org and project.
-    pub fn write_initial(path: &PathBuf, organization: &str, project: &str) -> Result<()> {
+    pub async fn write_initial(path: &PathBuf, organization: &str, project: &str) -> Result<()> {
         tracing::info!(
             path = %path.display(),
             organization,
@@ -226,7 +261,7 @@ impl Config {
             "writing initial config"
         );
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
+            tokio::fs::create_dir_all(parent).await.with_context(|| {
                 format!("Failed to create config directory {}", parent.display())
             })?;
         }
@@ -245,17 +280,18 @@ impl Config {
         let contents = toml::to_string_pretty(&toml::Value::Table(table))
             .context("Failed to serialize config")?;
 
-        std::fs::write(path, &contents)
+        tokio::fs::write(path, &contents)
+            .await
             .with_context(|| format!("Failed to write config to {}", path.display()))?;
 
         Ok(())
     }
 
     /// Serializes the full config and writes it to the given path.
-    pub fn save(&self, path: &PathBuf) -> Result<()> {
+    pub async fn save(&self, path: &PathBuf) -> Result<()> {
         tracing::info!(path = %path.display(), "saving config");
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
+            tokio::fs::create_dir_all(parent).await.with_context(|| {
                 format!("Failed to create config directory {}", parent.display())
             })?;
         }
@@ -263,10 +299,73 @@ impl Config {
         let contents =
             toml::to_string_pretty(self).context("Failed to serialize config for save")?;
 
-        std::fs::write(path, &contents)
+        tokio::fs::write(path, &contents)
+            .await
             .with_context(|| format!("Failed to write config to {}", path.display()))?;
 
         Ok(())
+    }
+
+    /// Blocking wrapper around [`Config::save`] for use from synchronous event
+    /// handlers that already run inside the tokio multi-thread runtime.
+    ///
+    /// Uses `block_in_place` so the current worker thread is temporarily
+    /// repurposed for blocking, allowing other tasks to migrate away while the
+    /// async save runs to completion. The actual filesystem I/O still occurs
+    /// on tokio's blocking pool (via `tokio::fs`).
+    ///
+    /// Outside a tokio runtime (e.g. in unit tests), falls back to synchronous
+    /// `std::fs` so callers don't have to care which context they're in.
+    pub fn save_blocking(&self, path: &PathBuf) -> Result<()> {
+        tokio::runtime::Handle::try_current().map_or_else(
+            |_| self.save_sync(path),
+            |handle| tokio::task::block_in_place(|| handle.block_on(self.save(path))),
+        )
+    }
+
+    /// Blocking wrapper around [`Config::load`]. See [`Config::save_blocking`].
+    pub fn load_blocking(path: Option<&PathBuf>) -> Result<Self> {
+        tokio::runtime::Handle::try_current().map_or_else(
+            |_| Self::load_sync(path),
+            |handle| tokio::task::block_in_place(|| handle.block_on(Self::load(path))),
+        )
+    }
+
+    // Safe: invoked only via `load_blocking` when no tokio runtime is active
+    // (e.g. unit tests that construct an `App` without spinning up a runtime).
+    fn load_sync(path: Option<&PathBuf>) -> Result<Self> {
+        let config_path = match path {
+            Some(p) => p.clone(),
+            None => default_config_path()?,
+        };
+
+        if !config_path.exists() {
+            anyhow::bail!(
+                "Config file not found at {}. Create it with:\n\n\
+                 [azure_devops]\n\
+                 organization = \"your-org\"\n\
+                 project = \"your-project\"\n",
+                config_path.display()
+            );
+        }
+
+        let contents = std::fs::read_to_string(&config_path)
+            .with_context(|| format!("Failed to read config from {}", config_path.display()))?;
+        Self::parse_str(&contents)
+            .with_context(|| format!("Failed to parse config from {}", config_path.display()))
+    }
+
+    // Safe: invoked only via `save_blocking` when no tokio runtime is active.
+    fn save_sync(&self, path: &PathBuf) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create config directory {}", parent.display())
+            })?;
+        }
+        let contents =
+            toml::to_string_pretty(self).context("Failed to serialize config for save")?;
+        std::fs::write(path, &contents)
+            .with_context(|| format!("Failed to write config to {}", path.display()))
     }
 }
 
@@ -537,9 +636,10 @@ log_refresh_interval_secs = 10
         assert_eq!(config2.display.log_refresh_interval_secs, 10);
     }
 
-    #[test]
-    fn config_save_and_reload() {
+    #[tokio::test]
+    async fn config_save_and_reload() {
         let dir = std::env::temp_dir().join("devops-test-save-config");
+        // Safe: test-only cleanup.
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("config.toml");
 
@@ -556,12 +656,13 @@ log_refresh_interval_secs = 20
         )
         .unwrap();
 
-        config.save(&path).unwrap();
-        let reloaded = Config::load(Some(&path)).unwrap();
+        config.save(&path).await.unwrap();
+        let reloaded = Config::load(Some(&path)).await.unwrap();
         assert_eq!(reloaded.azure_devops.organization, "save-org");
         assert_eq!(reloaded.display.refresh_interval_secs, 60);
         assert_eq!(reloaded.display.log_refresh_interval_secs, 20);
 
+        // Safe: test-only cleanup.
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -592,7 +693,7 @@ project = "myproject"
     }
 
     #[test]
-    fn config_with_newer_schema_version_still_loads() {
+    fn load_rejects_newer_schema_version() {
         let toml = r#"
 schema_version = 99
 
@@ -600,7 +701,37 @@ schema_version = 99
 organization = "myorg"
 project = "myproject"
 "#;
-        let config: Config = toml::from_str(toml).unwrap();
-        assert_eq!(config.schema_version, Some(99));
+        let err = Config::parse_str(toml).unwrap_err();
+        match err {
+            ConfigError::SchemaTooNew { found, supported } => {
+                assert_eq!(found, 99);
+                assert_eq!(supported, 1);
+            }
+            other @ ConfigError::Parse(_) => panic!("expected SchemaTooNew, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_accepts_current_schema_version() {
+        let toml = r#"
+schema_version = 1
+
+[azure_devops]
+organization = "myorg"
+project = "myproject"
+"#;
+        let config = Config::parse_str(toml).expect("current schema version should load");
+        assert_eq!(config.schema_version, Some(1));
+    }
+
+    #[test]
+    fn load_accepts_missing_schema_version() {
+        let toml = r#"
+[azure_devops]
+organization = "myorg"
+project = "myproject"
+"#;
+        let config = Config::parse_str(toml).expect("missing schema version should load");
+        assert_eq!(config.schema_version, Some(CURRENT_SCHEMA_VERSION));
     }
 }

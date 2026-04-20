@@ -20,6 +20,41 @@ use super::auth::AdoAuth;
 use super::endpoints::Endpoints;
 use super::models::ListResponse;
 
+/// Typed error returned when Azure DevOps rejects the requested `api-version`.
+///
+/// Callers can downcast via [`anyhow::Error::downcast_ref`] to recognise the
+/// specific failure and surface a remediation hint (e.g. prompt the user to
+/// pass `--api-version` or set `DEVOPS_API_VERSION`).
+#[derive(Debug, Clone)]
+pub struct ApiVersionUnsupported {
+    pub requested: String,
+    pub url: String,
+    pub server_message: String,
+}
+
+impl std::fmt::Display for ApiVersionUnsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Azure DevOps rejected api-version={} for {}: {}",
+            self.requested, self.url, self.server_message
+        )
+    }
+}
+
+impl std::error::Error for ApiVersionUnsupported {}
+
+/// Per-page pagination progress emitted by paginated fetchers.
+#[derive(Debug, Clone, Copy)]
+pub struct PaginationProgress {
+    pub endpoint: &'static str,
+    pub page: usize,
+    pub items_so_far: usize,
+}
+
+/// Callback type passed to paginated fetchers to observe progress.
+pub type PaginationProgressFn = dyn Fn(PaginationProgress) + Send + Sync;
+
 /// Authenticated HTTP client for the Azure DevOps REST API.
 #[derive(Clone)]
 pub struct AdoClient {
@@ -55,10 +90,10 @@ impl AdoClient {
         let resp = self
             .http
             .get(url)
-            .bearer_auth(&token)
+            .bearer_auth(token.expose_secret())
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        let resp = self.ensure_success(resp, "GET", display_url).await?;
         let status = resp.status().as_u16();
         let body = resp.json::<T>().await?;
         tracing::debug!(
@@ -83,10 +118,10 @@ impl AdoClient {
         let resp = self
             .http
             .get(url)
-            .bearer_auth(&token)
+            .bearer_auth(token.expose_secret())
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        let resp = self.ensure_success(resp, "GET", display_url).await?;
         let status = resp.status().as_u16();
         let continuation = resp
             .headers()
@@ -106,41 +141,44 @@ impl AdoClient {
         Ok((body, continuation))
     }
 
-    /// Fetches all pages of a paginated list endpoint, following continuation tokens until exhausted.
-    pub(crate) async fn get_all_pages<T: serde::de::DeserializeOwned>(
+    /// Fetches all pages of a paginated list endpoint, invoking an optional
+    /// progress callback once per fetched page.
+    pub(crate) async fn get_all_pages_with_progress<T: serde::de::DeserializeOwned>(
         &self,
         url: &str,
+        endpoint: &'static str,
+        progress: Option<&PaginationProgressFn>,
     ) -> Result<Vec<T>> {
-        // Defensive cap to prevent runaway pagination if the server misbehaves
-        // and keeps returning a non-empty continuation token indefinitely.
-        // Well above any realistic ADO list endpoint response.
-        const MAX_PAGES: u32 = 1000;
+        let max_pages = max_pages_cap();
 
         let mut all_items = Vec::new();
         let mut continuation_token: Option<String> = None;
-        let mut page_count: u32 = 0;
+        let mut page_count: usize = 0;
         let start = Instant::now();
 
         loop {
-            if page_count >= MAX_PAGES {
+            if page_count >= max_pages {
+                let display_url = url_without_query(url);
                 anyhow::bail!(
-                    "pagination safety cap exceeded: fetched {MAX_PAGES} pages from \
-                     {} without exhausting continuation tokens",
-                    url_without_query(url)
+                    "Pagination limit reached: fetched {max_pages} pages from {display_url}. \
+                     If your organization has more data than this, set DEVOPS_MAX_PAGES \
+                     (e.g., DEVOPS_MAX_PAGES=5000) or file an issue at \
+                     https://github.com/ljtill/azure-devops-cli/issues."
                 );
             }
 
             let full_url = paginated_url(url, continuation_token.as_deref())?;
+            let display_url = url_without_query(full_url.as_str()).to_string();
 
             let token = self.auth.token().await?;
-            tracing::debug!(method = "GET", url = %url_without_query(full_url.as_str()), page = page_count + 1, "api paginated request");
+            tracing::debug!(method = "GET", url = %display_url, page = page_count + 1, "api paginated request");
             let resp = self
                 .http
                 .get(full_url)
-                .bearer_auth(&token)
+                .bearer_auth(token.expose_secret())
                 .send()
-                .await?
-                .error_for_status()?;
+                .await?;
+            let resp = self.ensure_success(resp, "GET", &display_url).await?;
 
             let next_token = resp
                 .headers()
@@ -151,6 +189,10 @@ impl AdoClient {
             let page: ListResponse<T> = resp.json().await?;
             all_items.extend(page.value);
             page_count += 1;
+
+            if let Some(cb) = progress {
+                emit_pagination_progress(cb, endpoint, page_count, all_items.len());
+            }
 
             match next_token {
                 Some(t) if !t.is_empty() => continuation_token = Some(t),
@@ -178,10 +220,10 @@ impl AdoClient {
         let resp = self
             .http
             .get(url)
-            .bearer_auth(&token)
+            .bearer_auth(token.expose_secret())
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        let resp = self.ensure_success(resp, "GET", display_url).await?;
         let status = resp.status().as_u16();
         let text = resp.text().await?;
         tracing::debug!(
@@ -204,11 +246,11 @@ impl AdoClient {
         let resp = self
             .http
             .patch(url)
-            .bearer_auth(&token)
+            .bearer_auth(token.expose_secret())
             .json(body)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        let resp = self.ensure_success(resp, "PATCH", display_url).await?;
         let status = resp.status().as_u16();
         tracing::debug!(
             method = "PATCH",
@@ -233,11 +275,11 @@ impl AdoClient {
         let resp = self
             .http
             .post(url)
-            .bearer_auth(&token)
+            .bearer_auth(token.expose_secret())
             .json(body)
             .send()
             .await?;
-        let resp = ensure_success_with_body(resp, "POST", display_url).await?;
+        let resp = self.ensure_success(resp, "POST", display_url).await?;
         let status = resp.status().as_u16();
         let body = resp.json::<T>().await?;
         tracing::debug!(
@@ -259,10 +301,10 @@ impl AdoClient {
         let resp = self
             .http
             .delete(url)
-            .bearer_auth(&token)
+            .bearer_auth(token.expose_secret())
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        let resp = self.ensure_success(resp, "DELETE", display_url).await?;
         let status = resp.status().as_u16();
         tracing::debug!(
             method = "DELETE",
@@ -273,41 +315,123 @@ impl AdoClient {
         );
         Ok(())
     }
+
+    /// Validates that a response returned a success status. On failure, reads
+    /// the body, checks for Azure DevOps' `api-version` rejection signature,
+    /// and returns a typed [`ApiVersionUnsupported`] error when detected.
+    /// Otherwise returns a generic formatted HTTP status error.
+    pub(crate) async fn ensure_success(
+        &self,
+        response: reqwest::Response,
+        method: &'static str,
+        display_url: &str,
+    ) -> Result<reqwest::Response> {
+        let status = response.status();
+        if status.is_success() {
+            return Ok(response);
+        }
+
+        let body = response.text().await.unwrap_or_default();
+        let requested = self.endpoints.api_version.as_ref();
+
+        if let Some(err) = detect_api_version_unsupported(&body, requested, display_url) {
+            tracing::warn!(
+                method,
+                url = display_url,
+                status = status.as_u16(),
+                requested_api_version = requested,
+                server_message = %err.server_message,
+                "api-version unsupported"
+            );
+            return Err(anyhow::Error::new(err));
+        }
+
+        let error = format_http_status_error(status, &body);
+        if let Some(body_preview) = summarize_error_body(&body) {
+            tracing::warn!(
+                method,
+                url = display_url,
+                status = status.as_u16(),
+                body = body_preview,
+                "api error response"
+            );
+        } else {
+            tracing::warn!(
+                method,
+                url = display_url,
+                status = status.as_u16(),
+                "api error response"
+            );
+        }
+
+        Err(anyhow::anyhow!(error))
+    }
 }
 
 const MAX_ERROR_BODY_CHARS: usize = 300;
 
-async fn ensure_success_with_body(
-    response: reqwest::Response,
-    method: &'static str,
-    display_url: &str,
-) -> Result<reqwest::Response> {
-    let status = response.status();
-    if status.is_success() {
-        return Ok(response);
+/// Invokes the progress callback with the current page information.
+///
+/// Emits a `tracing::debug` record even when no callback is provided so the
+/// pagination rhythm can be observed in logs.
+fn emit_pagination_progress<'a>(
+    progress: &(dyn Fn(PaginationProgress) + Send + Sync + 'a),
+    endpoint: &'static str,
+    page: usize,
+    items_so_far: usize,
+) {
+    tracing::debug!(endpoint, page, items_so_far, "pagination progress");
+    progress(PaginationProgress {
+        endpoint,
+        page,
+        items_so_far,
+    });
+}
+
+/// Detects the Azure DevOps "API version not supported" error signature in an
+/// HTTP error body.
+///
+/// Returns `Some(ApiVersionUnsupported)` when either:
+/// - the JSON body contains `typeKey = "VersionNotSupportedException"`, or
+/// - the body (JSON or plain text) contains both `api version` and
+///   `not supported` substrings (case-insensitive).
+///
+/// Extracts `server_message` from the JSON `message` field when present; falls
+/// back to a truncated flattened view of the body.
+pub(crate) fn detect_api_version_unsupported(
+    body: &str,
+    requested: &str,
+    url: &str,
+) -> Option<ApiVersionUnsupported> {
+    let parsed_json = serde_json::from_str::<serde_json::Value>(body).ok();
+
+    let type_key_matches = parsed_json
+        .as_ref()
+        .and_then(|v| v.get("typeKey"))
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| s.eq_ignore_ascii_case("VersionNotSupportedException"));
+
+    let body_lower = body.to_ascii_lowercase();
+    let substring_matches =
+        body_lower.contains("api version") && body_lower.contains("not supported");
+
+    if !type_key_matches && !substring_matches {
+        return None;
     }
 
-    let body = response.text().await.unwrap_or_default();
-    let error = format_http_status_error(status, &body);
+    let server_message = parsed_json
+        .as_ref()
+        .and_then(|v| v.get("message"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .or_else(|| summarize_error_body(body))
+        .unwrap_or_else(|| "API version is not supported for this endpoint.".to_string());
 
-    if let Some(body_preview) = summarize_error_body(&body) {
-        tracing::warn!(
-            method,
-            url = display_url,
-            status = status.as_u16(),
-            body = body_preview,
-            "api error response"
-        );
-    } else {
-        tracing::warn!(
-            method,
-            url = display_url,
-            status = status.as_u16(),
-            "api error response"
-        );
-    }
-
-    Err(anyhow::anyhow!(error))
+    Some(ApiVersionUnsupported {
+        requested: requested.to_string(),
+        url: url.to_string(),
+        server_message,
+    })
 }
 
 fn format_http_status_error(status: StatusCode, body: &str) -> String {
@@ -356,6 +480,24 @@ fn paginated_url(base_url: &str, continuation_token: Option<&str>) -> Result<Url
 /// Returns the URL portion before the query string for logging.
 fn url_without_query(url: &str) -> &str {
     url.split('?').next().unwrap_or(url)
+}
+
+/// Returns the maximum number of pages to follow during pagination.
+///
+/// Read once from the `DEVOPS_MAX_PAGES` environment variable at first call
+/// and cached for the process lifetime. Falls back to 1000 on missing or
+/// unparseable values. Values below 100 are silently clamped up to 100 to
+/// preserve a usable floor.
+fn max_pages_cap() -> usize {
+    use std::sync::OnceLock;
+    static CAP: OnceLock<usize> = OnceLock::new();
+    *CAP.get_or_init(|| {
+        const DEFAULT_MAX_PAGES: usize = 1000;
+        const MIN_MAX_PAGES: usize = 100;
+        let raw = std::env::var("DEVOPS_MAX_PAGES").unwrap_or_default();
+        let parsed = raw.parse::<usize>().unwrap_or(DEFAULT_MAX_PAGES);
+        parsed.max(MIN_MAX_PAGES)
+    })
 }
 
 /// Percent-encodes a continuation token for safe inclusion in a URL query string.
@@ -429,5 +571,71 @@ mod tests {
             message,
             "HTTP status client error (400 Bad Request): { \"message\": \"Field 'Foo' is invalid.\" }"
         );
+    }
+
+    #[test]
+    fn detect_api_version_unsupported_json_shape() {
+        let body = r#"{"$id":"1","message":"The API version '7.1' is not supported for this endpoint.","typeKey":"VersionNotSupportedException"}"#;
+        let err = detect_api_version_unsupported(body, "7.1", "https://example.test/x")
+            .expect("should detect JSON VersionNotSupportedException");
+
+        assert_eq!(err.requested, "7.1");
+        assert_eq!(err.url, "https://example.test/x");
+        assert_eq!(
+            err.server_message,
+            "The API version '7.1' is not supported for this endpoint."
+        );
+    }
+
+    #[test]
+    fn detect_api_version_unsupported_plain_text() {
+        // No typeKey, but both trigger substrings present.
+        let body = "The API version 7.1 is not supported.";
+        let err = detect_api_version_unsupported(body, "7.1", "https://example.test/x")
+            .expect("should detect plain text variant");
+
+        assert_eq!(err.requested, "7.1");
+        assert_eq!(err.server_message, "The API version 7.1 is not supported.");
+    }
+
+    #[test]
+    fn detect_api_version_unsupported_mixed_case_substrings() {
+        // Matching must be case-insensitive.
+        let body = "Error: Api Version is Not Supported for this resource.";
+        assert!(
+            detect_api_version_unsupported(body, "7.1", "https://example.test/x").is_some(),
+            "case-insensitive substring match should succeed"
+        );
+    }
+
+    #[test]
+    fn detect_api_version_unsupported_ignores_normal_error() {
+        let body = r#"{"$id":"1","message":"The resource cannot be found.","typeKey":"ResourceNotFoundException"}"#;
+        assert!(
+            detect_api_version_unsupported(body, "7.1", "https://example.test/x").is_none(),
+            "a regular not-found error must not be misdetected"
+        );
+
+        let body_plain = "Something went wrong.";
+        assert!(
+            detect_api_version_unsupported(body_plain, "7.1", "https://example.test/x").is_none()
+        );
+    }
+
+    #[test]
+    fn emit_pagination_progress_invokes_callback() {
+        use std::sync::Mutex;
+        let calls: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
+        let cb = |p: PaginationProgress| {
+            assert_eq!(p.endpoint, "test_endpoint");
+            calls.lock().unwrap().push((p.page, p.items_so_far));
+        };
+
+        emit_pagination_progress(&cb, "test_endpoint", 1, 25);
+        emit_pagination_progress(&cb, "test_endpoint", 2, 57);
+        emit_pagination_progress(&cb, "test_endpoint", 3, 80);
+
+        let calls = calls.into_inner().unwrap();
+        assert_eq!(calls, vec![(1, 25), (2, 57), (3, 80)]);
     }
 }

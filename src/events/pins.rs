@@ -18,7 +18,7 @@ pub fn toggle_work_item_pin(app: &mut App, id: u32) -> Action {
     }
 
     let config = app.current_config();
-    if let Err(e) = config.save(&app.config_path) {
+    if let Err(e) = config.save_blocking(&app.config_path) {
         tracing::error!(%e, "failed to save config after work item pin toggle");
         app.notifications
             .error(format!("Failed to save config: {e}"));

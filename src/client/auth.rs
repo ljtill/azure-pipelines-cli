@@ -11,6 +11,8 @@ use azure_core::{credentials::TokenCredential, time::OffsetDateTime};
 use azure_identity::DeveloperToolsCredential;
 use tokio::sync::RwLock;
 
+use crate::shared::SecretString;
+
 const ADO_RESOURCE: &str = "499b84ac-1321-427f-aa17-267ca6975798";
 
 /// Specifies the margin before actual expiry to trigger a refresh, avoiding edge-case failures.
@@ -18,7 +20,7 @@ const EXPIRY_MARGIN: std::time::Duration = std::time::Duration::from_mins(2);
 
 /// Holds a cached bearer token alongside its computed expiry instant.
 struct CachedToken {
-    secret: String,
+    secret: SecretString,
     expires_on: std::time::Instant,
 }
 
@@ -40,7 +42,7 @@ impl AdoAuth {
     }
 
     /// Returns a valid bearer token, refreshing from the credential chain if the cache is stale.
-    pub async fn token(&self) -> Result<String> {
+    pub async fn token(&self) -> Result<SecretString> {
         // Fast path: check cached token under read lock.
         {
             let cache = self.cache.read().await;
@@ -74,7 +76,7 @@ impl AdoAuth {
                 )
             })?;
 
-        let secret = response.token.secret().to_string();
+        let secret = SecretString::from(response.token.secret().to_string());
         let secs_until = response
             .expires_on
             .unix_timestamp()
@@ -89,11 +91,9 @@ impl AdoAuth {
             std::time::Instant::now()
         };
 
-        *cache = Some(CachedToken {
-            secret: secret.clone(),
-            expires_on,
-        });
+        let returned = secret.clone();
+        *cache = Some(CachedToken { secret, expires_on });
 
-        Ok(secret)
+        Ok(returned)
     }
 }

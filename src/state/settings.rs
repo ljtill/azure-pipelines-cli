@@ -332,9 +332,12 @@ impl SettingsState {
     }
 
     /// Saves the settings to disk and returns the built config.
+    ///
+    /// Called from sync event handlers; uses `save_blocking` so the fs write
+    /// runs on tokio's blocking pool.
     pub fn save(&self) -> Result<Config, anyhow::Error> {
         let config = self.to_config();
-        config.save(&self.config_path)?;
+        config.save_blocking(&self.config_path)?;
         Ok(config)
     }
 }

@@ -1,13 +1,16 @@
 //! Spawns async API calls and background tasks.
 
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 
 use anyhow::Result;
+use futures::FutureExt;
 use tokio::sync::mpsc;
 use tracing::Instrument;
 
-use crate::client::http::AdoClient;
+use crate::client::http::{AdoClient, ApiVersionUnsupported, PaginationProgress};
 use crate::client::models::{BacklogLevelConfiguration, ProjectTeam, WorkItem};
+use crate::client::wiql::wiql_escape;
 
 use super::super::messages::{AppMessage, RefreshSource};
 use super::super::{
@@ -89,7 +92,7 @@ fn choose_boards_team<'a>(teams: &'a [ProjectTeam], project: &str) -> Option<&'a
 /// stack rank then id. Used as the root seed for the Boards hierarchy so the
 /// tree covers the entire project, not just one team's configured backlog.
 pub(crate) fn build_board_epic_roots_wiql(project: &str) -> String {
-    let escaped = project.replace('\'', "''");
+    let escaped = wiql_escape(project);
     format!(
         "SELECT [System.Id] FROM WorkItems \
 WHERE [System.TeamProject] = '{escaped}' \
@@ -103,7 +106,7 @@ ORDER BY [Microsoft.VSTS.Common.StackRank], [System.Id]"
 /// not in a terminal state. Used to discover descendants (Tasks, Bugs, Test
 /// Cases, etc.) below the Epic roots.
 pub(crate) fn build_board_descendants_wiql(project: &str) -> String {
-    let escaped = project.replace('\'', "''");
+    let escaped = wiql_escape(project);
     format!(
         "SELECT [System.Id] FROM WorkItemLinks \
 WHERE [Source].[System.TeamProject] = '{escaped}' \
@@ -228,6 +231,61 @@ impl Drop for RefreshGuard {
     }
 }
 
+/// Returns an `AppMessage::AdoApiVersionUnsupported` when the error chain
+/// contains a typed [`ApiVersionUnsupported`], otherwise `None`.
+///
+/// Error conversion sites in this module consult this helper first so users
+/// get an actionable notification instead of a generic "request failed".
+pub(super) fn api_version_unsupported_message(e: &anyhow::Error) -> Option<AppMessage> {
+    e.chain()
+        .find_map(|cause| cause.downcast_ref::<ApiVersionUnsupported>())
+        .map(|v| AppMessage::AdoApiVersionUnsupported {
+            requested: v.requested.clone(),
+            server_message: v.server_message.clone(),
+        })
+}
+
+/// Builds an `AppMessage` for an API error, preferring the typed
+/// `AdoApiVersionUnsupported` variant when applicable and falling back to the
+/// caller-supplied generic message factory otherwise.
+pub(super) fn error_to_message(
+    e: anyhow::Error,
+    generic: impl FnOnce(anyhow::Error) -> AppMessage,
+) -> AppMessage {
+    if let Some(msg) = api_version_unsupported_message(&e) {
+        return msg;
+    }
+    generic(e)
+}
+
+/// Spawns a named tokio task. If the task panics, a `TaskPanicked` message is
+/// sent through `tx` so the UI can surface the failure instead of leaving the
+/// user with a frozen or stale view.
+pub(super) fn spawn_named<F>(task_name: &'static str, tx: mpsc::Sender<AppMessage>, fut: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(async move {
+        let tx_panic = tx.clone();
+        let result = AssertUnwindSafe(fut).catch_unwind().await;
+        if let Err(panic_payload) = result {
+            let message = panic_message(&panic_payload);
+            tracing::error!(task_name, %message, "background task panicked");
+            let _ = tx_panic
+                .send(AppMessage::TaskPanicked { task_name, message })
+                .await;
+        }
+    });
+}
+
+fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<&'static str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic payload".to_string())
+}
+
 /// Spawns an async API call on a background task, routing the result to AppMessage.
 pub(super) fn spawn_api<F, Fut, T>(
     client: &AdoClient,
@@ -243,11 +301,13 @@ pub(super) fn spawn_api<F, Fut, T>(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("api_call", context);
-    tokio::spawn(
+    spawn_named(
+        context,
+        tx.clone(),
         async move {
             let msg = match call(client).await {
                 Ok(val) => on_ok(val),
-                Err(e) => AppMessage::Error(format!("{context}: {e}")),
+                Err(e) => error_to_message(e, |e| AppMessage::Error(format!("{context}: {e}"))),
             };
             let _ = tx.send(msg).await;
         }
@@ -267,7 +327,9 @@ pub fn spawn_data_refresh(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("data_refresh");
-    tokio::spawn(
+    spawn_named(
+        "data_refresh",
+        tx.clone(),
         async move {
             let mut guard = RefreshGuard::new(
                 tx.clone(),
@@ -277,8 +339,20 @@ pub fn spawn_data_refresh(
                 },
             );
 
+            // Progress callback shared across paginated fetchers during this
+            // refresh. `try_send` is non-blocking so a full channel simply
+            // drops progress events — losing one update is harmless.
+            let progress_tx = tx.clone();
+            let progress = move |p: PaginationProgress| {
+                let _ = progress_tx.try_send(AppMessage::PaginationProgress {
+                    endpoint: p.endpoint,
+                    page: p.page,
+                    items: p.items_so_far,
+                });
+            };
+
             let (defs_result, recent_result, approvals_result) = tokio::join!(
-                client.list_definitions(),
+                client.list_definitions_with_progress(Some(&progress)),
                 client.list_recent_builds(),
                 client.list_pending_approvals(),
             );
@@ -286,12 +360,11 @@ pub fn spawn_data_refresh(
             let pending_approvals = match approvals_result {
                 Ok(approvals) => approvals,
                 Err(e) => {
-                    let _ = tx
-                        .send(AppMessage::RefreshError {
-                            message: format!("Approvals unavailable: {e}"),
-                            source: RefreshSource::Approvals,
-                        })
-                        .await;
+                    let msg = error_to_message(e, |e| AppMessage::RefreshError {
+                        message: format!("Approvals unavailable: {e}"),
+                        source: RefreshSource::Approvals,
+                    });
+                    let _ = tx.send(msg).await;
                     Vec::new()
                 }
             };
@@ -319,12 +392,11 @@ pub fn spawn_data_refresh(
                         .await;
                 }
                 (Err(e), _) | (_, Err(e)) => {
-                    let _ = tx
-                        .send(AppMessage::RefreshError {
-                            message: format!("Refresh: {e}"),
-                            source: RefreshSource::Data,
-                        })
-                        .await;
+                    let msg = error_to_message(e, |e| AppMessage::RefreshError {
+                        message: format!("Refresh: {e}"),
+                        source: RefreshSource::Data,
+                    });
+                    let _ = tx.send(msg).await;
                 }
             }
 
@@ -352,7 +424,9 @@ pub(super) fn spawn_build_history_refresh(
         let tx = tx.clone();
         let def_id = def.id;
         let span = tracing::debug_span!("build_history_refresh", definition_id = def_id);
-        tokio::spawn(
+        spawn_named(
+            "build_history_refresh",
+            tx.clone(),
             async move {
                 let result = match top {
                     Some(n) => client.list_builds_for_definition_top(def_id, n).await,
@@ -368,12 +442,11 @@ pub(super) fn spawn_build_history_refresh(
                             .await;
                     }
                     Err(e) => {
-                        let _ = tx
-                            .send(AppMessage::RefreshError {
-                                message: format!("Refresh builds: {e}"),
-                                source: RefreshSource::BuildHistory,
-                            })
-                            .await;
+                        let msg = error_to_message(e, |e| AppMessage::RefreshError {
+                            message: format!("Refresh builds: {e}"),
+                            source: RefreshSource::BuildHistory,
+                        });
+                        let _ = tx.send(msg).await;
                     }
                 }
             }
@@ -392,7 +465,9 @@ pub fn spawn_log_fetch(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::debug_span!("log_fetch", build_id, log_id);
-    tokio::spawn(
+    spawn_named(
+        "log_fetch",
+        tx.clone(),
         async move {
             match client.get_build_log(build_id, log_id).await {
                 Ok(content) => {
@@ -405,7 +480,8 @@ pub fn spawn_log_fetch(
                         .await;
                 }
                 Err(e) => {
-                    let _ = tx.send(AppMessage::Error(format!("Fetch log: {e}"))).await;
+                    let msg = error_to_message(e, |e| AppMessage::Error(format!("Fetch log: {e}")));
+                    let _ = tx.send(msg).await;
                 }
             }
         }
@@ -423,7 +499,9 @@ pub fn spawn_timeline_fetch(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::debug_span!("timeline_fetch", build_id, is_refresh);
-    tokio::spawn(
+    spawn_named(
+        "timeline_fetch",
+        tx.clone(),
         async move {
             match client.get_build_timeline(build_id).await {
                 Ok(timeline) => {
@@ -437,9 +515,9 @@ pub fn spawn_timeline_fetch(
                         .await;
                 }
                 Err(e) => {
-                    let _ = tx
-                        .send(AppMessage::Error(format!("Fetch timeline: {e}")))
-                        .await;
+                    let msg =
+                        error_to_message(e, |e| AppMessage::Error(format!("Fetch timeline: {e}")));
+                    let _ = tx.send(msg).await;
                 }
             }
         }
@@ -471,7 +549,9 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
     let log_client = client.clone();
     let tx = tx.clone();
     let span = tracing::debug_span!("log_refresh", build_id);
-    tokio::spawn(
+    spawn_named(
+        "log_refresh",
+        tx.clone(),
         async move {
             let mut guard = RefreshGuard::new(
                 tx.clone(),
@@ -514,12 +594,11 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
                     }
                     Err(e) => {
                         had_failure = true;
-                        let _ = tx
-                            .send(AppMessage::RefreshError {
-                                message: format!("Refresh timeline: {e}"),
-                                source: RefreshSource::Log,
-                            })
-                            .await;
+                        let msg = error_to_message(e, |e| AppMessage::RefreshError {
+                            message: format!("Refresh timeline: {e}"),
+                            source: RefreshSource::Log,
+                        });
+                        let _ = tx.send(msg).await;
                     }
                 }
             }
@@ -537,12 +616,11 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
                     }
                     Err(e) => {
                         had_failure = true;
-                        let _ = tx
-                            .send(AppMessage::RefreshError {
-                                message: format!("Refresh log: {e}"),
-                                source: RefreshSource::Log,
-                            })
-                            .await;
+                        let msg = error_to_message(e, |e| AppMessage::RefreshError {
+                            message: format!("Refresh log: {e}"),
+                            source: RefreshSource::Log,
+                        });
+                        let _ = tx.send(msg).await;
                     }
                 }
             }
@@ -586,7 +664,9 @@ pub fn spawn_fetch_pull_requests(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_pull_requests", ?view, generation);
-    tokio::spawn(
+    spawn_named(
+        "fetch_pull_requests",
+        tx.clone(),
         async move {
             let (status, creator_id, reviewer_id) = match view {
                 View::PullRequestsAssignedToMe => ("active", None, user_id.as_deref()),
@@ -602,7 +682,9 @@ pub fn spawn_fetch_pull_requests(
                     pull_requests: prs,
                     generation,
                 },
-                Err(e) => AppMessage::Error(format!("Fetch pull requests: {e}")),
+                Err(e) => error_to_message(e, |e| {
+                    AppMessage::Error(format!("Fetch pull requests: {e}"))
+                }),
             };
             let _ = tx.send(msg).await;
         }
@@ -639,7 +721,9 @@ pub fn spawn_fetch_dashboard_pull_requests(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_dashboard_prs");
-    tokio::spawn(
+    spawn_named(
+        "fetch_dashboard_prs",
+        tx.clone(),
         async move {
             let msg = match client
                 .list_pull_requests("active", creator_id.as_deref(), None)
@@ -665,7 +749,7 @@ pub fn spawn_fetch_dashboard_pull_requests(
 /// Returns the WIQL used to fetch dashboard work items (assigned to the current
 /// user, active states, ordered by most recently changed).
 pub(crate) fn build_dashboard_work_items_wiql(project: &str) -> String {
-    let escaped_project = project.replace('\'', "''");
+    let escaped_project = wiql_escape(project);
     format!(
         "SELECT [System.Id] FROM WorkItems \
          WHERE [System.AssignedTo] = @Me \
@@ -702,7 +786,9 @@ pub fn spawn_fetch_dashboard_work_items(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_dashboard_work_items");
-    tokio::spawn(
+    spawn_named(
+        "fetch_dashboard_work_items",
+        tx.clone(),
         async move {
             let msg = match load_my_work_items(&client, &wiql).await {
                 Ok(work_items) => AppMessage::DashboardWorkItems {
@@ -743,7 +829,9 @@ pub fn spawn_fetch_pinned_work_items(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_pinned_work_items", id_count = ids.len());
-    tokio::spawn(
+    spawn_named(
+        "fetch_pinned_work_items",
+        tx.clone(),
         async move {
             let fields = &[
                 "System.Title",
@@ -785,7 +873,9 @@ pub fn spawn_fetch_pr_detail(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_pr_detail", pr_id);
-    tokio::spawn(
+    spawn_named(
+        "fetch_pr_detail",
+        tx.clone(),
         async move {
             let (pr_result, threads_result) = tokio::join!(
                 client.get_pull_request(&repo_id, pr_id),
@@ -796,7 +886,9 @@ pub fn spawn_fetch_pr_detail(
                     pull_request,
                     threads,
                 },
-                (Err(e), _) | (_, Err(e)) => AppMessage::Error(format!("Fetch PR detail: {e}")),
+                (Err(e), _) | (_, Err(e)) => {
+                    error_to_message(e, |e| AppMessage::Error(format!("Fetch PR detail: {e}")))
+                }
             };
             let _ = tx.send(msg).await;
         }
@@ -814,7 +906,9 @@ pub fn spawn_fetch_work_item_detail(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_work_item_detail", work_item_id);
-    tokio::spawn(
+    spawn_named(
+        "fetch_work_item_detail",
+        tx.clone(),
         async move {
             let (wi_result, comments_result) = tokio::join!(
                 client.get_work_item_detail(work_item_id),
@@ -842,7 +936,9 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_user_identity");
-    tokio::spawn(
+    spawn_named(
+        "fetch_user_identity",
+        tx.clone(),
         async move {
             match client.get_connection_data().await {
                 Ok(cd) => {
@@ -904,7 +1000,9 @@ pub fn spawn_fetch_boards(
     let tx = tx.clone();
     let project = app.current_config().azure_devops.project;
     let span = tracing::info_span!("fetch_boards", generation, project = %project);
-    tokio::spawn(
+    spawn_named(
+        "fetch_boards",
+        tx.clone(),
         async move {
             let message = match load_boards_snapshot(&client, &project).await {
                 Ok((team_name, backlogs, work_items)) => AppMessage::BoardsLoaded {
@@ -936,7 +1034,7 @@ pub(crate) fn build_my_work_items_wiql(view: super::super::View, project: &str) 
         _ => return None,
     };
     // Escape single quotes in project name to avoid breaking out of the literal.
-    let escaped_project = project.replace('\'', "''");
+    let escaped_project = wiql_escape(project);
     Some(format!(
         "SELECT [System.Id] FROM WorkItems WHERE {user_clause} \
          AND [System.TeamProject] = '{escaped_project}' \
@@ -966,7 +1064,9 @@ pub fn spawn_fetch_my_work_items(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_my_work_items", ?view, generation);
-    tokio::spawn(
+    spawn_named(
+        "fetch_my_work_items",
+        tx.clone(),
         async move {
             let message = match load_my_work_items(&client, &wiql).await {
                 Ok(work_items) => AppMessage::MyWorkItemsLoaded {
@@ -1042,6 +1142,30 @@ pub(super) fn open_url(url: &str) -> std::io::Result<std::process::Child> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn spawn_named_forwards_panic_as_task_panicked_message() {
+        let (tx, mut rx) = mpsc::channel::<AppMessage>(4);
+        spawn_named("test_task", tx, async {
+            panic!("boom");
+        });
+
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timed out waiting for TaskPanicked message")
+            .expect("channel closed unexpectedly");
+
+        match msg {
+            AppMessage::TaskPanicked { task_name, message } => {
+                assert_eq!(task_name, "test_task");
+                assert!(
+                    message.contains("boom"),
+                    "expected panic message to contain 'boom', got {message:?}"
+                );
+            }
+            _ => panic!("unexpected message variant — expected TaskPanicked"),
+        }
+    }
 
     #[test]
     fn choose_boards_team_prefers_default_project_team_then_project_named_team() {

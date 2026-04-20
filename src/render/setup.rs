@@ -189,7 +189,7 @@ fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
 
 /// Runs the interactive setup flow. Returns `Ok(Some(config))` on success,
 /// `Ok(None)` if the user pressed Esc to quit.
-pub fn run_setup(
+pub async fn run_setup(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     config_path: &PathBuf,
 ) -> Result<Option<Config>> {
@@ -217,8 +217,8 @@ pub fn run_setup(
                         project = &*proj,
                         "setup wizard complete"
                     );
-                    Config::write_initial(config_path, &org, &proj)?;
-                    let config = Config::load(Some(config_path))?;
+                    Config::write_initial(config_path, &org, &proj).await?;
+                    let config = Config::load(Some(config_path)).await?;
                     return Ok(Some(config));
                 }
             }
@@ -308,17 +308,21 @@ mod tests {
         assert!(matches!(outcome, Outcome::Quit));
     }
 
-    #[test]
-    fn write_initial_creates_valid_config() {
+    #[tokio::test]
+    async fn write_initial_creates_valid_config() {
         let dir = std::env::temp_dir().join("devops-test-write-config");
+        // Safe: test-only cleanup.
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("config.toml");
 
-        Config::write_initial(&path, "test-org", "test-proj").unwrap();
-        let config = Config::load(Some(&path)).unwrap();
+        Config::write_initial(&path, "test-org", "test-proj")
+            .await
+            .unwrap();
+        let config = Config::load(Some(&path)).await.unwrap();
         assert_eq!(config.azure_devops.organization, "test-org");
         assert_eq!(config.azure_devops.project, "test-proj");
 
+        // Safe: test-only cleanup.
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -61,10 +61,10 @@ On first launch, an interactive setup wizard creates `~/.config/devops/config.to
 
 The following public surfaces are frozen for the 1.x line. New behavior may be added, but nothing below will be renamed, removed, or repurposed without a major version bump.
 
-- **Config schema** — Keys under `[azure_devops]`, `[filters]`, `[update]`, `[logging]`, `[notifications]`, and `[display]`. New keys may be added (always with defaults so existing configs keep working). An optional top-level `schema_version` field is accepted (default `1`); unknown values are warned about but do not prevent the config from loading.
+- **Config schema** — Keys under `[azure_devops]`, `[filters]`, `[update]`, `[logging]`, `[notifications]`, and `[display]`. New keys may be added (always with defaults so existing configs keep working). An optional top-level `schema_version` field is accepted (default `1`). Configs are forward-compatible within a major version: newer `devops` binaries will load older configs. Downgrading is **not** supported — a binary will refuse to load a config whose `schema_version` is higher than it understands, with a clear error message.
 - **Keybindings** — Every binding in the table below keeps its current action for 1.x. New bindings may be added; existing keys will not be reassigned.
 - **File paths** — `~/.config/devops/config.toml` (config), `~/.local/state/devops/` (persistent state), `~/.local/share/devops/versions/` (installed release binaries), and `~/.local/bin/devops` (symlink to the active version) are stable and safe to script against.
-- **CLI surface** — The `devops`, `devops version`, and `devops update` subcommands, along with the `--config` flag, are stable. New flags and subcommands may be introduced.
+- **CLI surface** — The `devops`, `devops version`, and `devops update` subcommands, along with the `--config` and `--api-version` flags, are stable. New flags and subcommands may be introduced. This version targets Azure DevOps REST API v7.1. Pass `--api-version` or `DEVOPS_API_VERSION=X.Y` to override.
 
 ### Display options
 
@@ -82,7 +82,7 @@ max_log_lines = 100000          # Ring-buffer cap for live log output. Min 1000.
 ### Known limitations
 
 - **Log buffer cap.** The log viewer keeps at most `max_log_lines` lines in memory (default 100000). For builds that produce more output than this, the oldest lines are truncated with a visible banner.
-- **Pagination safety cap.** The Azure DevOps REST client refuses to follow more than 1000 continuation-token pages for a single list endpoint, as a defense against server-side loops. This limit is well above any realistic production workload.
+- **Pagination safety cap.** The Azure DevOps REST client refuses to follow more than 1000 continuation-token pages for a single list endpoint, as a defense against server-side loops. This limit is well above any realistic production workload. Override with the `DEVOPS_MAX_PAGES` environment variable (e.g., `DEVOPS_MAX_PAGES=5000`); values below 100 are clamped to 100.
 
 ## Usage
 
@@ -92,6 +92,10 @@ devops
 
 # Override config path
 devops --config /path/to/config.toml
+
+# Override the Azure DevOps REST API version (default: 7.1)
+devops --api-version 7.2-preview.3
+DEVOPS_API_VERSION=7.2-preview.3 devops
 
 # Print installed version
 devops version
@@ -137,5 +141,9 @@ Uses the Azure SDK `DeveloperToolsCredential`, which tries local developer crede
 For local development, ensure you're logged in with `az login` or `azd auth login`.
 
 ## Security
+
+Release archives are signed with [Sigstore](https://www.sigstore.dev/) (cosign,
+keyless via GitHub Actions OIDC). Install scripts and `devops update` verify the
+signature before installing — see [SECURITY.md](SECURITY.md) for details.
 
 Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).

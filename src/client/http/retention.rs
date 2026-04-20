@@ -12,11 +12,23 @@ impl super::AdoClient {
         &self,
         definition_id: u32,
     ) -> Result<Vec<RetentionLease>> {
+        self.list_retention_leases_for_definition_with_progress(definition_id, None)
+            .await
+    }
+
+    /// Fetches retention leases for a single pipeline definition, invoking the
+    /// optional callback with per-page progress as pagination advances.
+    pub async fn list_retention_leases_for_definition_with_progress(
+        &self,
+        definition_id: u32,
+        progress: Option<&super::PaginationProgressFn>,
+    ) -> Result<Vec<RetentionLease>> {
         tracing::debug!(definition_id, "listing retention leases for definition");
         let url = self
             .endpoints
             .retention_leases_for_definition(definition_id);
-        self.get_all_pages(&url).await
+        self.get_all_pages_with_progress(&url, "retention_leases", progress)
+            .await
     }
 
     /// Fetches retention leases across multiple definitions in parallel.

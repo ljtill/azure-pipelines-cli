@@ -17,14 +17,14 @@ ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 
 # Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs"] }
 
 # HTTP
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 # Azure auth
-azure_identity = { version = "0.34", default-features = false, features = ["tokio"] }
-azure_core = { version = "0.34", default-features = false, features = ["reqwest", "reqwest_deflate", "reqwest_gzip", "tokio"] }
+azure_identity = { version = "=0.34.0", default-features = false, features = ["tokio"] }
+azure_core = { version = "=0.34.0", default-features = false, features = ["reqwest", "reqwest_deflate", "reqwest_gzip", "tokio"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -34,12 +34,19 @@ toml = "1.1"
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3"
+
+# Supply-chain verification: cosign / Sigstore keyless signatures.
+# `verify` is the verification code path; `sigstore-trust-root` pulls Fulcio/Rekor/CTFE
+# trust material from the Sigstore public-good TUF repo (embedded + cached on disk).
+# `rustls-tls` matches the rest of this crate (no OpenSSL).
+sigstore = { version = "0.13", default-features = false, features = ["verify", "sigstore-trust-root", "rustls-tls"] }
+sha2 = "0.10"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

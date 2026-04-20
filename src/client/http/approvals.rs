@@ -29,15 +29,15 @@ impl super::AdoClient {
         let resp = self
             .http
             .patch(&url)
-            .bearer_auth(&token)
+            .bearer_auth(token.expose_secret())
             .json(&serde_json::json!([{
                 "approvalId": approval_id,
                 "status": status,
                 "comment": comment
             }]))
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        let resp = self.ensure_success(resp, "PATCH", &url).await?;
         let resp_status = resp.status().as_u16();
         tracing::debug!(
             method = "PATCH",

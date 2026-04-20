@@ -134,4 +134,24 @@ pub enum AppMessage {
         message: String,
         generation: u64,
     },
+    /// Signals that a named background task panicked. The UI surfaces the
+    /// failure so users are not left staring at a frozen view.
+    TaskPanicked {
+        task_name: &'static str,
+        message: String,
+    },
+    /// Signals that Azure DevOps rejected the requested `api-version`. This is
+    /// surfaced as a persistent error notification prompting the user to pass
+    /// `--api-version` or set `DEVOPS_API_VERSION`.
+    AdoApiVersionUnsupported {
+        requested: String,
+        server_message: String,
+    },
+    /// Reports per-page progress from a paginated fetcher so the UI can
+    /// indicate forward motion during long list operations.
+    PaginationProgress {
+        endpoint: &'static str,
+        page: usize,
+        items: usize,
+    },
 }

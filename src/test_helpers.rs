@@ -12,6 +12,12 @@ use crate::config::{
 };
 use crate::state::App;
 
+/// Re-exports `AppMessage` for use from integration tests. The underlying
+/// `state::messages` module is crate-private; this indirection keeps the
+/// visibility change isolated to `test_helpers`.
+#[doc(hidden)]
+pub use crate::state::messages::{AppMessage, RefreshSource};
+
 /// Creates a [`Build`] with the given id, status, and optional result.
 pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
     Build {

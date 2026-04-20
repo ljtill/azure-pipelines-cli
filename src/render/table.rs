@@ -312,24 +312,24 @@ mod tests {
     #[test]
     fn row_cell_left_pads() {
         let span = row_cell("hi", 5, Align::Left, Style::default());
-        assert_eq!(span.content.as_ref(), "hi   ");
+        assert_eq!(&*span.content, "hi   ");
     }
 
     #[test]
     fn row_cell_right_pads() {
         let span = row_cell("hi", 5, Align::Right, Style::default());
-        assert_eq!(span.content.as_ref(), "   hi");
+        assert_eq!(&*span.content, "   hi");
     }
 
     #[test]
     fn row_cell_truncates_long_text() {
         let span = row_cell("abcdef", 3, Align::Left, Style::default());
-        assert_eq!(span.content.as_ref(), "abc");
+        assert_eq!(&*span.content, "abc");
     }
 
     #[test]
     fn row_cell_empty_width_produces_empty_span() {
         let span = row_cell("hi", 0, Align::Left, Style::default());
-        assert_eq!(span.content.as_ref(), "");
+        assert_eq!(&*span.content, "");
     }
 }
