@@ -41,10 +41,7 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3"
 
-# Supply-chain verification: cosign / Sigstore keyless signatures.
-# `verify` is the verification code path; `sigstore-trust-root` pulls Fulcio/Rekor/CTFE
-# trust material from the Sigstore public-good TUF repo (embedded + cached on disk).
-# `rustls-tls` matches the rest of this crate (no OpenSSL).
+# Supply-chain verification
 sigstore = { version = "0.13", default-features = false, features = ["verify", "sigstore-trust-root", "rustls-tls"] }
 sha2 = "0.10"
 
