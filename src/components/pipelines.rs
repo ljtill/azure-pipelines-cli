@@ -25,13 +25,16 @@ use crate::state::{App, InputMode};
 #[derive(Debug, Clone)]
 pub enum PipelineRow {
     FolderHeader {
-        path: String,
-        collapsed: bool,
+        key: String,
+        label: String,
+        depth: usize,
+        expanded: bool,
     },
     Pipeline {
         definition: PipelineDefinition,
         latest_build: Option<Box<Build>>,
         pinned: bool,
+        depth: usize,
     },
 }
 
@@ -58,14 +61,26 @@ fn folder_key(path: &str) -> String {
     }
 }
 
-/// Converts a raw folder key to a display-friendly string.
-fn folder_display(key: &str) -> String {
-    let display = key.trim_start_matches('\\').replace('\\', " / ");
-    if display.is_empty() {
-        "Root".to_string()
-    } else {
-        display
+/// Returns the leaf segment of a folder key (e.g. `\A\B\C` -> `C`).
+fn folder_leaf_label(key: &str) -> String {
+    key.rsplit('\\')
+        .find(|s| !s.is_empty())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Returns the list of ancestor folder keys for a given key, root-first.
+/// For `\A\B\C` this yields [`\A`, `\A\B`]; the input key itself is not included.
+fn folder_ancestors(key: &str) -> Vec<String> {
+    let segments: Vec<&str> = key.split('\\').filter(|s| !s.is_empty()).collect();
+    let mut out = Vec::with_capacity(segments.len().saturating_sub(1));
+    let mut current = String::new();
+    for seg in segments.iter().take(segments.len().saturating_sub(1)) {
+        current.push('\\');
+        current.push_str(seg);
+        out.push(current.clone());
     }
+    out
 }
 
 /// Checks if a definition passes the configured filters.
@@ -83,25 +98,21 @@ fn matches_filter(
     true
 }
 
-/// Reverse-looks up a folder key from a display path.
-fn find_folder_key_for_display(
-    display_path: &str,
-    definitions: &[PipelineDefinition],
-) -> Option<String> {
-    for def in definitions {
-        let key = folder_key(&def.path);
-        if folder_display(&key) == display_path {
-            return Some(key);
-        }
-    }
-    None
+/// Tree node for hierarchical folder grouping.
+#[derive(Debug, Default)]
+struct FolderNode {
+    /// Child folder full keys, keyed by leaf segment for deterministic ordering.
+    children: BTreeMap<String, String>,
+    /// Pipelines directly contained in this folder.
+    pipelines: Vec<(PipelineDefinition, Option<Build>)>,
 }
 
 /// Renders pipelines grouped by folder with collapse/expand, search, and pinning.
 #[derive(Debug, Default)]
 pub struct Pipelines {
     pub rows: Vec<PipelineRow>,
-    pub collapsed_folders: HashSet<String>,
+    /// Folder keys that the user has explicitly expanded. Default state is collapsed.
+    pub expanded_folders: HashSet<String>,
     pub nav: ListNav,
     pub selected: HashSet<u32>,
 }
@@ -117,105 +128,184 @@ impl Pipelines {
         pinned_definition_ids: &[u32],
         search_query: &str,
     ) {
-        let mut rows = Vec::new();
-        let mut by_folder: BTreeMap<String, Vec<(PipelineDefinition, Option<Build>)>> =
-            BTreeMap::new();
         let query_lower = search_query.to_lowercase();
+        let has_query = !search_query.is_empty();
+
+        let mut tree: BTreeMap<String, FolderNode> = BTreeMap::new();
+        tree.entry("\\".to_string()).or_default();
+        let mut auto_expanded: HashSet<String> = HashSet::new();
 
         for def in definitions {
             if !matches_filter(def, filter_definition_ids, filter_folders) {
                 continue;
             }
-            if !search_query.is_empty()
+            if has_query
                 && !def.name.to_lowercase().contains(&query_lower)
                 && !def.path.to_lowercase().contains(&query_lower)
             {
                 continue;
             }
-            let folder = folder_key(&def.path);
+
+            let key = folder_key(&def.path);
+            // Register every ancestor so intermediate folders show up as headers.
+            let mut parent = "\\".to_string();
+            let segments: Vec<&str> = key.split('\\').filter(|s| !s.is_empty()).collect();
+            for seg in &segments {
+                let child_key = if parent == "\\" {
+                    format!("\\{seg}")
+                } else {
+                    format!("{parent}\\{seg}")
+                };
+                tree.entry(parent.clone())
+                    .or_default()
+                    .children
+                    .insert((*seg).to_string(), child_key.clone());
+                tree.entry(child_key.clone()).or_default();
+                parent = child_key;
+            }
+
             let latest = latest_builds_by_def.get(&def.id).cloned();
-            by_folder
-                .entry(folder)
+            tree.entry(key.clone())
                 .or_default()
+                .pipelines
                 .push((def.clone(), latest));
-        }
 
-        for (key, mut pipelines) in by_folder {
-            pipelines.sort_by_key(|(a, _)| a.name.to_lowercase());
-            let collapsed = search_query.is_empty() && self.collapsed_folders.contains(&key);
-            rows.push(PipelineRow::FolderHeader {
-                path: folder_display(&key),
-                collapsed,
-            });
-
-            if !collapsed {
-                for (def, build) in &pipelines {
-                    let pinned = pinned_definition_ids.contains(&def.id);
-                    rows.push(PipelineRow::Pipeline {
-                        definition: def.clone(),
-                        latest_build: build.clone().map(Box::new),
-                        pinned,
-                    });
+            // When a query is active, auto-expand ancestors of every match so
+            // results are visible without requiring manual drill-in.
+            if has_query {
+                auto_expanded.insert(key.clone());
+                for anc in folder_ancestors(&key) {
+                    auto_expanded.insert(anc);
                 }
             }
         }
+
+        let mut rows = Vec::new();
+        self.emit_root(&tree, &auto_expanded, pinned_definition_ids, &mut rows);
 
         self.rows = rows;
         self.nav.set_len(self.rows.len());
     }
 
+    /// Emits rows for the root folder's contents. Root has no header — its
+    /// children render at depth 0 directly, alongside any root-level pipelines.
+    fn emit_root(
+        &self,
+        tree: &BTreeMap<String, FolderNode>,
+        auto_expanded: &HashSet<String>,
+        pinned_ids: &[u32],
+        rows: &mut Vec<PipelineRow>,
+    ) {
+        let Some(root) = tree.get("\\") else {
+            return;
+        };
+        for child_key in root.children.values() {
+            self.emit_folder(child_key, 0, tree, auto_expanded, pinned_ids, rows);
+        }
+        let mut root_pipelines = root.pipelines.clone();
+        root_pipelines.sort_by_key(|(a, _)| a.name.to_lowercase());
+        for (def, build) in root_pipelines {
+            let pinned = pinned_ids.contains(&def.id);
+            rows.push(PipelineRow::Pipeline {
+                definition: def,
+                latest_build: build.map(Box::new),
+                pinned,
+                depth: 0,
+            });
+        }
+    }
+
+    /// Emits a folder header and, if expanded, its children (subfolders first, then pipelines).
+    fn emit_folder(
+        &self,
+        key: &str,
+        depth: usize,
+        tree: &BTreeMap<String, FolderNode>,
+        auto_expanded: &HashSet<String>,
+        pinned_ids: &[u32],
+        rows: &mut Vec<PipelineRow>,
+    ) {
+        let Some(node) = tree.get(key) else {
+            return;
+        };
+        let expanded = self.expanded_folders.contains(key) || auto_expanded.contains(key);
+        rows.push(PipelineRow::FolderHeader {
+            key: key.to_string(),
+            label: folder_leaf_label(key),
+            depth,
+            expanded,
+        });
+        if !expanded {
+            return;
+        }
+        for child_key in node.children.values() {
+            self.emit_folder(child_key, depth + 1, tree, auto_expanded, pinned_ids, rows);
+        }
+        let mut pipelines = node.pipelines.clone();
+        pipelines.sort_by_key(|(a, _)| a.name.to_lowercase());
+        for (def, build) in pipelines {
+            let pinned = pinned_ids.contains(&def.id);
+            rows.push(PipelineRow::Pipeline {
+                definition: def,
+                latest_build: build.map(Box::new),
+                pinned,
+                depth: depth + 1,
+            });
+        }
+    }
+
     /// Toggles collapse state for a folder at the given row index.
-    pub fn toggle_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
-        if let Some(PipelineRow::FolderHeader { path, .. }) = self.rows.get(index) {
-            let fk = find_folder_key_for_display(path, definitions);
-            if let Some(key) = fk {
-                if self.collapsed_folders.contains(&key) {
-                    self.collapsed_folders.remove(&key);
-                } else {
-                    self.collapsed_folders.insert(key);
-                }
-                return true;
+    pub fn toggle_folder_at(&mut self, index: usize) -> bool {
+        if let Some(PipelineRow::FolderHeader { key, .. }) = self.rows.get(index) {
+            let key = key.clone();
+            if self.expanded_folders.contains(&key) {
+                self.expanded_folders.remove(&key);
+            } else {
+                self.expanded_folders.insert(key);
             }
+            return true;
         }
         false
     }
 
     /// Collapses the folder at the given index.
-    pub fn collapse_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
-        if let Some(PipelineRow::FolderHeader {
-            path, collapsed, ..
-        }) = self.rows.get(index)
-            && !collapsed
+    pub fn collapse_folder_at(&mut self, index: usize) -> bool {
+        if let Some(PipelineRow::FolderHeader { key, expanded, .. }) = self.rows.get(index)
+            && *expanded
         {
-            let fk = find_folder_key_for_display(path, definitions);
-            if let Some(key) = fk {
-                self.collapsed_folders.insert(key);
-                return true;
-            }
+            let key = key.clone();
+            self.expanded_folders.remove(&key);
+            return true;
         }
         false
     }
 
     /// Expands the folder at the given index.
-    pub fn expand_folder_at(&mut self, index: usize, definitions: &[PipelineDefinition]) -> bool {
-        if let Some(PipelineRow::FolderHeader {
-            path, collapsed, ..
-        }) = self.rows.get(index)
-            && *collapsed
+    pub fn expand_folder_at(&mut self, index: usize) -> bool {
+        if let Some(PipelineRow::FolderHeader { key, expanded, .. }) = self.rows.get(index)
+            && !*expanded
         {
-            let fk = find_folder_key_for_display(path, definitions);
-            if let Some(key) = fk {
-                self.collapsed_folders.remove(&key);
-                return true;
-            }
+            let key = key.clone();
+            self.expanded_folders.insert(key);
+            return true;
         }
         false
     }
 
-    /// Finds the row index of the parent folder for a pipeline row.
-    pub fn find_parent_folder_index(&self, pipeline_index: usize) -> Option<usize> {
-        for i in (0..pipeline_index).rev() {
-            if let Some(PipelineRow::FolderHeader { .. }) = self.rows.get(i) {
+    /// Finds the row index of the immediate parent folder header for a row.
+    /// Returns `None` for depth-0 rows (no parent header in the hierarchy).
+    pub fn find_parent_folder_index(&self, row_index: usize) -> Option<usize> {
+        let current_depth = match self.rows.get(row_index)? {
+            PipelineRow::FolderHeader { depth, .. } | PipelineRow::Pipeline { depth, .. } => *depth,
+        };
+        if current_depth == 0 {
+            return None;
+        }
+        let target_depth = current_depth - 1;
+        for i in (0..row_index).rev() {
+            if let Some(PipelineRow::FolderHeader { depth, .. }) = self.rows.get(i)
+                && *depth == target_depth
+            {
                 return Some(i);
             }
         }
@@ -289,11 +379,18 @@ impl Pipelines {
             .iter()
             .enumerate()
             .map(|(i, row)| match row {
-                PipelineRow::FolderHeader { path, collapsed } => {
-                    let icon = if *collapsed { "▸" } else { "▾" };
+                PipelineRow::FolderHeader {
+                    label,
+                    depth,
+                    expanded,
+                    ..
+                } => {
+                    let icon = if *expanded { "▾" } else { "▸" };
+                    let indent = "  ".repeat(*depth);
                     ListItem::new(Line::from(vec![
+                        Span::raw(indent),
                         Span::styled(format!(" {icon} "), theme::ARROW),
-                        Span::styled(path.clone(), theme::FOLDER),
+                        Span::styled(label.clone(), theme::FOLDER),
                     ]))
                     .style(row_style(i == self.nav.index()))
                 }
@@ -301,6 +398,7 @@ impl Pipelines {
                     definition,
                     latest_build,
                     pinned,
+                    depth,
                 } => {
                     let (icon, icon_color) =
                         latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
@@ -361,8 +459,10 @@ impl Pipelines {
                     } else {
                         theme::MUTED
                     };
+                    let indent = "  ".repeat(*depth);
 
                     let mut spans = vec![
+                        Span::raw(indent),
                         Span::styled(selected_indicator, theme::SUCCESS),
                         Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
                         Span::styled(
@@ -438,13 +538,21 @@ mod tests {
     }
 
     #[test]
-    fn folder_display_root() {
-        assert_eq!(folder_display("\\"), "Root");
+    fn folder_leaf_label_works() {
+        assert_eq!(folder_leaf_label("\\"), "");
+        assert_eq!(folder_leaf_label("\\Infra"), "Infra");
+        assert_eq!(folder_leaf_label("\\A\\B\\C"), "C");
     }
 
     #[test]
-    fn folder_display_nested() {
-        assert_eq!(folder_display("\\Infra\\Deploy"), "Infra / Deploy");
+    fn folder_ancestors_works() {
+        assert!(folder_ancestors("\\").is_empty());
+        assert!(folder_ancestors("\\A").is_empty());
+        assert_eq!(folder_ancestors("\\A\\B"), vec!["\\A".to_string()]);
+        assert_eq!(
+            folder_ancestors("\\A\\B\\C"),
+            vec!["\\A".to_string(), "\\A\\B".to_string()]
+        );
     }
 
     #[test]
@@ -462,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_groups_by_folder() {
+    fn rebuild_default_collapsed_shows_root_headers_only() {
         let defs = vec![
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
@@ -470,9 +578,56 @@ mod tests {
         ];
         let mut p = Pipelines::default();
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
-        assert_eq!(p.rows.len(), 5);
-        assert!(matches!(&p.rows[0], PipelineRow::FolderHeader { path, .. } if path == "Root"));
-        assert!(matches!(&p.rows[3], PipelineRow::FolderHeader { path, .. } if path == "Infra"));
+        // Expect: Infra folder header (collapsed), then two root pipelines.
+        assert_eq!(p.rows.len(), 3);
+        assert!(matches!(
+            &p.rows[0],
+            PipelineRow::FolderHeader { label, depth: 0, expanded: false, .. } if label == "Infra"
+        ));
+        assert!(matches!(&p.rows[1], PipelineRow::Pipeline { depth: 0, .. }));
+        assert!(matches!(&p.rows[2], PipelineRow::Pipeline { depth: 0, .. }));
+    }
+
+    #[test]
+    fn rebuild_builds_nested_tree_with_depths() {
+        let defs = vec![make_definition(1, "Leaf", "\\A\\B\\C")];
+        let mut p = Pipelines::default();
+        // Expand the full chain so all three headers and the pipeline appear.
+        p.expanded_folders.insert("\\A".to_string());
+        p.expanded_folders.insert("\\A\\B".to_string());
+        p.expanded_folders.insert("\\A\\B\\C".to_string());
+        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
+        assert_eq!(p.rows.len(), 4);
+        assert!(matches!(
+            &p.rows[0],
+            PipelineRow::FolderHeader { depth: 0, label, .. } if label == "A"
+        ));
+        assert!(matches!(
+            &p.rows[1],
+            PipelineRow::FolderHeader { depth: 1, label, .. } if label == "B"
+        ));
+        assert!(matches!(
+            &p.rows[2],
+            PipelineRow::FolderHeader { depth: 2, label, .. } if label == "C"
+        ));
+        assert!(matches!(&p.rows[3], PipelineRow::Pipeline { depth: 3, .. }));
+    }
+
+    #[test]
+    fn expanding_root_folder_reveals_direct_children_only() {
+        let defs = vec![make_definition(1, "Leaf", "\\A\\B\\C")];
+        let mut p = Pipelines::default();
+        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
+        assert_eq!(p.rows.len(), 1); // Just the `A` header.
+        // Expand `\A` only.
+        p.expanded_folders.insert("\\A".to_string());
+        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
+        // Should show `A` (expanded) + `B` (still collapsed), but not `C` or the pipeline.
+        assert_eq!(p.rows.len(), 2);
+        assert!(matches!(
+            &p.rows[1],
+            PipelineRow::FolderHeader { depth: 1, label, expanded: false, .. } if label == "B"
+        ));
     }
 
     #[test]
@@ -483,16 +638,18 @@ mod tests {
         ];
         let mut p = Pipelines::default();
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "ci");
-        assert_eq!(p.rows.len(), 2);
+        // Single root-level pipeline matches; no header for root.
+        assert_eq!(p.rows.len(), 1);
+        assert!(matches!(&p.rows[0], PipelineRow::Pipeline { depth: 0, .. }));
     }
 
     #[test]
-    fn rebuild_search_auto_expands_folders() {
-        let defs = vec![make_definition(1, "CI", "\\")];
+    fn search_auto_expands_ancestor_chain() {
+        let defs = vec![make_definition(1, "Leaf", "\\A\\B\\C")];
         let mut p = Pipelines::default();
-        p.collapsed_folders.insert("\\".to_string());
-        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "CI");
-        assert_eq!(p.rows.len(), 2);
+        // No explicit expansion — search should auto-expand ancestors.
+        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "Leaf");
+        assert_eq!(p.rows.len(), 4);
     }
 
     #[test]
@@ -516,21 +673,34 @@ mod tests {
 
     #[test]
     fn toggle_folder_collapses_and_expands() {
-        let defs = vec![
-            make_definition(1, "CI", "\\"),
-            make_definition(2, "Deploy", "\\"),
-        ];
+        let defs = vec![make_definition(1, "Deploy", "\\Infra")];
         let mut p = Pipelines::default();
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
-        assert_eq!(p.rows.len(), 3);
-
-        p.toggle_folder_at(0, &defs);
-        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
+        // Default collapsed: only `Infra` header visible.
         assert_eq!(p.rows.len(), 1);
 
-        p.toggle_folder_at(0, &defs);
+        // Toggle → expand.
+        p.toggle_folder_at(0);
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
-        assert_eq!(p.rows.len(), 3);
+        assert_eq!(p.rows.len(), 2);
+
+        // Toggle → collapse again.
+        p.toggle_folder_at(0);
+        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
+        assert_eq!(p.rows.len(), 1);
+    }
+
+    #[test]
+    fn find_parent_folder_index_walks_to_immediate_parent() {
+        let defs = vec![make_definition(1, "Leaf", "\\A\\B")];
+        let mut p = Pipelines::default();
+        p.expanded_folders.insert("\\A".to_string());
+        p.expanded_folders.insert("\\A\\B".to_string());
+        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
+        // rows: [A (d0), B (d1), Leaf (d2)].
+        assert_eq!(p.find_parent_folder_index(2), Some(1));
+        assert_eq!(p.find_parent_folder_index(1), Some(0));
+        assert_eq!(p.find_parent_folder_index(0), None);
     }
 
     #[test]

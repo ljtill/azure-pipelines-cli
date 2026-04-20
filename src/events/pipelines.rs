@@ -30,14 +30,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 fn handle_left(app: &mut App) -> Action {
     let idx = app.pipelines.nav.index();
     if app.pipelines.is_folder_header(idx) {
-        if app.pipelines.collapse_folder_at(idx, &app.data.definitions) {
+        if app.pipelines.collapse_folder_at(idx) {
             app.rebuild_pipelines();
         }
     } else if let Some(folder_idx) = app.pipelines.find_parent_folder_index(idx) {
-        if app
-            .pipelines
-            .collapse_folder_at(folder_idx, &app.data.definitions)
-        {
+        if app.pipelines.collapse_folder_at(folder_idx) {
             app.rebuild_pipelines();
         }
         app.pipelines.nav.set_index(folder_idx);
@@ -49,7 +46,7 @@ fn handle_left(app: &mut App) -> Action {
 fn handle_right(app: &mut App) -> Action {
     let idx = app.pipelines.nav.index();
     if app.pipelines.is_folder_header(idx) {
-        if app.pipelines.expand_folder_at(idx, &app.data.definitions) {
+        if app.pipelines.expand_folder_at(idx) {
             app.rebuild_pipelines();
         }
         Action::None
@@ -62,7 +59,7 @@ fn handle_right(app: &mut App) -> Action {
 fn handle_enter(app: &mut App) -> Action {
     let idx = app.pipelines.nav.index();
     if app.pipelines.is_folder_header(idx) {
-        if app.pipelines.toggle_folder_at(idx, &app.data.definitions) {
+        if app.pipelines.toggle_folder_at(idx) {
             app.rebuild_pipelines();
         }
         Action::None

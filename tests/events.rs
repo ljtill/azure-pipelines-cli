@@ -563,9 +563,9 @@ fn home_and_end_keys() {
     ];
     app.rebuild_pipelines();
 
-    // Rows: folder header (0) + 3 pipelines (1,2,3) = 4 rows.
+    // Rows: 3 root-level pipelines (no "Root" header) = 3 rows.
     handle_key(&mut app, key(KeyCode::End));
-    assert_eq!(app.pipelines.nav.index(), 3);
+    assert_eq!(app.pipelines.nav.index(), 2);
 
     handle_key(&mut app, key(KeyCode::Home));
     assert_eq!(app.pipelines.nav.index(), 0);
