@@ -22,7 +22,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 app.navigate_to_work_item_detail(id);
                 Action::FetchWorkItemDetail { work_item_id: id }
             }),
-        KeyCode::Char('P') => {
+        KeyCode::Char('p') => {
             let selected = app
                 .my_work_items
                 .list_for(app.view)

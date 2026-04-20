@@ -51,7 +51,7 @@ impl Component for Help {
                 "  /              Search / filter (Boards / Pipelines / Active Runs / Pull Requests)",
             ),
             Line::from("  Space          Select / deselect (Pipelines / Active Runs)"),
-            Line::from("  p              Pin / unpin pipeline (Pipelines)"),
+            Line::from("  p              Pin / unpin (Pipelines / Boards / My Work Items)"),
             Line::from("  f              Follow latest active task (Log Viewer)"),
             Line::from("  Q              Queue pipeline run"),
             Line::from("  R              Retry failed stage (Log Viewer)"),

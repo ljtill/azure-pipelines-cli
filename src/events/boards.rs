@@ -37,7 +37,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 Action::None
             }
         }
-        KeyCode::Char('P') => app
+        KeyCode::Char('p') => app
             .boards
             .selected_work_item_id()
             .map_or(Action::None, |id| {
