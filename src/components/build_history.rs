@@ -162,7 +162,7 @@ impl BuildHistory {
             )])));
         }
 
-        let list = List::new(items);
+        let list = List::new(items).scroll_padding(3);
 
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));

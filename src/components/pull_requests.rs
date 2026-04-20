@@ -159,7 +159,7 @@ impl PullRequests {
             })
             .collect();
 
-        let list = List::new(items);
+        let list = List::new(items).scroll_padding(3);
         let mut state = ListState::default();
         state.select(Some(self.nav.index()));
         f.render_stateful_widget(list, list_area, &mut state);

@@ -226,7 +226,7 @@ impl MyWorkItems {
 
         let mut state = ListState::default();
         state.select(Some(list.nav.index()));
-        f.render_stateful_widget(List::new(items), list_area, &mut state);
+        f.render_stateful_widget(List::new(items).scroll_padding(3), list_area, &mut state);
     }
 }
 
