@@ -6,14 +6,16 @@ Built with [ratatui](https://ratatui.rs/) and designed to run inside any modern 
 
 ## Features
 
-- **Area-based navigation** — Move between Dashboard, Boards, Repos, and Pipelines from a consistent top bar
-- **Dashboard** — Cross-service landing view with pinned pipelines and personal pull requests
-- **Boards Backlog** — Read-only backlog tree with collapse/expand, search, refresh, and open-in-browser support
+- **Area-based navigation** — Move between Dashboard, Boards, Repos, and Pipelines from a consistent top bar; `Tab` / `Shift+Tab` cycles views within the current area
+- **Dashboard** — Cross-service landing view with pinned pipelines, pinned work items, and personal pull requests
+- **Boards** — Read-only backlog tree plus personal "Assigned to me" and "Created by me" work item lists, with drill-in work item detail view
+- **Repos / Pull Requests** — "Created by me", "Assigned to me", and "All active" PR lists, with drill-in pull request detail view
 - **Pipelines Definitions view** — Flat, searchable list of all pipeline definitions
 - **Active Runs view** — All currently running builds across the fleet
-- **Build History** — Drill into a pipeline's recent builds
+- **Build History** — Drill into a pipeline's recent builds; delete retention leases to allow pruning
 - **Log Viewer** — Drill into a build to view live log output with collapsible timeline tree
-- **Search / filter** — Incremental search in Boards, Pipelines, Active Runs, and Pull Requests views
+- **Search / filter** — Incremental search in Boards, My Work Items, Pipelines, Active Runs, and Pull Requests views
+- **Pin** — Pin pipelines and work items so they surface on the Dashboard
 - **Queue pipeline** — Trigger a new pipeline run directly from the TUI
 - **Cancel build** — Stop a running build; multi-select batch cancel in Active Runs
 - **Retry stage** — Re-run a failed stage without re-queuing the entire pipeline
@@ -113,14 +115,16 @@ devops update
 | ← / q / Esc  | Go back / collapse (tree views)                       |
 | Home / End   | Jump to first / last item                             |
 | 1 / 2 / 3 / 4 | Switch between Dashboard / Boards / Repos / Pipelines areas |
-| [/]          | Switch views within the current area                 |
-| /            | Search / filter (Boards / Pipelines / Active Runs / Pull Requests) |
+| Tab / Shift+Tab | Cycle views within the current area                 |
+| /            | Search / filter (Boards / My Work Items / Pipelines / Active Runs / Pull Requests) |
 | Space        | Select / deselect build (Active Runs)                 |
+| p            | Pin / unpin (Pipelines / Boards / My Work Items)      |
 | Q            | Queue pipeline run                                    |
 | R            | Retry failed stage (Log Viewer)                       |
 | A            | Approve check (Log Viewer, on checkpoint row)         |
 | D            | Reject check (Log Viewer, on checkpoint row)          |
 | c            | Cancel build (Active Runs / Build History / Log Viewer) |
+| d            | Delete retention leases (Build History)               |
 | o            | Open in browser                                       |
 | r            | Force data refresh                                    |
 | f            | Follow latest active task (Log Viewer)                |
