@@ -47,7 +47,7 @@ impl WorkItemDetail {
                 Span::styled("  ·  ", theme::MUTED),
                 Span::styled(wi.state_label(), theme::TEXT),
                 Span::styled(
-                    format!("  ·  {}", wi.assigned_to_display().unwrap_or("Unassigned"),),
+                    format!("  ·  {}", wi.assigned_to_display().unwrap_or("Unassigned")),
                     theme::MUTED,
                 ),
             ])
@@ -377,10 +377,10 @@ pub fn strip_html(raw: &str) -> String {
                 .next()
                 .unwrap_or("");
             match name {
-                "br" | "p" | "/p" | "div" | "/div" | "li" | "/li" | "tr" | "/tr" => {
-                    if !out.ends_with('\n') {
-                        out.push('\n');
-                    }
+                "br" | "p" | "/p" | "div" | "/div" | "li" | "/li" | "tr" | "/tr"
+                    if !out.ends_with('\n') =>
+                {
+                    out.push('\n');
                 }
                 _ => {}
             }

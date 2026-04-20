@@ -1190,8 +1190,8 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
     #[test]
     fn versions_dir_is_under_home() {
         let dir = versions_dir().unwrap();
-        let dir_str = dir.to_string_lossy();
-        assert!(dir_str.contains(".local/share/devops/versions"));
+        assert!(dir.ends_with("devops/versions"));
+        assert!(dir.components().any(|c| c.as_os_str() == ".local"));
     }
 
     #[test]

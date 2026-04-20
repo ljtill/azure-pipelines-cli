@@ -210,7 +210,7 @@ async fn dispatch_quit_action_stops_app() {
     let mut last_fetch = std::time::Instant::now();
     handle_action(&mut app, &client, &tx, Action::Quit, &mut last_fetch);
 
-    assert!(!app.running, "Action::Quit must flip App::running to false",);
+    assert!(!app.running, "Action::Quit must flip App::running to false");
 
     rx.close();
     while rx.try_recv().is_ok() {}
