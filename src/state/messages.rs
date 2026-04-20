@@ -98,6 +98,13 @@ pub enum AppMessage {
     DashboardPullRequestsFailed {
         message: String,
     },
+    DashboardWorkItems {
+        work_items: Vec<WorkItem>,
+        assigned_scoped_by_id: bool,
+    },
+    DashboardWorkItemsFailed {
+        message: String,
+    },
     UserIdentityFailed {
         message: String,
     },

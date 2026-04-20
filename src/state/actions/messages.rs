@@ -6,20 +6,25 @@ use tokio::sync::mpsc;
 
 use crate::client::http::AdoClient;
 use crate::client::models;
-use crate::client::models::{IdentityRef, PullRequest};
+use crate::client::models::{IdentityRef, PullRequest, WorkItem};
 use crate::components::log_viewer::ActiveTaskResult;
 
 use super::super::messages::{AppMessage, RefreshSource};
 use super::super::notifications::NotificationLevel;
-use super::super::{App, DashboardPullRequestsState, ExactUserIdentity, TimelineRow, View};
+use super::super::{
+    App, DashboardPullRequestsState, DashboardWorkItemsState, ExactUserIdentity, TimelineRow, View,
+};
 use super::spawn::{
     spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_boards,
-    spawn_fetch_dashboard_pull_requests, spawn_fetch_pull_requests, spawn_log_fetch,
-    spawn_timeline_fetch,
+    spawn_fetch_dashboard_pull_requests, spawn_fetch_dashboard_work_items,
+    spawn_fetch_pull_requests, spawn_log_fetch, spawn_timeline_fetch,
 };
 
 const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
     "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
+
+const DASHBOARD_WORK_ITEMS_IDENTITY_UNAVAILABLE_MESSAGE: &str =
+    "Unable to verify your Azure DevOps identity — My Work Items unavailable";
 
 fn exact_identity_matches(author: &IdentityRef, user: &ExactUserIdentity) -> bool {
     for (author_value, user_value) in [
@@ -75,6 +80,44 @@ fn dashboard_pull_request_state(
         DashboardPullRequestsState::EmptyVerified
     } else {
         DashboardPullRequestsState::Ready(filtered)
+    }
+}
+
+fn dashboard_work_item_state(
+    work_items: Vec<WorkItem>,
+    current_user: &ExactUserIdentity,
+    assigned_scoped_by_id: bool,
+) -> DashboardWorkItemsState {
+    if !current_user.is_known() {
+        return DashboardWorkItemsState::Unavailable(
+            DASHBOARD_WORK_ITEMS_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
+        );
+    }
+
+    let filtered: Vec<WorkItem> = work_items
+        .into_iter()
+        .filter(|wi| match wi.fields.assigned_to.as_ref() {
+            Some(crate::client::models::AssignedToField::Identity(identity)) => {
+                if assigned_scoped_by_id {
+                    identity.id.as_deref().is_none_or(|assigned_id| {
+                        current_user
+                            .id
+                            .as_deref()
+                            .is_some_and(|user_id| assigned_id.eq_ignore_ascii_case(user_id))
+                    })
+                } else {
+                    exact_identity_matches(identity, current_user)
+                }
+            }
+            // Non-identity AssignedTo (e.g. bare display-name string) cannot be verified.
+            _ => false,
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        DashboardWorkItemsState::EmptyVerified
+    } else {
+        DashboardWorkItemsState::Ready(filtered)
     }
 }
 
@@ -594,6 +637,8 @@ pub fn handle_message(
             app.current_user = identity;
             // Re-fetch dashboard PRs now that we can filter by creator.
             spawn_fetch_dashboard_pull_requests(app, client, tx);
+            // Re-fetch dashboard work items now that we can filter by assignee.
+            spawn_fetch_dashboard_work_items(app, client, tx);
             // Re-fetch PR view data so filtered modes use the resolved identity.
             if app.view.is_pull_requests() {
                 let generation = app.pull_requests.next_generation();
@@ -672,11 +717,27 @@ pub fn handle_message(
             app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message);
             app.rebuild_dashboard();
         }
+        AppMessage::DashboardWorkItems {
+            work_items,
+            assigned_scoped_by_id,
+        } => {
+            tracing::info!(count = work_items.len(), "dashboard work items loaded");
+            app.dashboard_work_items =
+                dashboard_work_item_state(work_items, &app.current_user, assigned_scoped_by_id);
+            app.rebuild_dashboard();
+        }
+        AppMessage::DashboardWorkItemsFailed { message } => {
+            tracing::warn!(%message, "dashboard work items fetch failed");
+            app.notifications.error_dedup(message.clone());
+            app.dashboard_work_items = DashboardWorkItemsState::Unavailable(message);
+            app.rebuild_dashboard();
+        }
         AppMessage::UserIdentityFailed { message } => {
             tracing::warn!(%message, "user identity resolution failed");
             app.notifications.error_dedup(message.clone());
             app.current_user = ExactUserIdentity::default();
-            app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message);
+            app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message.clone());
+            app.dashboard_work_items = DashboardWorkItemsState::Unavailable(message);
             app.rebuild_dashboard();
         }
     }

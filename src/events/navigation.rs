@@ -21,6 +21,11 @@ pub fn handle_open_in_browser(app: &App) -> Action {
                         }
                     })
                 })
+                .or_else(|| {
+                    app.dashboard
+                        .work_item_at(idx)
+                        .map(|wi| app.endpoints_web_work_item(wi.id))
+                })
         }
         View::Pipelines => app
             .pipelines

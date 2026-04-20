@@ -10,11 +10,12 @@ use crate::client::http::AdoClient;
 use crate::client::models::{BacklogLevelConfiguration, ProjectTeam, WorkItem};
 
 use super::super::messages::{AppMessage, RefreshSource};
-use super::super::{App, DashboardPullRequestsState, ExactUserIdentity};
+use super::super::{App, DashboardPullRequestsState, DashboardWorkItemsState, ExactUserIdentity};
 
 const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
     "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
 const DASHBOARD_PULL_REQUESTS_UNAVAILABLE_MESSAGE: &str = "Failed to load My Pull Requests";
+const DASHBOARD_WORK_ITEMS_UNAVAILABLE_MESSAGE: &str = "Failed to load My Work Items";
 const BOARDS_FETCH_FAILED_MESSAGE: &str = "Failed to load backlog";
 const MY_WORK_ITEMS_FETCH_FAILED_MESSAGE: &str = "Failed to load work items";
 const BOARD_FIELDS: &[&str] = &[
@@ -648,6 +649,66 @@ pub fn spawn_fetch_dashboard_pull_requests(
                     tracing::debug!(error = %e, "dashboard PR fetch failed (non-fatal)");
                     AppMessage::DashboardPullRequestsFailed {
                         message: format!("{DASHBOARD_PULL_REQUESTS_UNAVAILABLE_MESSAGE}: {e}"),
+                    }
+                }
+            };
+            let _ = tx.send(msg).await;
+        }
+        .instrument(span),
+    );
+}
+
+/// Returns the WIQL used to fetch dashboard work items (assigned to the current
+/// user, active states, ordered by most recently changed).
+pub(crate) fn build_dashboard_work_items_wiql(project: &str) -> String {
+    let escaped_project = project.replace('\'', "''");
+    format!(
+        "SELECT [System.Id] FROM WorkItems \
+         WHERE [System.AssignedTo] = @Me \
+         AND [System.TeamProject] = '{escaped_project}' \
+         AND [System.State] NOT IN ('Closed', 'Removed', 'Done', 'Cut') \
+         ORDER BY [System.ChangedDate] DESC"
+    )
+}
+
+/// Spawns an async task that fetches dashboard work items once exact identity is known.
+///
+/// If identity is not yet available, retries identity resolution instead of
+/// fetching unverifiable assignee data.
+pub fn spawn_fetch_dashboard_work_items(
+    app: &mut App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+) {
+    if !app.current_user.is_known() {
+        if matches!(app.dashboard_work_items, DashboardWorkItemsState::Loading) {
+            return;
+        }
+        app.dashboard_work_items = DashboardWorkItemsState::Loading;
+        app.rebuild_dashboard();
+        spawn_fetch_user_identity(client, tx);
+        return;
+    }
+
+    app.dashboard_work_items = DashboardWorkItemsState::Loading;
+    app.rebuild_dashboard();
+
+    let wiql = build_dashboard_work_items_wiql(&app.current_config().azure_devops.project);
+    let assigned_scoped_by_id = app.current_user.id.is_some();
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::info_span!("fetch_dashboard_work_items");
+    tokio::spawn(
+        async move {
+            let msg = match load_my_work_items(&client, &wiql).await {
+                Ok(work_items) => AppMessage::DashboardWorkItems {
+                    work_items,
+                    assigned_scoped_by_id,
+                },
+                Err(e) => {
+                    tracing::debug!(error = %e, "dashboard work items fetch failed (non-fatal)");
+                    AppMessage::DashboardWorkItemsFailed {
+                        message: format!("{DASHBOARD_WORK_ITEMS_UNAVAILABLE_MESSAGE}: {e}"),
                     }
                 }
             };

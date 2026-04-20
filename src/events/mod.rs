@@ -55,6 +55,7 @@ pub enum Action {
         work_item_id: u32,
     },
     FetchDashboardPullRequests,
+    FetchDashboardWorkItems,
     FetchBoards,
     FetchMyWorkItems,
 }

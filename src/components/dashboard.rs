@@ -10,8 +10,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use super::Component;
-use crate::client::models::{Build, PipelineDefinition, PullRequest};
-use crate::render::columns::{BuildRowOpts, build_row, pull_request_row};
+use crate::client::models::{Build, PipelineDefinition, PullRequest, WorkItem};
+use crate::render::columns::{BuildRowOpts, build_row, pull_request_row, work_item_row};
 use crate::render::helpers::{
     build_elapsed, draw_view_frame, effective_status_icon, effective_status_label, pr_status_icon,
     row_style, truncate,
@@ -19,7 +19,7 @@ use crate::render::helpers::{
 use crate::render::table::resolve_widths;
 use crate::render::theme;
 use crate::state::nav::ListNav;
-use crate::state::{App, DashboardPullRequestsState};
+use crate::state::{App, DashboardPullRequestsState, DashboardWorkItemsState};
 
 /// Represents a row in the dashboard view.
 #[derive(Debug, Clone)]
@@ -30,6 +30,9 @@ pub enum DashboardRow {
     },
     DashboardPullRequest {
         pull_request: Box<PullRequest>,
+    },
+    DashboardWorkItem {
+        work_item: Box<WorkItem>,
     },
     EmptyHint {
         message: String,
@@ -52,13 +55,14 @@ pub struct Dashboard {
 }
 
 impl Dashboard {
-    /// Rebuilds the dashboard from pinned pipeline IDs, definitions, latest builds, and PRs.
+    /// Rebuilds the dashboard from pinned pipeline IDs, definitions, latest builds, PRs, and work items.
     pub fn rebuild(
         &mut self,
         definitions: &[PipelineDefinition],
         latest_builds_by_def: &BTreeMap<u32, Build>,
         pinned_ids: &[u32],
         dashboard_prs: &DashboardPullRequestsState,
+        dashboard_wis: &DashboardWorkItemsState,
     ) {
         let mut rows = Vec::new();
 
@@ -117,6 +121,32 @@ impl Dashboard {
             }
         }
 
+        rows.push(DashboardRow::SectionHeader {
+            label: "Work Items".to_string(),
+        });
+
+        // --- My Work Items section ---
+        match dashboard_wis {
+            DashboardWorkItemsState::Loading => rows.push(DashboardRow::EmptyHint {
+                message: "Loading work items...".to_string(),
+            }),
+            DashboardWorkItemsState::Unavailable(message) => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: message.clone(),
+                });
+            }
+            DashboardWorkItemsState::EmptyVerified => rows.push(DashboardRow::EmptyHint {
+                message: "No work items found".to_string(),
+            }),
+            DashboardWorkItemsState::Ready(wis) => {
+                for wi in wis.iter().take(10) {
+                    rows.push(DashboardRow::DashboardWorkItem {
+                        work_item: Box::new(wi.clone()),
+                    });
+                }
+            }
+        }
+
         self.rows = rows;
         self.nav.set_len(self.rows.len());
         if self.is_separator(self.nav.index()) {
@@ -136,6 +166,14 @@ impl Dashboard {
     pub fn pull_request_at(&self, index: usize) -> Option<&PullRequest> {
         match self.rows.get(index) {
             Some(DashboardRow::DashboardPullRequest { pull_request }) => Some(pull_request),
+            _ => None,
+        }
+    }
+
+    /// Returns the work item at the given row index, if it is a dashboard work item.
+    pub fn work_item_at(&self, index: usize) -> Option<&WorkItem> {
+        match self.rows.get(index) {
+            Some(DashboardRow::DashboardWorkItem { work_item }) => Some(work_item),
             _ => None,
         }
     }
@@ -183,6 +221,11 @@ impl Dashboard {
             .collect();
         let pr_schema = pull_request_row(crate::render::columns::PullRequestRowOpts::default());
         let pr_widths: Vec<usize> = resolve_widths(&pr_schema.columns, content_area.width)
+            .iter()
+            .map(|&w| w as usize)
+            .collect();
+        let wi_schema = work_item_row();
+        let wi_widths: Vec<usize> = resolve_widths(&wi_schema.columns, content_area.width)
             .iter()
             .map(|&w| w as usize)
             .collect();
@@ -332,6 +375,58 @@ impl Dashboard {
                         ]))
                         .style(sel_style)
                     }
+
+                    DashboardRow::DashboardWorkItem { work_item } => {
+                        let w_id = wi_widths[wi_schema.id];
+                        let w_type = wi_widths[wi_schema.work_item_type];
+                        let w_title = wi_widths[wi_schema.title];
+                        let w_state = wi_widths[wi_schema.state];
+                        let w_assigned = wi_widths[wi_schema.assigned];
+                        let w_iter = wi_widths[wi_schema.iteration];
+
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                format!("#{:<w$}", work_item.id, w = w_id.saturating_sub(1)),
+                                theme::MUTED,
+                            ),
+                            Span::styled(
+                                format!(
+                                    "{:<w_type$}",
+                                    truncate(work_item.work_item_type(), w_type)
+                                ),
+                                theme::BRANCH,
+                            ),
+                            Span::styled(
+                                format!("{:<w_title$}", truncate(work_item.title(), w_title)),
+                                theme::TEXT,
+                            ),
+                            Span::styled(
+                                format!("{:<w_state$}", truncate(work_item.state_label(), w_state)),
+                                theme::MUTED,
+                            ),
+                            Span::styled(
+                                format!(
+                                    "{:<w_assigned$}",
+                                    truncate(
+                                        work_item.assigned_to_display().unwrap_or("—"),
+                                        w_assigned
+                                    )
+                                ),
+                                theme::MUTED,
+                            ),
+                            Span::styled(
+                                format!(
+                                    "{:<w_iter$}",
+                                    truncate(
+                                        work_item.fields.iteration_path.as_deref().unwrap_or(""),
+                                        w_iter
+                                    )
+                                ),
+                                theme::MUTED,
+                            ),
+                        ]))
+                        .style(sel_style)
+                    }
                 }
             })
             .collect();
@@ -374,9 +469,10 @@ mod tests {
             &BTreeMap::new(),
             &[1, 3],
             &DashboardPullRequestsState::EmptyVerified,
+            &DashboardWorkItemsState::EmptyVerified,
         );
-        // Header + 2 pinned + Header + EmptyHint(no PRs) = 5
-        assert_eq!(d.rows.len(), 5);
+        // Header + 2 pinned + Header + EmptyHint(no PRs) + Header + EmptyHint(no WIs) = 7
+        assert_eq!(d.rows.len(), 7);
         assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
         assert!(
             matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
@@ -397,9 +493,10 @@ mod tests {
             &BTreeMap::new(),
             &[],
             &DashboardPullRequestsState::EmptyVerified,
+            &DashboardWorkItemsState::EmptyVerified,
         );
-        // Header + EmptyHint(no pins) + Header + EmptyHint(no PRs) = 4
-        assert_eq!(d.rows.len(), 4);
+        // Header + EmptyHint(no pins) + Header + EmptyHint(no PRs) + Header + EmptyHint(no WIs) = 6
+        assert_eq!(d.rows.len(), 6);
         assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
         assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
         assert!(matches!(&d.rows[2], DashboardRow::SectionHeader { .. }));
@@ -419,9 +516,10 @@ mod tests {
             &BTreeMap::new(),
             &[],
             &DashboardPullRequestsState::Ready(prs),
+            &DashboardWorkItemsState::EmptyVerified,
         );
-        // Header + EmptyHint(no pins) + Header + 2 PRs = 5
-        assert_eq!(d.rows.len(), 5);
+        // Header + EmptyHint(no pins) + Header + 2 PRs + Header + EmptyHint(no WIs) = 7
+        assert_eq!(d.rows.len(), 7);
         assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
         assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
         assert!(matches!(&d.rows[2], DashboardRow::SectionHeader { .. }));
@@ -440,6 +538,7 @@ mod tests {
             &BTreeMap::new(),
             &[1],
             &DashboardPullRequestsState::EmptyVerified,
+            &DashboardWorkItemsState::EmptyVerified,
         );
         assert_eq!(d.pinned_definition_at(1).unwrap().id, 1);
         assert!(d.pinned_definition_at(0).is_none()); // SectionHeader
@@ -455,6 +554,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             &DashboardPullRequestsState::Ready(prs),
+            &DashboardWorkItemsState::EmptyVerified,
         );
         // Row 0 = Header, 1 = EmptyHint(no pins), 2 = Header, 3 = PR.
         assert!(d.pull_request_at(0).is_none());
@@ -474,6 +574,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             &DashboardPullRequestsState::Ready(prs),
+            &DashboardWorkItemsState::EmptyVerified,
         );
         let pr_count = d
             .rows
@@ -491,6 +592,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             &DashboardPullRequestsState::Loading,
+            &DashboardWorkItemsState::EmptyVerified,
         );
         assert!(matches!(
             &d.rows[3],
@@ -506,6 +608,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             &DashboardPullRequestsState::Unavailable("Unavailable".to_string()),
+            &DashboardWorkItemsState::EmptyVerified,
         );
         assert!(matches!(
             &d.rows[3],

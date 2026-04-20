@@ -47,6 +47,7 @@ use chrono::{DateTime, Utc};
 use crate::client::endpoints::Endpoints;
 use crate::client::models::{
     Approval, Build, BuildResult, BuildStatus, PipelineDefinition, PullRequest, RetentionLease,
+    WorkItem,
 };
 
 use notifications::Notifications;
@@ -294,6 +295,16 @@ pub enum DashboardPullRequestsState {
     Unavailable(String),
 }
 
+/// Represents the dashboard work items section state.
+#[derive(Debug, Clone, Default)]
+pub enum DashboardWorkItemsState {
+    #[default]
+    Loading,
+    Ready(Vec<WorkItem>),
+    EmptyVerified,
+    Unavailable(String),
+}
+
 /// Holds the central application state, including views, data, and configuration.
 pub struct App {
     pub service: Service,
@@ -335,6 +346,7 @@ pub struct App {
     pub pull_request_detail: crate::components::pull_request_detail::PullRequestDetail,
     pub current_user: ExactUserIdentity,
     pub dashboard_pull_requests: DashboardPullRequestsState,
+    pub dashboard_work_items: DashboardWorkItemsState,
 
     // --- Boards ---
     pub boards: crate::components::boards::Boards,
@@ -418,6 +430,7 @@ impl App {
             ),
             current_user: ExactUserIdentity::default(),
             dashboard_pull_requests: DashboardPullRequestsState::Loading,
+            dashboard_work_items: DashboardWorkItemsState::Loading,
             boards: crate::components::boards::Boards::default(),
             my_work_items: crate::components::my_work_items::MyWorkItems::default(),
             work_item_detail: crate::components::work_item_detail::WorkItemDetail::default(),
@@ -467,6 +480,7 @@ impl App {
             &self.data.latest_builds_by_def,
             &self.filters.pinned_definition_ids,
             &self.dashboard_pull_requests,
+            &self.dashboard_work_items,
         );
     }
 

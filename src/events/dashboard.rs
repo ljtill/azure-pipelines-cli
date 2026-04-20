@@ -35,6 +35,11 @@ fn handle_enter_dashboard(app: &mut App) -> Action {
             app.navigate_to_pr_detail(&pull_request);
             Action::FetchPullRequestDetail { repo_id, pr_id }
         }
+        Some(DashboardRow::DashboardWorkItem { work_item }) => {
+            let work_item_id = work_item.id;
+            app.navigate_to_work_item_detail(work_item_id);
+            Action::FetchWorkItemDetail { work_item_id }
+        }
         _ => Action::None,
     }
 }
