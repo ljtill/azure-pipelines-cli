@@ -686,6 +686,39 @@ pub fn spawn_fetch_pr_detail(
     );
 }
 
+/// Spawns an async task that fetches a single work item (with relations) and
+/// its comments in parallel.
+pub fn spawn_fetch_work_item_detail(
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    work_item_id: u32,
+) {
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::info_span!("fetch_work_item_detail", work_item_id);
+    tokio::spawn(
+        async move {
+            let (wi_result, comments_result) = tokio::join!(
+                client.get_work_item_detail(work_item_id),
+                client.list_work_item_comments(work_item_id),
+            );
+            let msg = match (wi_result, comments_result) {
+                (Ok(work_item), Ok(comments)) => AppMessage::WorkItemDetailLoaded {
+                    work_item_id,
+                    work_item: Box::new(work_item),
+                    comments,
+                },
+                (Err(e), _) | (_, Err(e)) => AppMessage::WorkItemDetailFailed {
+                    work_item_id,
+                    message: format!("Fetch work item detail: {e}"),
+                },
+            };
+            let _ = tx.send(msg).await;
+        }
+        .instrument(span),
+    );
+}
+
 /// Spawns a one-shot task to resolve the current user's identity from the ADO Connection Data API.
 pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessage>) {
     let client = client.clone();

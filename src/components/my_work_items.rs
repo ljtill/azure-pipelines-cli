@@ -273,6 +273,7 @@ mod tests {
                 parent: None,
                 board_column: None,
                 stack_rank: None,
+                ..Default::default()
             },
             relations: vec![],
             url: None,

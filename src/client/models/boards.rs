@@ -188,6 +188,36 @@ pub struct WorkItemFields {
     pub board_column: Option<String>,
     #[serde(rename = "Microsoft.VSTS.Common.StackRank")]
     pub stack_rank: Option<f64>,
+
+    // --- Detail fields (populated by the detail view) ---
+    #[serde(rename = "System.Description")]
+    pub description: Option<String>,
+    #[serde(rename = "Microsoft.VSTS.Common.AcceptanceCriteria")]
+    pub acceptance_criteria: Option<String>,
+    #[serde(rename = "Microsoft.VSTS.TCM.ReproSteps")]
+    pub repro_steps: Option<String>,
+    #[serde(rename = "Microsoft.VSTS.Common.Priority")]
+    pub priority: Option<i32>,
+    #[serde(rename = "Microsoft.VSTS.Common.Severity")]
+    pub severity: Option<String>,
+    #[serde(rename = "Microsoft.VSTS.Common.ValueArea")]
+    pub value_area: Option<String>,
+    #[serde(rename = "Microsoft.VSTS.Scheduling.StoryPoints")]
+    pub story_points: Option<f64>,
+    #[serde(rename = "Microsoft.VSTS.Scheduling.Effort")]
+    pub effort: Option<f64>,
+    #[serde(rename = "System.Tags")]
+    pub tags: Option<String>,
+    #[serde(rename = "System.Reason")]
+    pub reason: Option<String>,
+    #[serde(rename = "System.CreatedBy")]
+    pub created_by: Option<AssignedToField>,
+    #[serde(rename = "System.CreatedDate")]
+    pub created_date: Option<String>,
+    #[serde(rename = "System.ChangedBy")]
+    pub changed_by: Option<AssignedToField>,
+    #[serde(rename = "System.ChangedDate")]
+    pub changed_date: Option<String>,
 }
 
 /// Represents the assigned-to field, which may be an identity object or a string.
@@ -215,6 +245,33 @@ pub struct WorkItemRelation {
     pub url: String,
     #[serde(default)]
     pub attributes: HashMap<String, serde_json::Value>,
+}
+
+/// Represents a comment on a work item returned by the `comments` endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkItemComment {
+    pub id: u32,
+    #[serde(default)]
+    pub text: String,
+    #[serde(rename = "createdBy")]
+    pub created_by: Option<IdentityRef>,
+    #[serde(rename = "createdDate")]
+    pub created_date: Option<String>,
+    #[serde(rename = "modifiedBy")]
+    pub modified_by: Option<IdentityRef>,
+    #[serde(rename = "modifiedDate")]
+    pub modified_date: Option<String>,
+}
+
+/// Represents the envelope returned by the work item comments API.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkItemCommentList {
+    #[serde(default)]
+    pub comments: Vec<WorkItemComment>,
+    #[serde(rename = "totalCount", default)]
+    pub total_count: u32,
+    #[serde(rename = "continuationToken")]
+    pub continuation_token: Option<String>,
 }
 
 impl WorkItem {

@@ -52,6 +52,15 @@ impl Endpoints {
             .unwrap_or((self.web_base_url.as_str(), ""));
         format!("{org_base}/_apis/wit/workitemsbatch?api-version={API_VERSION}")
     }
+
+    /// Constructs the URL for listing comments on a work item.
+    /// Uses the 7.1-preview.3 comments endpoint.
+    pub fn work_item_comments(&self, work_item_id: u32) -> String {
+        format!(
+            "{}/wit/workItems/{work_item_id}/comments?api-version=7.1-preview.3",
+            self.base_url
+        )
+    }
 }
 
 #[cfg(test)]
@@ -109,6 +118,14 @@ mod tests {
         assert_eq!(
             ep().work_items_batch(),
             "https://dev.azure.com/my%20org/_apis/wit/workitemsbatch?api-version=7.1"
+        );
+    }
+
+    #[test]
+    fn work_item_comments_url_uses_preview_api_version() {
+        assert_eq!(
+            ep().work_item_comments(42),
+            format!("{BASE}/wit/workItems/42/comments?api-version=7.1-preview.3")
         );
     }
 }

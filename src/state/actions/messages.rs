@@ -620,6 +620,40 @@ pub fn handle_message(
             let section_count = app.pull_request_detail.section_count();
             app.pull_request_detail.nav.set_len(section_count);
         }
+        AppMessage::WorkItemDetailLoaded {
+            work_item_id,
+            work_item,
+            comments,
+        } => {
+            if app.work_item_detail.work_item_id == Some(work_item_id) {
+                tracing::info!(
+                    work_item_id,
+                    comments = comments.len(),
+                    "work item detail loaded"
+                );
+                app.work_item_detail.work_item = Some(*work_item);
+                app.work_item_detail.comments = comments;
+                app.work_item_detail.loading = false;
+                let section_count = app.work_item_detail.section_count();
+                app.work_item_detail.nav.set_len(section_count);
+            } else {
+                tracing::debug!(
+                    work_item_id,
+                    pending = ?app.work_item_detail.work_item_id,
+                    "ignoring stale work item detail response"
+                );
+            }
+        }
+        AppMessage::WorkItemDetailFailed {
+            work_item_id,
+            message,
+        } => {
+            if app.work_item_detail.work_item_id == Some(work_item_id) {
+                tracing::warn!(work_item_id, %message, "work item detail fetch failed");
+                app.work_item_detail.loading = false;
+            }
+            app.notifications.error(message);
+        }
         AppMessage::DashboardPullRequests {
             pull_requests,
             creator_scoped_by_id,
@@ -698,6 +732,7 @@ mod tests {
                 parent: parent_id,
                 board_column: None,
                 stack_rank: Some(stack_rank),
+                ..Default::default()
             },
             relations: child_ids
                 .into_iter()

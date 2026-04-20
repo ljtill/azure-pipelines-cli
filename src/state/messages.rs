@@ -2,7 +2,7 @@
 
 use crate::client::models::{
     Approval, BacklogLevelConfiguration, Build, BuildTimeline, PipelineDefinition, PullRequest,
-    PullRequestThread, RetentionLease, WorkItem,
+    PullRequestThread, RetentionLease, WorkItem, WorkItemComment,
 };
 
 use super::ExactUserIdentity;
@@ -81,6 +81,15 @@ pub enum AppMessage {
     PullRequestDetailLoaded {
         pull_request: PullRequest,
         threads: Vec<PullRequestThread>,
+    },
+    WorkItemDetailLoaded {
+        work_item_id: u32,
+        work_item: Box<WorkItem>,
+        comments: Vec<WorkItemComment>,
+    },
+    WorkItemDetailFailed {
+        work_item_id: u32,
+        message: String,
     },
     DashboardPullRequests {
         pull_requests: Vec<PullRequest>,

@@ -17,6 +17,7 @@ pub mod pipelines;
 pub mod pull_request_detail;
 pub mod pull_requests;
 pub mod settings;
+pub mod work_item_detail;
 
 /// Defines a self-contained UI component following the
 /// [ratatui component architecture](https://ratatui.rs/concepts/application-patterns/component-architecture/).

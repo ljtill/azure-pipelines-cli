@@ -889,11 +889,9 @@ fn boards_tree_keys_toggle_rows_and_select_parent() {
     app.boards.collapsed = HashSet::new();
     app.boards.rebuild("");
 
-    let action = handle_key(&mut app, key(KeyCode::Enter));
-    assert!(matches!(action, Action::None));
-    assert_eq!(app.boards.rows.len(), 1);
-    assert!(app.boards.rows[0].collapsed);
-
+    // Right expands the root row, Left on a child selects the parent. Enter
+    // no longer toggles rows — it drills into the detail view (covered by its
+    // own test).
     let action = handle_key(&mut app, key(KeyCode::Right));
     assert!(matches!(action, Action::None));
     assert_eq!(app.boards.rows.len(), 2);
@@ -903,6 +901,25 @@ fn boards_tree_keys_toggle_rows_and_select_parent() {
     let action = handle_key(&mut app, key(KeyCode::Left));
     assert!(matches!(action, Action::None));
     assert_eq!(app.boards.nav.index(), 0);
+}
+
+#[test]
+fn enter_on_boards_drills_into_work_item_detail() {
+    let mut app = test_app();
+    app.view = View::Boards;
+    app.boards.items = BTreeMap::from([(7, board_item(7, None, "Epic", vec![]))]);
+    app.boards.root_ids = vec![7];
+    app.boards.collapsed = HashSet::new();
+    app.boards.rebuild("");
+
+    let action = handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.view, View::WorkItemDetail);
+    assert!(app.work_item_detail.loading);
+    assert_eq!(app.work_item_detail.work_item_id, Some(7));
+    assert!(matches!(
+        action,
+        Action::FetchWorkItemDetail { work_item_id: 7 }
+    ));
 }
 
 // ---------------------------------------------------------------------------

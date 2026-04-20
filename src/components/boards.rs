@@ -587,6 +587,7 @@ mod tests {
                 parent: parent_id,
                 board_column: None,
                 stack_rank: Some(stack_rank),
+                ..Default::default()
             },
             relations: child_ids
                 .into_iter()

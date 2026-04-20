@@ -4,8 +4,8 @@ use anyhow::Result;
 
 use crate::client::models::{
     BacklogLevelConfiguration, BacklogLevelWorkItems, ListResponse, ProjectTeam, WiqlQuery,
-    WorkItem, WorkItemBatchGetRequest, WorkItemErrorPolicy, WorkItemExpand, WorkItemLink,
-    WorkItemQueryResult, WorkItemTypeCategory,
+    WorkItem, WorkItemBatchGetRequest, WorkItemComment, WorkItemCommentList, WorkItemErrorPolicy,
+    WorkItemExpand, WorkItemLink, WorkItemQueryResult, WorkItemTypeCategory,
 };
 
 impl super::AdoClient {
@@ -80,6 +80,28 @@ impl super::AdoClient {
         }
 
         Ok(all)
+    }
+
+    /// Fetches a single work item with the extended field set needed by the
+    /// detail view. Uses the batch endpoint (one id, field list override) so
+    /// we get a predictable payload shape via `WorkItemExpand::Relations`.
+    pub async fn get_work_item_detail(&self, id: u32) -> Result<WorkItem> {
+        tracing::debug!(work_item_id = id, "fetching work item detail");
+        let url = self.endpoints.work_items_batch();
+        let req = work_item_batch_request(&[id], &[], Some(WorkItemExpand::Relations));
+        let resp: ListResponse<WorkItem> = self.post_json(&url, &req).await?;
+        resp.value
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("work item {id} not found"))
+    }
+
+    /// Fetches the comment list for a work item.
+    pub async fn list_work_item_comments(&self, id: u32) -> Result<Vec<WorkItemComment>> {
+        tracing::debug!(work_item_id = id, "listing work item comments");
+        let url = self.endpoints.work_item_comments(id);
+        let resp: WorkItemCommentList = self.get(&url).await?;
+        Ok(resp.comments)
     }
 }
 

@@ -95,6 +95,7 @@ pub enum View {
     Boards,
     BoardsAssignedToMe,
     BoardsCreatedByMe,
+    WorkItemDetail,
 }
 
 impl View {
@@ -140,7 +141,10 @@ impl View {
             | View::PullRequestsAssignedToMe
             | View::PullRequestsAllActive
             | View::PullRequestDetail => Service::Repos,
-            View::Boards | View::BoardsAssignedToMe | View::BoardsCreatedByMe => Service::Boards,
+            View::Boards
+            | View::BoardsAssignedToMe
+            | View::BoardsCreatedByMe
+            | View::WorkItemDetail => Service::Boards,
         }
     }
 
@@ -154,7 +158,10 @@ impl View {
             View::PullRequestsAssignedToMe | View::BoardsAssignedToMe => "Assigned to me",
             View::PullRequestsAllActive => "All active",
             View::Boards => "Backlog",
-            View::BuildHistory | View::LogViewer | View::PullRequestDetail => "",
+            View::BuildHistory
+            | View::LogViewer
+            | View::PullRequestDetail
+            | View::WorkItemDetail => "",
         }
     }
 }
@@ -332,6 +339,7 @@ pub struct App {
     // --- Boards ---
     pub boards: crate::components::boards::Boards,
     pub my_work_items: crate::components::my_work_items::MyWorkItems,
+    pub work_item_detail: crate::components::work_item_detail::WorkItemDetail,
 
     // --- Retention Leases ---
     pub retention_leases: RetentionLeasesState,
@@ -412,6 +420,7 @@ impl App {
             dashboard_pull_requests: DashboardPullRequestsState::Loading,
             boards: crate::components::boards::Boards::default(),
             my_work_items: crate::components::my_work_items::MyWorkItems::default(),
+            work_item_detail: crate::components::work_item_detail::WorkItemDetail::default(),
 
             retention_leases: RetentionLeasesState::default(),
 
@@ -490,12 +499,25 @@ impl App {
             .unwrap_or(View::PullRequestsCreatedByMe)
     }
 
+    fn work_item_detail_root_view(&self) -> View {
+        self.work_item_detail
+            .return_to
+            .filter(|v| {
+                matches!(
+                    v,
+                    View::Boards | View::BoardsAssignedToMe | View::BoardsCreatedByMe
+                )
+            })
+            .unwrap_or(View::Boards)
+    }
+
     /// Returns the current root view for the selected service, even from a drill-in.
     pub fn active_root_view(&self) -> View {
         match self.view {
             View::BuildHistory => self.build_history_root_view(),
             View::LogViewer => self.log_viewer_root_view(),
             View::PullRequestDetail => self.pull_request_detail_root_view(),
+            View::WorkItemDetail => self.work_item_detail_root_view(),
             view => view,
         }
     }
@@ -522,6 +544,7 @@ impl App {
         self.reset_log_viewer();
         self.reset_build_history();
         self.reset_pull_request_detail();
+        self.reset_work_item_detail();
 
         self.service = view.service();
         self.view = view;
@@ -543,7 +566,10 @@ impl App {
                     list.rebuild(&self.search.query);
                 }
             }
-            View::BuildHistory | View::LogViewer | View::PullRequestDetail => {}
+            View::BuildHistory
+            | View::LogViewer
+            | View::PullRequestDetail
+            | View::WorkItemDetail => {}
         }
     }
 
@@ -585,6 +611,10 @@ impl App {
     fn reset_pull_request_detail(&mut self) {
         self.pull_request_detail =
             crate::components::pull_request_detail::PullRequestDetail::default();
+    }
+
+    fn reset_work_item_detail(&mut self) {
+        self.work_item_detail = crate::components::work_item_detail::WorkItemDetail::default();
     }
 
     pub fn go_back(&mut self) {
@@ -635,6 +665,13 @@ impl App {
                 self.view = return_to;
                 self.reset_pull_request_detail();
             }
+            View::WorkItemDetail => {
+                let return_to = self.work_item_detail_root_view();
+                tracing::info!(from = ?self.view, to = ?return_to, "navigating back");
+                self.service = Service::Boards;
+                self.view = return_to;
+                self.reset_work_item_detail();
+            }
             _ => {}
         }
     }
@@ -683,6 +720,27 @@ impl App {
         self.view = View::PullRequestDetail;
     }
 
+    /// Navigates to the work item detail view for the given id. The source
+    /// view (Boards root or a personal Boards sub-view) is captured so that
+    /// back navigation returns the user where they came from.
+    pub fn navigate_to_work_item_detail(&mut self, work_item_id: u32) {
+        tracing::info!(work_item_id, "navigating to work item detail");
+        let return_to = match self.view {
+            View::Boards | View::BoardsAssignedToMe | View::BoardsCreatedByMe => Some(self.view),
+            _ => Some(View::Boards),
+        };
+        self.service = Service::Boards;
+        self.work_item_detail = crate::components::work_item_detail::WorkItemDetail {
+            work_item_id: Some(work_item_id),
+            work_item: None,
+            comments: vec![],
+            nav: ListNav::default(),
+            loading: true,
+            return_to,
+        };
+        self.view = View::WorkItemDetail;
+    }
+
     pub fn current_nav_mut(&mut self) -> &mut nav::ListNav {
         match self.view {
             View::Dashboard => &mut self.dashboard.nav,
@@ -697,6 +755,7 @@ impl App {
             View::Boards => &mut self.boards.nav,
             View::BoardsAssignedToMe => &mut self.my_work_items.assigned.nav,
             View::BoardsCreatedByMe => &mut self.my_work_items.created.nav,
+            View::WorkItemDetail => &mut self.work_item_detail.nav,
         }
     }
 

@@ -11,6 +11,7 @@ mod navigation;
 mod pipelines;
 mod pull_request_detail;
 mod pull_requests;
+mod work_item_detail;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -49,6 +50,9 @@ pub enum Action {
     FetchPullRequestDetail {
         repo_id: String,
         pr_id: u32,
+    },
+    FetchWorkItemDetail {
+        work_item_id: u32,
     },
     FetchDashboardPullRequests,
     FetchBoards,
@@ -103,6 +107,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         View::PullRequestDetail => pull_request_detail::handle_key(app, key),
         View::Boards => boards::handle_key(app, key),
         View::BoardsAssignedToMe | View::BoardsCreatedByMe => my_work_items::handle_key(app, key),
+        View::WorkItemDetail => work_item_detail::handle_key(app, key),
     }
 }
 
@@ -270,7 +275,8 @@ fn action_for_root_view(view: View) -> Action {
         | View::Pipelines
         | View::BuildHistory
         | View::LogViewer
-        | View::PullRequestDetail => Action::None,
+        | View::PullRequestDetail
+        | View::WorkItemDetail => Action::None,
     }
 }
 

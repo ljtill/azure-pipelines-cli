@@ -75,6 +75,11 @@ pub fn handle_open_in_browser(app: &App) -> Action {
             .list_for(app.view)
             .and_then(|list| list.filtered.get(list.nav.index()))
             .map(|row| app.endpoints_web_work_item(row.id)),
+        View::WorkItemDetail => app
+            .work_item_detail
+            .work_item
+            .as_ref()
+            .map(|wi| app.endpoints_web_work_item(wi.id)),
     };
 
     url.map_or(Action::None, Action::OpenInBrowser)

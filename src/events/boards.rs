@@ -28,9 +28,14 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Enter => {
-            app.boards
-                .toggle_row(app.boards.nav.index(), &app.search.query);
-            Action::None
+            if let Some(id) = app.boards.selected_work_item_id() {
+                app.navigate_to_work_item_detail(id);
+                Action::FetchWorkItemDetail { work_item_id: id }
+            } else {
+                app.boards
+                    .toggle_row(app.boards.nav.index(), &app.search.query);
+                Action::None
+            }
         }
         KeyCode::Char('o') => navigation::handle_open_in_browser(app),
         _ => Action::None,
