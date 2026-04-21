@@ -37,6 +37,23 @@ impl super::AdoClient {
         &self,
         definition_ids: &[u32],
     ) -> Result<Vec<RetentionLease>> {
+        self.list_all_retention_leases_with_progress(definition_ids, None)
+            .await
+    }
+
+    /// Fetches retention leases across multiple definitions in parallel,
+    /// invoking the optional callback with aggregated progress as each
+    /// definition's fetch completes.
+    ///
+    /// The callback receives the cumulative count of definitions processed as
+    /// the `page` value and the total number of leases accumulated so far —
+    /// this maps cleanly onto the UI's per-page progress surface without
+    /// requiring per-page events from every parallel fetcher to interleave.
+    pub async fn list_all_retention_leases_with_progress(
+        &self,
+        definition_ids: &[u32],
+        progress: Option<&super::PaginationProgressFn>,
+    ) -> Result<Vec<RetentionLease>> {
         if definition_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -59,6 +76,7 @@ impl super::AdoClient {
 
         let mut all_leases: HashMap<u32, RetentionLease> = HashMap::new();
         let mut failures = 0u32;
+        let mut completed: usize = 0;
         while let Some(result) = set.join_next().await {
             match result {
                 Ok((def_id, Ok(leases))) => {
@@ -75,6 +93,14 @@ impl super::AdoClient {
                     failures += 1;
                     tracing::warn!(error = %e, "lease fetch task panicked");
                 }
+            }
+            completed += 1;
+            if let Some(cb) = progress {
+                cb(super::PaginationProgress {
+                    endpoint: "retention_leases",
+                    page: completed,
+                    items_so_far: all_leases.len(),
+                });
             }
         }
 

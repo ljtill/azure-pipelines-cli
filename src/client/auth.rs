@@ -96,4 +96,22 @@ impl AdoAuth {
 
         Ok(returned)
     }
+
+    /// Creates an authenticator with a pre-seeded bearer token.
+    ///
+    /// Intended for integration tests so the credential chain is never
+    /// exercised. The cached token is given a far-future expiry so every
+    /// `token()` call is served from the cache. Hidden from the rendered docs.
+    #[doc(hidden)]
+    pub fn with_static_token(token: &str) -> Result<Self> {
+        let credential: Arc<dyn TokenCredential> = DeveloperToolsCredential::new(None)?;
+        let cached = CachedToken {
+            secret: SecretString::from(token.to_string()),
+            expires_on: std::time::Instant::now() + std::time::Duration::from_hours(1),
+        };
+        Ok(Self {
+            credential,
+            cache: Arc::new(RwLock::new(Some(cached))),
+        })
+    }
 }

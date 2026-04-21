@@ -79,6 +79,22 @@ impl Endpoints {
     pub fn set_api_version(&mut self, api_version: &str) {
         self.api_version = std::sync::Arc::from(api_version);
     }
+
+    /// Constructs endpoints rooted at an arbitrary base URL.
+    ///
+    /// Intended for integration tests that point the client at a mock HTTP
+    /// server (e.g. `wiremock`). Hidden from the rendered docs.
+    #[doc(hidden)]
+    pub fn with_base_url(base_url: &str, organization: &str, project: &str) -> Self {
+        let org = encode_path_segment(organization);
+        let proj = encode_path_segment(project);
+        let trimmed = base_url.trim_end_matches('/');
+        Self {
+            base_url: format!("{trimmed}/{org}/{proj}/_apis"),
+            web_base_url: format!("{trimmed}/{org}/{proj}"),
+            api_version: std::sync::Arc::from(DEFAULT_API_VERSION),
+        }
+    }
 }
 
 #[cfg(test)]

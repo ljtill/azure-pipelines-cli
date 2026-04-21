@@ -261,11 +261,24 @@ pub fn handle_message(
             // Update retention leases.
             app.retention_leases.leases = retention_leases;
             app.retention_leases.rebuild_index();
+
+            // Terminal message for the data refresh — clear any in-flight
+            // pagination progress so the header doesn't linger stale state.
+            app.pagination_status = None;
         }
         AppMessage::BuildHistory {
             builds,
             continuation_token,
+            generation,
         } => {
+            if generation < app.build_history.generation {
+                tracing::debug!(
+                    generation,
+                    current = app.build_history.generation,
+                    "dropping stale build history response"
+                );
+                return;
+            }
             tracing::info!(
                 count = builds.len(),
                 has_more = continuation_token.is_some(),
@@ -281,11 +294,21 @@ pub fn handle_message(
             if let Some(idx) = app.build_history.pending_nav_index.take() {
                 app.build_history.nav.set_index(idx);
             }
+            app.pagination_status = None;
         }
         AppMessage::BuildHistoryMore {
             builds,
             continuation_token,
+            generation,
         } => {
+            if generation < app.build_history.generation {
+                tracing::debug!(
+                    generation,
+                    current = app.build_history.generation,
+                    "dropping stale build history pagination response"
+                );
+                return;
+            }
             tracing::info!(
                 count = builds.len(),
                 has_more = continuation_token.is_some(),
@@ -298,6 +321,7 @@ pub fn handle_message(
             app.build_history
                 .nav
                 .set_len(app.build_history.builds.len());
+            app.pagination_status = None;
         }
         AppMessage::Timeline {
             build_id,
@@ -458,6 +482,8 @@ pub fn handle_message(
                 app.data_refresh.fail(30, 300);
             }
             app.notifications.error_dedup(message);
+            // A refresh failure ends any in-flight paginated fetch too.
+            app.pagination_status = None;
         }
         AppMessage::BuildCancelled => {
             tracing::info!("build cancelled successfully");

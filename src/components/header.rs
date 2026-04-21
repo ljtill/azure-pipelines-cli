@@ -11,7 +11,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use super::Component;
 use crate::render::helpers::truncate;
 use crate::render::theme;
-use crate::state::{App, Service, View};
+use crate::state::{App, PaginationStatus, Service, View};
 
 fn breadcrumb(app: &App) -> Line<'_> {
     let segments: Vec<&str> = match app.view {
@@ -42,6 +42,28 @@ fn breadcrumb(app: &App) -> Line<'_> {
         spans.push(Span::styled(*seg, style));
     }
     Line::from(spans)
+}
+
+/// Maps a pagination endpoint tag to a human-friendly noun for the header.
+fn pagination_noun(endpoint: &str) -> &'static str {
+    match endpoint {
+        "definitions" => "definitions",
+        "retention_leases" => "leases",
+        "builds" => "builds",
+        _ => "items",
+    }
+}
+
+/// Formats a pagination progress event for display in the header.
+/// Returns a short bracketed string such as
+/// `[loading page 3 — 142 definitions]`.
+pub(crate) fn format_pagination_status(status: &PaginationStatus) -> String {
+    format!(
+        "[loading page {} — {} {}]",
+        status.page,
+        status.items,
+        pagination_noun(status.endpoint),
+    )
 }
 
 /// Renders the title, refresh status, notifications, and top-level shell.
@@ -94,6 +116,20 @@ impl Header {
             )
         };
 
+        // Transient pagination progress, shown while a paginated fetch is in
+        // flight. Cleared by the dispatcher when the terminal result message
+        // lands. Rendered in the muted style so it blends with the refresh
+        // indicator and doesn't compete with error/success notifications.
+        let pagination_span = app.pagination_status.as_ref().map_or_else(
+            || Span::raw(""),
+            |status| {
+                Span::styled(
+                    format!("  {}", format_pagination_status(status)),
+                    theme::MUTED,
+                )
+            },
+        );
+
         let bc = breadcrumb(app);
         let mut title_spans = vec![
             Span::styled(" Azure DevOps", theme::BRAND),
@@ -104,6 +140,7 @@ impl Header {
         ];
         title_spans.extend(bc.spans);
         title_spans.push(approvals_span);
+        title_spans.push(pagination_span);
         title_spans.push(error_span);
 
         let title = Paragraph::new(Line::from(title_spans));
@@ -129,5 +166,46 @@ impl Header {
 impl Component for Header {
     fn draw(&self, _frame: &mut Frame, _area: Rect) -> Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_pagination_status_renders_known_endpoints() {
+        let status = PaginationStatus {
+            endpoint: "definitions",
+            page: 3,
+            items: 142,
+        };
+        assert_eq!(
+            format_pagination_status(&status),
+            "[loading page 3 — 142 definitions]"
+        );
+
+        let status = PaginationStatus {
+            endpoint: "retention_leases",
+            page: 2,
+            items: 18,
+        };
+        assert_eq!(
+            format_pagination_status(&status),
+            "[loading page 2 — 18 leases]"
+        );
+    }
+
+    #[test]
+    fn format_pagination_status_falls_back_for_unknown_endpoint() {
+        let status = PaginationStatus {
+            endpoint: "mystery",
+            page: 1,
+            items: 7,
+        };
+        assert_eq!(
+            format_pagination_status(&status),
+            "[loading page 1 — 7 items]"
+        );
     }
 }

@@ -26,10 +26,12 @@ pub enum AppMessage {
     BuildHistory {
         builds: Vec<Build>,
         continuation_token: Option<String>,
+        generation: u64,
     },
     BuildHistoryMore {
         builds: Vec<Build>,
         continuation_token: Option<String>,
+        generation: u64,
     },
     Timeline {
         build_id: u32,

@@ -52,14 +52,16 @@ pub fn handle_action(
             }
         }
         Action::FetchBuildHistory(def_id) => {
+            let generation = app.build_history.generation;
             spawn_api(
                 client,
                 tx,
                 "Fetch builds",
                 move |c| async move { c.list_builds_for_definition(def_id).await },
-                |(builds, continuation_token)| AppMessage::BuildHistory {
+                move |(builds, continuation_token)| AppMessage::BuildHistory {
                     builds,
                     continuation_token,
+                    generation,
                 },
             );
         }
@@ -68,6 +70,7 @@ pub fn handle_action(
             continuation_token,
         } => {
             app.build_history.loading_more = true;
+            let generation = app.build_history.generation;
             spawn_api(
                 client,
                 tx,
@@ -76,9 +79,10 @@ pub fn handle_action(
                     c.list_builds_for_definition_continued(definition_id, &continuation_token)
                         .await
                 },
-                |(builds, continuation_token)| AppMessage::BuildHistoryMore {
+                move |(builds, continuation_token)| AppMessage::BuildHistoryMore {
                     builds,
                     continuation_token,
+                    generation,
                 },
             );
         }
@@ -120,7 +124,7 @@ pub fn handle_action(
             }
         }
         Action::OpenInBrowser(url) => {
-            let _ = open_url(&url);
+            open_url(&url);
         }
         Action::CancelBuild(build_id) => {
             tracing::info!(build_id, "cancelling build");

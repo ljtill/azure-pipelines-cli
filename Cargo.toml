@@ -17,7 +17,7 @@ ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 
 # Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs", "process"] }
 
 # HTTP
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
@@ -44,6 +44,20 @@ futures = "0.3"
 # Supply-chain verification
 sigstore = { version = "0.13", default-features = false, features = ["verify", "sigstore-trust-root", "rustls-tls"] }
 sha2 = "0.10"
+
+# Unicode-aware width measurement for table/column layout.
+unicode-width = "0.2"
+
+# Secure zeroization of secret material on drop.
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

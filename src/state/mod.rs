@@ -733,6 +733,8 @@ impl App {
         self.build_history.builds.clear();
         self.build_history.selected.clear();
         self.build_history.nav.reset();
+        // Bump generation so any in-flight response for the previous definition is dropped.
+        self.build_history.next_generation();
         self.view = View::BuildHistory;
     }
 

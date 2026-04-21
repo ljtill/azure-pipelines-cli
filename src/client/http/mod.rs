@@ -14,7 +14,8 @@ mod retention;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use reqwest::{Client, StatusCode, Url};
+use futures::StreamExt;
+use reqwest::{Client, RequestBuilder, StatusCode, Url};
 
 use super::auth::AdoAuth;
 use super::endpoints::Endpoints;
@@ -81,6 +82,29 @@ impl AdoClient {
         })
     }
 
+    /// Creates a client pointed at an arbitrary base URL with a pre-seeded
+    /// bearer token.
+    ///
+    /// Intended for integration tests that exercise the real request/retry
+    /// loop against a local mock server (e.g. `wiremock`). The credential
+    /// chain is never invoked. Hidden from the rendered docs.
+    #[doc(hidden)]
+    pub fn new_for_testing(base_url: &str) -> Result<Self> {
+        let auth = AdoAuth::with_static_token("test-token")?;
+        let http = Client::builder()
+            .user_agent(concat!("devops/", env!("CARGO_PKG_VERSION")))
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .build()?;
+        let endpoints = Endpoints::with_base_url(base_url, "testorg", "testproj");
+
+        Ok(Self {
+            http,
+            auth,
+            endpoints,
+        })
+    }
+
     /// Sends an authenticated GET request and deserializes the JSON response.
     pub(crate) async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
         let token = self.auth.token().await?;
@@ -88,14 +112,16 @@ impl AdoClient {
         let start = Instant::now();
         tracing::debug!(method = "GET", url = display_url, "api request");
         let resp = self
-            .http
-            .get(url)
-            .bearer_auth(token.expose_secret())
-            .send()
+            .send_with_retry(
+                || self.http.get(url).bearer_auth(token.expose_secret()),
+                "GET",
+            )
             .await?;
         let resp = self.ensure_success(resp, "GET", display_url).await?;
         let status = resp.status().as_u16();
-        let body = resp.json::<T>().await?;
+        let bytes = read_json_capped(resp, display_url).await?;
+        let body = serde_json::from_slice::<T>(&bytes)
+            .with_context(|| format!("Failed to decode JSON response from {display_url}"))?;
         tracing::debug!(
             method = "GET",
             url = display_url,
@@ -116,10 +142,10 @@ impl AdoClient {
         let start = Instant::now();
         tracing::debug!(method = "GET", url = display_url, "api request (paged)");
         let resp = self
-            .http
-            .get(url)
-            .bearer_auth(token.expose_secret())
-            .send()
+            .send_with_retry(
+                || self.http.get(url).bearer_auth(token.expose_secret()),
+                "GET",
+            )
             .await?;
         let resp = self.ensure_success(resp, "GET", display_url).await?;
         let status = resp.status().as_u16();
@@ -129,7 +155,9 @@ impl AdoClient {
             .and_then(|v| v.to_str().ok())
             .filter(|s| !s.is_empty())
             .map(std::string::ToString::to_string);
-        let body = resp.json::<T>().await?;
+        let bytes = read_json_capped(resp, display_url).await?;
+        let body = serde_json::from_slice::<T>(&bytes)
+            .with_context(|| format!("Failed to decode JSON response from {display_url}"))?;
         tracing::debug!(
             method = "GET",
             url = display_url,
@@ -172,11 +200,16 @@ impl AdoClient {
 
             let token = self.auth.token().await?;
             tracing::debug!(method = "GET", url = %display_url, page = page_count + 1, "api paginated request");
+            let full_url_str = full_url.as_str().to_string();
             let resp = self
-                .http
-                .get(full_url)
-                .bearer_auth(token.expose_secret())
-                .send()
+                .send_with_retry(
+                    || {
+                        self.http
+                            .get(full_url_str.as_str())
+                            .bearer_auth(token.expose_secret())
+                    },
+                    "GET",
+                )
                 .await?;
             let resp = self.ensure_success(resp, "GET", &display_url).await?;
 
@@ -186,7 +219,9 @@ impl AdoClient {
                 .and_then(|v| v.to_str().ok())
                 .map(std::string::ToString::to_string);
 
-            let page: ListResponse<T> = resp.json().await?;
+            let bytes = read_json_capped(resp, &display_url).await?;
+            let page: ListResponse<T> = serde_json::from_slice(&bytes)
+                .with_context(|| format!("Failed to decode JSON response from {display_url}"))?;
             all_items.extend(page.value);
             page_count += 1;
 
@@ -218,14 +253,14 @@ impl AdoClient {
         let start = Instant::now();
         tracing::debug!(method = "GET", url = display_url, "api text request");
         let resp = self
-            .http
-            .get(url)
-            .bearer_auth(token.expose_secret())
-            .send()
+            .send_with_retry(
+                || self.http.get(url).bearer_auth(token.expose_secret()),
+                "GET",
+            )
             .await?;
         let resp = self.ensure_success(resp, "GET", display_url).await?;
         let status = resp.status().as_u16();
-        let text = resp.text().await?;
+        let text = read_text_capped(resp).await?;
         tracing::debug!(
             method = "GET",
             url = display_url,
@@ -244,11 +279,15 @@ impl AdoClient {
         let start = Instant::now();
         tracing::debug!(method = "PATCH", url = display_url, "api request");
         let resp = self
-            .http
-            .patch(url)
-            .bearer_auth(token.expose_secret())
-            .json(body)
-            .send()
+            .send_with_retry(
+                || {
+                    self.http
+                        .patch(url)
+                        .bearer_auth(token.expose_secret())
+                        .json(body)
+                },
+                "PATCH",
+            )
             .await?;
         let resp = self.ensure_success(resp, "PATCH", display_url).await?;
         let status = resp.status().as_u16();
@@ -273,15 +312,21 @@ impl AdoClient {
         let start = Instant::now();
         tracing::debug!(method = "POST", url = display_url, "api request");
         let resp = self
-            .http
-            .post(url)
-            .bearer_auth(token.expose_secret())
-            .json(body)
-            .send()
+            .send_with_retry(
+                || {
+                    self.http
+                        .post(url)
+                        .bearer_auth(token.expose_secret())
+                        .json(body)
+                },
+                "POST",
+            )
             .await?;
         let resp = self.ensure_success(resp, "POST", display_url).await?;
         let status = resp.status().as_u16();
-        let body = resp.json::<T>().await?;
+        let bytes = read_json_capped(resp, display_url).await?;
+        let body = serde_json::from_slice::<T>(&bytes)
+            .with_context(|| format!("Failed to decode JSON response from {display_url}"))?;
         tracing::debug!(
             method = "POST",
             url = display_url,
@@ -299,10 +344,10 @@ impl AdoClient {
         let start = Instant::now();
         tracing::debug!(method = "DELETE", url = display_url, "api request");
         let resp = self
-            .http
-            .delete(url)
-            .bearer_auth(token.expose_secret())
-            .send()
+            .send_with_retry(
+                || self.http.delete(url).bearer_auth(token.expose_secret()),
+                "DELETE",
+            )
             .await?;
         let resp = self.ensure_success(resp, "DELETE", display_url).await?;
         let status = resp.status().as_u16();
@@ -366,9 +411,203 @@ impl AdoClient {
 
         Err(anyhow::anyhow!(error))
     }
+
+    /// Sends an HTTP request with retry on transient failures.
+    ///
+    /// Retries up to [`MAX_RETRIES`] times on HTTP `429`/`503` (honouring the
+    /// `Retry-After` header when present) and on `reqwest` timeout/connect
+    /// errors. Non-retryable responses (including other 5xx statuses) are
+    /// returned unchanged so that [`AdoClient::ensure_success`] can produce
+    /// the usual diagnostic error.
+    async fn send_with_retry<F>(
+        &self,
+        make_request: F,
+        operation_label: &str,
+    ) -> reqwest::Result<reqwest::Response>
+    where
+        F: Fn() -> RequestBuilder,
+    {
+        let cap = Duration::from_secs(RETRY_CAP_SECS);
+        let mut attempt: u32 = 0;
+        loop {
+            match make_request().send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let retryable_status = status == StatusCode::TOO_MANY_REQUESTS
+                        || status == StatusCode::SERVICE_UNAVAILABLE;
+                    if retryable_status && attempt < MAX_RETRIES {
+                        let retry_after = resp
+                            .headers()
+                            .get(reqwest::header::RETRY_AFTER)
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(parse_retry_after);
+                        let (sleep_for, source) = retry_after.map_or_else(
+                            || (compute_backoff(attempt), "backoff"),
+                            |d| (d.min(cap), "retry-after"),
+                        );
+                        tracing::debug!(
+                            operation = operation_label,
+                            attempt = attempt + 1,
+                            status = status.as_u16(),
+                            source,
+                            sleep_ms = sleep_for.as_millis() as u64,
+                            "retrying HTTP request"
+                        );
+                        tokio::time::sleep(sleep_for).await;
+                        attempt += 1;
+                        continue;
+                    }
+                    return Ok(resp);
+                }
+                Err(err) => {
+                    let transient = err.is_timeout() || err.is_connect();
+                    if transient && attempt < MAX_RETRIES {
+                        let sleep_for = compute_backoff(attempt);
+                        tracing::debug!(
+                            operation = operation_label,
+                            attempt = attempt + 1,
+                            error = %err,
+                            sleep_ms = sleep_for.as_millis() as u64,
+                            "retrying transient network error"
+                        );
+                        tokio::time::sleep(sleep_for).await;
+                        attempt += 1;
+                        continue;
+                    }
+                    return Err(err);
+                }
+            }
+        }
+    }
 }
 
+// --- Retry Configuration ---
+
+const MAX_RETRIES: u32 = 3;
+const RETRY_BASE_MS: u64 = 500;
+const RETRY_CAP_SECS: u64 = 30;
+const RETRY_JITTER_LOW: f64 = 0.8;
+const RETRY_JITTER_SPAN: f64 = 0.4;
+
+// --- Body Size Caps ---
+
+const MAX_JSON_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_TEXT_BYTES: u64 = 128 * 1024 * 1024;
+
 const MAX_ERROR_BODY_CHARS: usize = 300;
+
+/// Parses an HTTP `Retry-After` header value into a `Duration`.
+///
+/// Accepts either an integer number of seconds (RFC 7231 delta-seconds) or
+/// an HTTP-date. For HTTP-date values the delta is computed against
+/// `chrono::Utc::now()`; past dates yield `Duration::ZERO`.
+fn parse_retry_after(value: &str) -> Option<Duration> {
+    let trimmed = value.trim();
+    if let Ok(secs) = trimmed.parse::<u64>() {
+        return Some(Duration::from_secs(secs));
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(trimmed) {
+        let delta = dt
+            .with_timezone(&chrono::Utc)
+            .signed_duration_since(chrono::Utc::now());
+        return Some(delta.to_std().unwrap_or(Duration::ZERO));
+    }
+    None
+}
+
+/// Computes an exponential backoff duration with ±20% jitter, capped at
+/// [`RETRY_CAP_SECS`]. `attempt` is 0-based (first retry uses `attempt=0`).
+fn compute_backoff(attempt: u32) -> Duration {
+    let cap_ms = RETRY_CAP_SECS * 1000;
+    let shift = attempt.min(16);
+    let base_ms = RETRY_BASE_MS.saturating_mul(1u64 << shift).min(cap_ms);
+    let jitter01 = f64::from(jitter_seed()) / f64::from(u32::MAX);
+    let multiplier = RETRY_JITTER_LOW + RETRY_JITTER_SPAN * jitter01;
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    let scaled = ((base_ms as f64) * multiplier) as u64;
+    Duration::from_millis(scaled.min(cap_ms))
+}
+
+/// Returns a pseudo-random `u32` seeded from the current system time.
+///
+/// Good enough for retry jitter; not cryptographically secure. Avoids
+/// pulling in `rand` as a new dependency.
+fn jitter_seed() -> u32 {
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as u64);
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u64(nanos ^ counter);
+    hasher.finish() as u32
+}
+
+/// Reads a response body into memory, enforcing [`MAX_JSON_BYTES`].
+///
+/// Fails fast when the advertised `Content-Length` exceeds the cap; otherwise
+/// streams chunks and errors out as soon as the cumulative size crosses the
+/// threshold.
+async fn read_json_capped(resp: reqwest::Response, display_url: &str) -> Result<Vec<u8>> {
+    let limit = MAX_JSON_BYTES;
+    if let Some(cl) = resp.content_length()
+        && cl > limit
+    {
+        anyhow::bail!(
+            "Response body too large for {display_url}:                  Content-Length {cl} bytes exceeds {limit}-byte JSON cap"
+        );
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.with_context(|| format!("Error reading response body from {display_url}"))?;
+        if (buf.len() as u64).saturating_add(chunk.len() as u64) > limit {
+            anyhow::bail!(
+                "Response body too large for {display_url}:                  exceeded {limit}-byte JSON cap while streaming"
+            );
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
+/// Reads a response body as text, enforcing [`MAX_TEXT_BYTES`].
+///
+/// On overflow returns the accumulated prefix (lossy UTF-8 decoded) with a
+/// trailing truncation marker indicating the cap.
+async fn read_text_capped(resp: reqwest::Response) -> Result<String> {
+    let limit = MAX_TEXT_BYTES;
+    let limit_mib = limit / (1024 * 1024);
+    let marker = format!("\n… log truncated at {limit_mib} MiB, open in browser\n");
+
+    let pre_exceeds = resp.content_length().is_some_and(|cl| cl > limit);
+    let mut buf: Vec<u8> = Vec::new();
+    let mut truncated = pre_exceeds;
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("Error reading text response body")?;
+        let remaining = limit.saturating_sub(buf.len() as u64);
+        if chunk.len() as u64 > remaining {
+            let take = remaining as usize;
+            buf.extend_from_slice(&chunk[..take]);
+            truncated = true;
+            break;
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    let mut text = String::from_utf8_lossy(&buf).into_owned();
+    if truncated {
+        text.push_str(&marker);
+    }
+    Ok(text)
+}
 
 /// Invokes the progress callback with the current page information.
 ///
@@ -637,5 +876,53 @@ mod tests {
 
         let calls = calls.into_inner().unwrap();
         assert_eq!(calls, vec![(1, 25), (2, 57), (3, 80)]);
+    }
+
+    #[test]
+    fn parse_retry_after_delta_seconds() {
+        assert_eq!(parse_retry_after("0"), Some(Duration::from_secs(0)));
+        assert_eq!(parse_retry_after("3"), Some(Duration::from_secs(3)));
+        assert_eq!(parse_retry_after("  120 "), Some(Duration::from_mins(2)));
+    }
+
+    #[test]
+    fn parse_retry_after_http_date_future() {
+        let future = chrono::Utc::now() + chrono::Duration::seconds(30);
+        let header = future.to_rfc2822();
+        let got = parse_retry_after(&header).expect("future date should parse");
+        assert!(
+            got <= Duration::from_secs(31) && got >= Duration::from_secs(25),
+            "expected ~30s delay, got {got:?}"
+        );
+    }
+
+    #[test]
+    fn parse_retry_after_http_date_past_clamps_to_zero() {
+        let past = chrono::Utc::now() - chrono::Duration::seconds(60);
+        let header = past.to_rfc2822();
+        assert_eq!(parse_retry_after(&header), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn parse_retry_after_invalid_returns_none() {
+        assert!(parse_retry_after("not-a-date").is_none());
+        assert!(parse_retry_after("").is_none());
+    }
+
+    #[test]
+    fn compute_backoff_respects_cap() {
+        let d = compute_backoff(20);
+        assert!(
+            d <= Duration::from_secs(RETRY_CAP_SECS),
+            "backoff {d:?} exceeded cap"
+        );
+    }
+
+    #[test]
+    fn compute_backoff_scales_exponentially() {
+        let a0 = compute_backoff(0);
+        let a3 = compute_backoff(3);
+        assert!(a0 < Duration::from_millis(700));
+        assert!(a3 >= Duration::from_secs(3));
     }
 }

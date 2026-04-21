@@ -3,7 +3,9 @@
 use azure_devops_cli::client::models::{BuildResult, BuildStatus, BuildTimeline};
 use azure_devops_cli::events::Action;
 use azure_devops_cli::state::actions::{handle_action, handle_message};
-use azure_devops_cli::test_helpers::{AppMessage, make_app, make_build, make_simple_timeline};
+use azure_devops_cli::test_helpers::{
+    AppMessage, make_app, make_build, make_definition, make_simple_timeline,
+};
 use tokio::sync::mpsc;
 
 /// Constructs an in-process channel pair used to capture messages spawned by
@@ -232,6 +234,113 @@ async fn dispatch_none_action_is_noop() {
 
     assert_eq!(app.running, running_before);
     assert_eq!(app.view, view_before);
+
+    rx.close();
+    while rx.try_recv().is_ok() {}
+}
+
+// --- Test 5: Stale build-history message is rejected via generation guard ---
+
+#[tokio::test]
+async fn stale_build_history_message_is_dropped() {
+    use azure_devops_cli::state::View;
+
+    let mut app = make_app();
+    let Some(client) = try_make_client() else {
+        eprintln!("skipping: AdoClient construction failed in this environment");
+        return;
+    };
+    let (tx, mut rx) = test_channel();
+
+    // Simulate navigating into build history for definition A. This bumps the
+    // generation counter so any in-flight response for a prior definition is
+    // rejected.
+    let def_a = make_definition(1, "Pipeline A", "\\");
+    app.navigate_to_build_history(def_a);
+    let gen_a = app.build_history.generation;
+    assert_eq!(app.view, View::BuildHistory);
+    assert_eq!(gen_a, 1, "first navigation should bump generation to 1");
+
+    // User switches to definition B before A's response arrives. This bumps
+    // the generation again.
+    let def_b = make_definition(2, "Pipeline B", "\\");
+    app.navigate_to_build_history(def_b);
+    let gen_b = app.build_history.generation;
+    assert!(
+        gen_b > gen_a,
+        "switching definition must increment generation"
+    );
+    assert!(
+        app.build_history.builds.is_empty(),
+        "builds must be cleared on navigation"
+    );
+
+    // Stale response for definition A arrives carrying the old generation.
+    let stale_build = make_build(
+        999,
+        azure_devops_cli::client::models::BuildStatus::Completed,
+        Some(azure_devops_cli::client::models::BuildResult::Succeeded),
+    );
+    handle_message(
+        &mut app,
+        &client,
+        &tx,
+        AppMessage::BuildHistory {
+            builds: vec![stale_build],
+            continuation_token: None,
+            generation: gen_a,
+        },
+    );
+    assert!(
+        app.build_history.builds.is_empty(),
+        "stale BuildHistory must be dropped — view should still be empty",
+    );
+
+    // Current response for definition B arrives with the matching generation.
+    let fresh_build = make_build(
+        500,
+        azure_devops_cli::client::models::BuildStatus::Completed,
+        Some(azure_devops_cli::client::models::BuildResult::Succeeded),
+    );
+    handle_message(
+        &mut app,
+        &client,
+        &tx,
+        AppMessage::BuildHistory {
+            builds: vec![fresh_build],
+            continuation_token: None,
+            generation: gen_b,
+        },
+    );
+    assert_eq!(
+        app.build_history.builds.len(),
+        1,
+        "current BuildHistory response must be applied",
+    );
+    assert_eq!(app.build_history.builds[0].id, 500);
+
+    // A stale `BuildHistoryMore` pagination response must also be dropped —
+    // e.g. if the user switched definitions after scrolling.
+    let stale_more = make_build(
+        888,
+        azure_devops_cli::client::models::BuildStatus::Completed,
+        Some(azure_devops_cli::client::models::BuildResult::Succeeded),
+    );
+    handle_message(
+        &mut app,
+        &client,
+        &tx,
+        AppMessage::BuildHistoryMore {
+            builds: vec![stale_more],
+            continuation_token: None,
+            generation: gen_a,
+        },
+    );
+    assert_eq!(
+        app.build_history.builds.len(),
+        1,
+        "stale BuildHistoryMore must be dropped — list unchanged",
+    );
 
     rx.close();
     while rx.try_recv().is_ok() {}

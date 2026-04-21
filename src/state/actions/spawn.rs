@@ -374,7 +374,10 @@ pub fn spawn_data_refresh(
                     // Fetch retention leases in parallel across all definitions.
                     // Done after definitions are known so we have the IDs.
                     let def_ids: Vec<u32> = definitions.iter().map(|d| d.id).collect();
-                    let retention_leases = match client.list_all_retention_leases(&def_ids).await {
+                    let retention_leases = match client
+                        .list_all_retention_leases_with_progress(&def_ids, Some(&progress))
+                        .await
+                    {
                         Ok(leases) => leases,
                         Err(e) => {
                             tracing::warn!(error = %e, "retention leases unavailable");
@@ -414,12 +417,14 @@ pub fn spawn_data_refresh(
 /// refreshes (e.g. lease deletion) so the response covers all previously loaded
 /// builds and the scroll position can be restored.
 pub(super) fn spawn_build_history_refresh(
-    app: &App,
+    app: &mut App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
     top: Option<u32>,
 ) {
-    if let Some(def) = &app.build_history.selected_definition {
+    if let Some(def) = app.build_history.selected_definition.clone() {
+        // Bump generation so any in-flight response for a prior request is dropped.
+        let generation = app.build_history.next_generation();
         let client = client.clone();
         let tx = tx.clone();
         let def_id = def.id;
@@ -438,6 +443,7 @@ pub(super) fn spawn_build_history_refresh(
                             .send(AppMessage::BuildHistory {
                                 builds,
                                 continuation_token,
+                                generation,
                             })
                             .await;
                     }
@@ -1108,34 +1114,47 @@ async fn load_my_work_items(client: &AdoClient, wiql: &str) -> Result<Vec<WorkIt
 }
 
 /// Opens a URL in the platform's default browser.
-pub(super) fn open_url(url: &str) -> std::io::Result<std::process::Child> {
+///
+/// Spawns the platform helper (`open`, `xdg-open`, or `cmd /C start`) and
+/// eagerly reaps the child on a background task so the process does not
+/// linger as a zombie for the lifetime of the TUI session. Must be called
+/// from within a Tokio runtime context.
+pub(super) fn open_url(url: &str) {
     // Only allow https:// URLs to prevent command injection.
     if !url.starts_with("https://") {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "only https:// URLs are supported",
-        ));
+        tracing::warn!(url, "refusing to open non-https URL");
+        return;
     }
+
     #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(url).spawn()
-    }
+    let spawn_result = tokio::process::Command::new("open").arg(url).spawn();
     #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open").arg(url).spawn()
-    }
+    let spawn_result = tokio::process::Command::new("xdg-open").arg(url).spawn();
     #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", url])
-            .spawn()
-    }
+    let spawn_result = tokio::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .spawn();
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "unsupported platform",
-        ))
+    let spawn_result: std::io::Result<tokio::process::Child> = Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "unsupported platform",
+    ));
+
+    match spawn_result {
+        Ok(mut child) => {
+            tokio::spawn(async move {
+                match child.wait().await {
+                    Ok(status) if !status.success() => {
+                        tracing::debug!(%status, "open-url helper exited non-zero");
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::debug!(error = %e, "waiting on open-url child failed");
+                    }
+                }
+            });
+        }
+        Err(e) => tracing::warn!(error = %e, "failed to spawn open-url helper"),
     }
 }
 

@@ -39,9 +39,17 @@ pub struct BuildHistory {
     pub continuation_token: Option<String>,
     /// Stores a stashed nav index to restore after a refresh (e.g. post-lease-deletion).
     pub pending_nav_index: Option<usize>,
+    /// Monotonic counter incremented on each fetch request to discard stale responses.
+    pub generation: u64,
 }
 
 impl BuildHistory {
+    /// Increments the generation counter and returns the new value.
+    pub fn next_generation(&mut self) -> u64 {
+        self.generation += 1;
+        self.generation
+    }
+
     /// Toggles selection state for the build at the current nav index.
     pub fn toggle_selected_at_cursor(&mut self) {
         if let Some(build) = self.builds.get(self.nav.index()) {
