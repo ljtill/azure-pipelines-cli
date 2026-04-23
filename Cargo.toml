@@ -43,7 +43,7 @@ futures = "0.3"
 
 # Supply-chain verification
 sigstore = { version = "0.13", default-features = false, features = ["verify", "sigstore-trust-root", "rustls-tls"] }
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Unicode-aware width measurement for table/column layout.
 unicode-width = "0.2"
