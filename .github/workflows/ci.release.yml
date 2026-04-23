@@ -320,7 +320,7 @@ jobs:
           cat artifacts/SHA256SUMS
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v4.1.1
 
       - name: Sign SHA256SUMS with cosign (keyless / Sigstore)
         env:
