@@ -27,7 +27,7 @@ pub const PENDING: Style = Style::new().fg(PENDING_FG);
 pub const APPROVAL: Style = Style::new().fg(APPROVAL_FG);
 
 // --- Interactive ---
-pub const SELECTED: Style = Style::new().add_modifier(Modifier::REVERSED);
+pub const SELECTED: Style = Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD);
 pub const SEARCH_PROMPT: Style = Style::new().fg(WARNING_FG);
 pub const CURSOR: Style = Style::new().fg(ACCENT_FG);
 pub const KEY: Style = Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD);
@@ -74,8 +74,10 @@ mod tests {
     }
 
     #[test]
-    fn selected_rows_use_terminal_reverse_video() {
+    fn selected_rows_do_not_override_terminal_background() {
         assert_eq!(SELECTED.bg, None);
-        assert!(SELECTED.add_modifier.contains(Modifier::REVERSED));
+        assert_eq!(SELECTED.fg, Some(ACCENT_FG));
+        assert!(SELECTED.add_modifier.contains(Modifier::BOLD));
+        assert!(!SELECTED.add_modifier.contains(Modifier::REVERSED));
     }
 }
