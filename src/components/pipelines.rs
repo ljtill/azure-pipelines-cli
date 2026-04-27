@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, HashSet};
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -470,10 +469,10 @@ impl Pipelines {
                     let mut spans = vec![
                         Span::raw(indent),
                         Span::styled(selected_indicator, theme::SUCCESS),
-                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
+                        Span::styled(format!("{icon} "), theme::foreground(icon_color)),
                         Span::styled(
                             format!("{:<width$}", label, width = widths[2]),
-                            Style::new().fg(icon_color),
+                            theme::foreground(icon_color),
                         ),
                         Span::styled(pin_indicator, pin_style),
                         Span::styled(

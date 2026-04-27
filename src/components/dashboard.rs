@@ -7,7 +7,7 @@ use std::ops::Range;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
@@ -394,7 +394,7 @@ impl Dashboard {
                 latest_build,
             } => {
                 let (icon, icon_color) =
-                    latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
+                    latest_build.as_ref().map_or(("○", theme::PENDING_FG), |b| {
                         let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
                         effective_status_icon(b.status, b.result, awaiting)
                     });
@@ -416,8 +416,8 @@ impl Dashboard {
                 let w_elapsed = pinned_widths[pinned_schema.elapsed];
 
                 let mut spans = vec![
-                    Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(icon_color)),
-                    Span::styled(format!("{label:<w_status$}"), Style::new().fg(icon_color)),
+                    Span::styled(format!("{icon:<w_icon$}"), theme::foreground(icon_color)),
+                    Span::styled(format!("{label:<w_status$}"), theme::foreground(icon_color)),
                     Span::styled(
                         format!("{:<w_name$}", truncate(&definition.name, w_name)),
                         name_style,
@@ -479,7 +479,7 @@ impl Dashboard {
                 let w_votes = pr_widths[pr_schema.votes];
 
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(color)),
+                    Span::styled(format!("{icon:<w_icon$}"), theme::foreground(color)),
                     Span::styled(
                         format!("{:<w_title$}", truncate(&title_text, w_title)),
                         theme::TEXT,

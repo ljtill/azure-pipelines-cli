@@ -81,10 +81,7 @@ impl PullRequestDetail {
         let draft_badge = if pr.is_draft { " [DRAFT]" } else { "" };
         let header_lines = vec![
             Line::from(vec![
-                Span::styled(
-                    format!(" {status_icon} "),
-                    ratatui::style::Style::new().fg(status_color),
-                ),
+                Span::styled(format!(" {status_icon} "), theme::foreground(status_color)),
                 Span::styled(
                     format!("PR #{}{draft_badge}", pr.pull_request_id),
                     section_title_style(header_active),

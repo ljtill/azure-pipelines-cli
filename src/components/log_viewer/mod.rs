@@ -96,7 +96,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let (icon, icon_color) = timeline_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::styled(format!("{arrow} "), theme::ARROW),
-                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
+                        Span::styled(format!("{icon} "), theme::foreground(icon_color)),
                         Span::styled(
                             name.as_str(),
                             timeline_name_style(theme::STAGE, *state, *result),
@@ -116,7 +116,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
                         Span::styled(format!("{arrow} "), theme::JOB_ARROW),
-                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
+                        Span::styled(format!("{icon} "), theme::foreground(icon_color)),
                         Span::styled(
                             name.as_str(),
                             timeline_name_style(theme::JOB, *state, *result),
@@ -135,7 +135,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let log_indicator = if log_id.is_some() { "" } else { " ·" };
                     ListItem::new(Line::from(vec![
                         Span::raw("      "),
-                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
+                        Span::styled(format!("{icon} "), theme::foreground(icon_color)),
                         Span::styled(
                             name.as_str(),
                             timeline_name_style(theme::SUBTLE, *state, *result),
@@ -153,7 +153,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     let (icon, icon_color) = checkpoint_status_icon(*state, *result);
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
-                        Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
+                        Span::styled(format!("{icon} "), theme::foreground(icon_color)),
                         Span::styled(name.as_str(), checkpoint_name_style(*state, *result)),
                     ]))
                     .style(row_style(selected))
@@ -249,11 +249,15 @@ fn timeline_name_style(
     result: Option<BuildResult>,
 ) -> Style {
     match result {
-        Some(BuildResult::Succeeded) => base.fg(theme::SUCCESS_FG),
-        Some(BuildResult::Failed) => base.fg(theme::ERROR_FG),
-        Some(BuildResult::PartiallySucceeded) => base.fg(theme::WARNING_FG),
-        Some(BuildResult::Canceled | BuildResult::Skipped) => base.fg(theme::PENDING_FG),
-        _ if matches!(state, Some(TaskState::InProgress)) => base.fg(theme::WARNING_FG),
+        Some(BuildResult::Succeeded) => theme::with_foreground(base, theme::SUCCESS_FG),
+        Some(BuildResult::Failed) => theme::with_foreground(base, theme::ERROR_FG),
+        Some(BuildResult::PartiallySucceeded) => theme::with_foreground(base, theme::WARNING_FG),
+        Some(BuildResult::Canceled | BuildResult::Skipped) => {
+            theme::with_foreground(base, theme::PENDING_FG)
+        }
+        _ if matches!(state, Some(TaskState::InProgress)) => {
+            theme::with_foreground(base, theme::WARNING_FG)
+        }
         _ => base,
     }
 }
