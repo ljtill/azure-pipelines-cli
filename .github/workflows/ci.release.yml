@@ -320,11 +320,18 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
+      - name: Generate SBOM
+        run: |
+          cargo metadata --locked --format-version 1 > artifacts/cargo-metadata.json
+          python3 scripts/generate-sbom.py artifacts/cargo-metadata.json > artifacts/devops-sbom.cdx.json
+          python3 -m json.tool artifacts/devops-sbom.cdx.json >/dev/null
+          rm artifacts/cargo-metadata.json
+
       - name: Generate checksums
         run: |
           (
             cd artifacts
-            sha256sum devops-*.tar.gz devops-*.zip > SHA256SUMS
+            sha256sum devops-*.tar.gz devops-*.zip devops-sbom.cdx.json > SHA256SUMS
             sha256sum --check SHA256SUMS
           )
           cat artifacts/SHA256SUMS
@@ -386,6 +393,7 @@ jobs:
             $DRAFT_FLAG \
             artifacts/devops-*.tar.gz \
             artifacts/devops-*.zip \
+            artifacts/devops-sbom.cdx.json \
             artifacts/SHA256SUMS \
             artifacts/SHA256SUMS.cosign.bundle
 

@@ -79,11 +79,13 @@ jobs:
             --dir verified-release \
             --pattern "SHA256SUMS" \
             --pattern "SHA256SUMS.cosign.bundle" \
+            --pattern "devops-sbom.cdx.json" \
             --pattern "devops-*.tar.gz" \
             --pattern "devops-*.zip"
 
           test -s verified-release/SHA256SUMS
           test -s verified-release/SHA256SUMS.cosign.bundle
+          test -s verified-release/devops-sbom.cdx.json
 
           cosign verify-blob \
             --bundle verified-release/SHA256SUMS.cosign.bundle \

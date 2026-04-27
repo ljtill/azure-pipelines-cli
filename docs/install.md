@@ -12,8 +12,8 @@ For the highest assurance, especially on corporate machines:
 
 1. Pick an explicit release tag from the GitHub Release page instead of relying
    on "latest" when you need reproducible installs.
-2. Download the platform archive, `SHA256SUMS`, and
-   `SHA256SUMS.cosign.bundle` from that release over HTTPS.
+2. Download the platform archive, `SHA256SUMS`, `SHA256SUMS.cosign.bundle`, and
+   optionally `devops-sbom.cdx.json` from that release over HTTPS.
 3. Verify `SHA256SUMS` with an approved `cosign` binary:
 
    ```sh
@@ -24,8 +24,8 @@ For the highest assurance, especially on corporate machines:
      SHA256SUMS
    ```
 
-4. Compare the archive's SHA-256 digest with the matching line in the verified
-   `SHA256SUMS` file before extracting it.
+4. Compare the archive and SBOM SHA-256 digests with the matching lines in the
+   verified `SHA256SUMS` file before extracting or trusting them.
 5. Extract only the expected single binary for your platform and install it into
    a directory you control.
 6. Confirm the binary you run is the one you installed (`command -v devops` on

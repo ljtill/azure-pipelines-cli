@@ -32,6 +32,8 @@ keyless signing via GitHub Actions OIDC (cosign). Every release publishes:
 - `SHA256SUMS` — SHA-256 hashes of all release archives.
 - `SHA256SUMS.cosign.bundle` — cosign bundle containing the Fulcio-issued
   signing certificate, signature, and Rekor transparency log entry.
+- `devops-sbom.cdx.json` — CycloneDX dependency SBOM generated from locked
+  Cargo metadata and covered by `SHA256SUMS`.
 
 ### Expected signer identity
 
@@ -57,10 +59,11 @@ cosign verify-blob \
   SHA256SUMS
 ```
 
-After the bundle verifies, download the platform archive and compare its SHA-256
-digest with the matching `SHA256SUMS` line before extracting it. Use approved
-hashing and extraction tools, and avoid relying on a writable directory earlier
-in `PATH` for `cosign`, `sha256sum`/`shasum`, `tar`, or similar tools.
+After the bundle verifies, download the platform archive and optional SBOM, then
+compare each SHA-256 digest with the matching `SHA256SUMS` line before trusting
+the file. Use approved hashing and extraction tools, and avoid relying on a
+writable directory earlier in `PATH` for `cosign`, `sha256sum`/`shasum`, `tar`,
+or similar tools.
 
 ### Automatic verification
 
@@ -77,5 +80,6 @@ stages verified archives before promotion, extracts only the expected binary
 member, and uses a two-phase update lock so startup can roll back an interrupted
 swap.
 
-The release workflow also verifies `SHA256SUMS`, every produced archive checksum,
-and the cosign bundle with the same identity and issuer before publishing assets.
+The release workflow also verifies `SHA256SUMS`, every produced archive and SBOM
+checksum, and the cosign bundle with the same identity and issuer before
+publishing assets.
