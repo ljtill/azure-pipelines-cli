@@ -10,7 +10,7 @@
 - Run a single test: `cargo test <test_name_substring>`
 - Format check: `cargo fmt --all -- --check`
 - Clippy: `cargo clippy --all-targets -- -D warnings`
-- Security checks, when the tools are available: `cargo audit` and `cargo deny check --all-features`.
+- Security checks, when the tools are available: `cargo audit` and `cargo deny --all-features check`.
 - Current baseline: `cargo build`, `cargo test`, `cargo fmt --all -- --check`, and `cargo clippy --all-targets -- -D warnings` all pass cleanly. Keep it that way — do not commit code that introduces new warnings or formatting drift.
 
 Before committing, always run:

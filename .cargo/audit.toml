@@ -3,6 +3,8 @@
 # Keep advisory ignores in sync with the `[advisories].ignore` list in
 # ../deny.toml so that `cargo audit` and `cargo deny check advisories`
 # agree on what is suppressed.
+# Treat each Review-by date as the expiry for the justification. Refresh the
+# review, remove the ignore, or block the release before that date.
 
 [advisories]
 ignore = [
@@ -10,12 +12,20 @@ ignore = [
     # upstream. Pulled in transitively via `sigstore` (release-signature
     # verification on self-update); this CLI does not expose RSA over a network
     # in a way that an attacker could observe timing sidechannels.
+    # Reviewed: 2026-04-27.
+    # Review-by: 2026-10-27.
+    # Trigger: Re-evaluate sooner when `rsa` ships a constant-time
+    # implementation or when `sigstore` migrates off it.
     # https://rustsec.org/advisories/RUSTSEC-2023-0071
     "RUSTSEC-2023-0071",
 
     # proc-macro-error 1.0.4: unmaintained. Build-time only (proc macro), pulled
     # in transitively via sigstore -> json-syntax -> locspan-derive. No upstream
     # replacement available without dropping `sigstore`.
+    # Reviewed: 2026-04-27.
+    # Review-by: 2026-10-27.
+    # Trigger: Re-evaluate sooner when `sigstore` or `json-syntax` migrates off
+    # `proc-macro-error`.
     # https://rustsec.org/advisories/RUSTSEC-2024-0370
     "RUSTSEC-2024-0370",
 ]

@@ -14,6 +14,8 @@ env:
 
 jobs:
   audit:
+    # Advisory ignores are reviewed in .cargo/audit.toml and mirrored in
+    # deny.toml with rationale, review date, and review-by date.
     name: cargo audit
     runs-on: ubuntu-latest
     steps:
@@ -23,6 +25,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   deny:
+    # deny.toml owns license/source policy and must keep advisory ignores in
+    # sync with .cargo/audit.toml before releases.
     name: cargo deny
     runs-on: ubuntu-latest
     steps:

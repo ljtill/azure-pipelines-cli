@@ -26,3 +26,7 @@ Stable and safe to script against:
 The `devops`, `devops version`, and `devops update` subcommands, along with the `--config` and `--api-version` flags, are stable. New flags and subcommands may be introduced.
 
 This version targets Azure DevOps REST API v7.1. Pass `--api-version` or set `DEVOPS_API_VERSION=X.Y` to override.
+
+## Rust crate API
+
+`azure-devops-cli` is released as a CLI application, not as a stable Rust library. The modules in `src/lib.rs` are internal implementation details exposed only so the package binary and tests can share code; external crates should not depend on them, and they may change without a major version bump.

@@ -59,6 +59,9 @@ jobs:
       - run: cargo fmt --all -- --check
 
   test:
+    # Coverage reporting is intentionally not wired here yet because no
+    # coverage tool/action is committed. See docs/contributing.md for the
+    # approved gate plan and high-risk direct-coverage targets.
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
