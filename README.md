@@ -1,42 +1,64 @@
-# azure-devops-cli
+<p align="center"><code>curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh</code><br />or <code>irm https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.ps1 | iex</code></p>
+<p align="center"><strong>azure-devops-cli</strong> is a terminal dashboard for Azure DevOps that runs in any modern terminal.</p>
 
-A terminal (TUI) dashboard for Azure DevOps. Built with [ratatui](https://ratatui.rs/) and designed to run inside any modern terminal emulator.
+---
 
 ## Quickstart
 
-### macOS / Linux
+### Installing and running
+
+Install with the script for your platform:
 
 ```sh
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh
 ```
 
-### Windows (PowerShell)
-
 ```powershell
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.ps1 | iex
 ```
 
-Then run:
+Then run `devops` to get started. On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project.
+
+<details>
+<summary>You can also pin a specific version, build from source, or download a release binary.</summary>
+
+Pin a specific version:
 
 ```sh
-devops
+VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh
 ```
 
-On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project.
+Build from source (requires the Rust toolchain pinned in `Cargo.toml`):
+
+```sh
+cargo install --path .
+```
+
+Or download a binary directly from the [latest GitHub Release](https://github.com/ljtill/azure-devops-cli/releases/latest). Release archives are signed with [Sigstore](https://www.sigstore.dev/) — see [SECURITY.md](SECURITY.md) for verification steps.
+
+</details>
+
+### Signing in
+
+`devops` uses the Azure SDK `DeveloperToolsCredential`. Sign in once with either Azure CLI or Azure Developer CLI and the TUI picks up your credentials automatically:
+
+```sh
+az login
+# or
+azd auth login
+```
 
 ## Docs
 
-- [**Getting started**](docs/getting-started.md) — first run, feature overview, and basic usage.
-- [**Installation**](docs/install.md) — all install methods, version pinning, building from source, uninstall.
-- [**Configuration**](docs/configuration.md) — config file schema and display options.
-- [**Keybindings**](docs/keybindings.md) — full key reference.
-- [**Authentication**](docs/authentication.md) — `DeveloperToolsCredential` chain (`az login` / `azd auth login`).
-- [**Stability**](docs/stability.md) — 1.x compatibility guarantees.
-- [**Limitations**](docs/limitations.md) — log buffer cap, pagination cap, env overrides.
-- [**Contributing**](docs/contributing.md) — build, test, lint, and architecture overview.
+- [**Getting started**](./docs/getting-started.md)
+- [**Installation**](./docs/install.md)
+- [**Configuration**](./docs/configuration.md)
+- [**Keybindings**](./docs/keybindings.md)
+- [**Authentication**](./docs/authentication.md)
+- [**Stability**](./docs/stability.md)
+- [**Limitations**](./docs/limitations.md)
+- [**Contributing**](./docs/contributing.md)
 
-## Security
-
-Release archives are signed with [Sigstore](https://www.sigstore.dev/) (cosign, keyless via GitHub Actions OIDC). Install scripts and `devops update` verify the signature before installing.
-
-Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Please report security issues privately as described in [SECURITY.md](SECURITY.md).
