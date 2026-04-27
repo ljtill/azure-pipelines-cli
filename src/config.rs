@@ -277,6 +277,18 @@ impl Config {
             toml::Value::String(project.to_string()),
         );
         table.insert("azure_devops".to_string(), toml::Value::Table(ado));
+
+        let mut filters = toml::map::Map::new();
+        filters.insert(
+            "pinned_definition_ids".to_string(),
+            toml::Value::Array(Vec::new()),
+        );
+        filters.insert(
+            "pinned_work_item_ids".to_string(),
+            toml::Value::Array(Vec::new()),
+        );
+        table.insert("filters".to_string(), toml::Value::Table(filters));
+
         let contents = toml::to_string_pretty(&toml::Value::Table(table))
             .context("Failed to serialize config")?;
 

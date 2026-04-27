@@ -27,7 +27,7 @@ Then run `devops` to get started. On first launch, an interactive setup wizard c
 Pin a specific version:
 
 ```sh
-VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh
+VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh
 ```
 
 Build from source (requires the Rust toolchain pinned in `Cargo.toml`):

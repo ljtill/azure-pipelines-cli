@@ -16,8 +16,8 @@ use crate::render;
 use crate::state::notifications::NotificationLevel;
 
 use super::actions::spawn::{
-    spawn_fetch_boards, spawn_fetch_dashboard_pull_requests, spawn_fetch_pull_requests,
-    spawn_fetch_user_identity,
+    spawn_fetch_boards, spawn_fetch_dashboard_pull_requests, spawn_fetch_pinned_work_items,
+    spawn_fetch_pull_requests, spawn_fetch_user_identity,
 };
 use super::actions::{handle_action, handle_message, spawn_data_refresh, spawn_log_refresh};
 use super::messages::AppMessage;
@@ -144,6 +144,7 @@ pub async fn run(
             // unverified pull requests.
             if app.view == View::Dashboard {
                 spawn_fetch_dashboard_pull_requests(&mut app, &client, &tx);
+                spawn_fetch_pinned_work_items(&mut app, &client, &tx);
             }
             // Refresh PR view data alongside the data refresh.
             if app.view.is_pull_requests() {

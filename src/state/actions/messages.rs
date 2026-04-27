@@ -18,7 +18,8 @@ use super::super::{
 use super::spawn::{
     spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_boards,
     spawn_fetch_dashboard_pull_requests, spawn_fetch_dashboard_work_items,
-    spawn_fetch_pull_requests, spawn_log_fetch, spawn_timeline_fetch,
+    spawn_fetch_pinned_work_items, spawn_fetch_pull_requests, spawn_log_fetch,
+    spawn_timeline_fetch,
 };
 
 const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
@@ -705,6 +706,8 @@ pub fn handle_message(
             spawn_fetch_dashboard_pull_requests(app, client, tx);
             // Re-fetch dashboard work items now that we can filter by assignee.
             spawn_fetch_dashboard_work_items(app, client, tx);
+            // Resolve pinned work items state (short-circuits to empty when no IDs configured).
+            spawn_fetch_pinned_work_items(app, client, tx);
             // Re-fetch PR view data so filtered modes use the resolved identity.
             if app.view.is_pull_requests() {
                 let generation = app.pull_requests.next_generation();
