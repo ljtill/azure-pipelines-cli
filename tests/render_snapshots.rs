@@ -80,8 +80,8 @@ fn make_work_item(id: u32, title: &str, state: &str, assignee: Option<&str>) -> 
 fn make_dashboard_app() -> App {
     let config = make_config();
     let mut app = App::new(
-        &config.azure_devops.organization,
-        &config.azure_devops.project,
+        &config.devops.connection.organization,
+        &config.devops.connection.project,
         &config,
         PathBuf::from("/tmp/test-config.toml"),
     );
@@ -139,24 +139,24 @@ fn snapshot_dashboard_narrow() {
     let rendered = buffer_to_string(terminal.backend().buffer());
     let expected = "\
 ┌ Dashboard ───────────────────────────────────────────────────────────────────┐
-│ Pinned Pipelines ─────────────────────────────────────────────────────────── │
+│ Pipelines (Pinned) ───────────────────────────────────────────────────────── │
 │✓   Succeeded   CI Pipeline         #100          main        Unknown         │
 │●   Running     Deploy Pipeline     #101          main        Unknown         │
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│ Pinned Work Items ────────────────────────────────────────────────────────── │
+│ Work Items (Pinned) ──────────────────────────────────────────────────────── │
 │#501     User Story  Investigate flaky test Active      Alice                 │
 │#502     User Story  Document pipeline conv…New         Bob Smith             │
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│ Pull Requests ────────────────────────────────────────────────────────────── │
+│ Pull Requests (Active) ───────────────────────────────────────────────────── │
 │    Loading pull requests...                                                  │
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│ Work Items ───────────────────────────────────────────────────────────────── │
+│ Work Items (Active) ──────────────────────────────────────────────────────── │
 │    Loading work items...                                                     │
 │                                                                              │
 │                                                                              │
@@ -180,7 +180,7 @@ fn snapshot_dashboard_wide_header() {
     let head: String = rendered.lines().take(10).collect::<Vec<_>>().join("\n") + "\n";
     let expected = "\
 ┌ Dashboard ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Pinned Pipelines ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
+│ Pipelines (Pinned) ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
 │✓   Succeeded   CI Pipeline                                                  #100          main                          Unknown                              │
 │●   Running     Deploy Pipeline                                              #101          main                          Unknown                        queued│
 │                                                                                                                                                              │
@@ -280,12 +280,12 @@ fn snapshot_pipelines_list() {
     let rendered = buffer_to_string(terminal.backend().buffer());
     let expected = "\
 ┌ Pipelines ───────────────────────────────────────────────────────────────────┐
-│1 pipelines  ·  0 selected                                                    │
+│3 pipelines  ·  0 selected                                                    │
 │      Status      Pipeline            Build         Branch      Requestor     │
-│ ▸ Infra                                                                      │
+│ ▾ Infra                                                                      │
+│    ● Running     Deploy Pipeline     #101          main        Unknown       │
+│    ✗ Failed      Infra Lint          #102          main        Unknown       │
 │  ✓ Succeeded   CI Pipeline         #100          main        Unknown         │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

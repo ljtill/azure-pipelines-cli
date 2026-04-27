@@ -110,8 +110,8 @@ struct FolderNode {
 #[derive(Debug, Default)]
 pub struct Pipelines {
     pub rows: Vec<PipelineRow>,
-    /// Folder keys that the user has explicitly expanded. Default state is collapsed.
-    pub expanded_folders: HashSet<String>,
+    /// Folder keys that the user has explicitly collapsed. Default state is expanded.
+    pub collapsed_folders: HashSet<String>,
     pub nav: ListNav,
     pub selected: HashSet<u32>,
 }
@@ -227,7 +227,7 @@ impl Pipelines {
         let Some(node) = tree.get(key) else {
             return;
         };
-        let expanded = self.expanded_folders.contains(key) || auto_expanded.contains(key);
+        let expanded = auto_expanded.contains(key) || !self.collapsed_folders.contains(key);
         rows.push(PipelineRow::FolderHeader {
             key: key.to_string(),
             label: folder_leaf_label(key),
@@ -255,12 +255,12 @@ impl Pipelines {
 
     /// Toggles collapse state for a folder at the given row index.
     pub fn toggle_folder_at(&mut self, index: usize) -> bool {
-        if let Some(PipelineRow::FolderHeader { key, .. }) = self.rows.get(index) {
+        if let Some(PipelineRow::FolderHeader { key, expanded, .. }) = self.rows.get(index) {
             let key = key.clone();
-            if self.expanded_folders.contains(&key) {
-                self.expanded_folders.remove(&key);
+            if *expanded {
+                self.collapsed_folders.insert(key);
             } else {
-                self.expanded_folders.insert(key);
+                self.collapsed_folders.remove(&key);
             }
             return true;
         }
@@ -273,7 +273,7 @@ impl Pipelines {
             && *expanded
         {
             let key = key.clone();
-            self.expanded_folders.remove(&key);
+            self.collapsed_folders.insert(key);
             return true;
         }
         false
@@ -285,7 +285,7 @@ impl Pipelines {
             && !*expanded
         {
             let key = key.clone();
-            self.expanded_folders.insert(key);
+            self.collapsed_folders.remove(&key);
             return true;
         }
         false
@@ -575,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_default_collapsed_shows_root_headers_only() {
+    fn rebuild_default_expanded_shows_folder_contents() {
         let defs = vec![
             make_definition(1, "CI", "\\"),
             make_definition(2, "Deploy", "\\Infra"),
@@ -583,24 +583,22 @@ mod tests {
         ];
         let mut p = Pipelines::default();
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
-        // Expect: Infra folder header (collapsed), then two root pipelines.
-        assert_eq!(p.rows.len(), 3);
+        // Expect: Infra folder header expanded, its child pipeline, then two root pipelines.
+        assert_eq!(p.rows.len(), 4);
         assert!(matches!(
             &p.rows[0],
-            PipelineRow::FolderHeader { label, depth: 0, expanded: false, .. } if label == "Infra"
+            PipelineRow::FolderHeader { label, depth: 0, expanded: true, .. } if label == "Infra"
         ));
-        assert!(matches!(&p.rows[1], PipelineRow::Pipeline { depth: 0, .. }));
+        assert!(matches!(&p.rows[1], PipelineRow::Pipeline { depth: 1, .. }));
         assert!(matches!(&p.rows[2], PipelineRow::Pipeline { depth: 0, .. }));
+        assert!(matches!(&p.rows[3], PipelineRow::Pipeline { depth: 0, .. }));
     }
 
     #[test]
     fn rebuild_builds_nested_tree_with_depths() {
         let defs = vec![make_definition(1, "Leaf", "\\A\\B\\C")];
         let mut p = Pipelines::default();
-        // Expand the full chain so all three headers and the pipeline appear.
-        p.expanded_folders.insert("\\A".to_string());
-        p.expanded_folders.insert("\\A\\B".to_string());
-        p.expanded_folders.insert("\\A\\B\\C".to_string());
+        // The full chain is expanded by default.
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
         assert_eq!(p.rows.len(), 4);
         assert!(matches!(
@@ -619,19 +617,18 @@ mod tests {
     }
 
     #[test]
-    fn expanding_root_folder_reveals_direct_children_only() {
+    fn collapsing_root_folder_hides_descendants() {
         let defs = vec![make_definition(1, "Leaf", "\\A\\B\\C")];
         let mut p = Pipelines::default();
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
-        assert_eq!(p.rows.len(), 1); // Just the `A` header.
-        // Expand `\A` only.
-        p.expanded_folders.insert("\\A".to_string());
+        assert_eq!(p.rows.len(), 4);
+
+        p.collapsed_folders.insert("\\A".to_string());
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
-        // Should show `A` (expanded) + `B` (still collapsed), but not `C` or the pipeline.
-        assert_eq!(p.rows.len(), 2);
+        assert_eq!(p.rows.len(), 1);
         assert!(matches!(
-            &p.rows[1],
-            PipelineRow::FolderHeader { depth: 1, label, expanded: false, .. } if label == "B"
+            &p.rows[0],
+            PipelineRow::FolderHeader { depth: 0, label, expanded: false, .. } if label == "A"
         ));
     }
 
@@ -652,7 +649,10 @@ mod tests {
     fn search_auto_expands_ancestor_chain() {
         let defs = vec![make_definition(1, "Leaf", "\\A\\B\\C")];
         let mut p = Pipelines::default();
-        // No explicit expansion — search should auto-expand ancestors.
+        p.collapsed_folders.insert("\\A".to_string());
+        p.collapsed_folders.insert("\\A\\B".to_string());
+        p.collapsed_folders.insert("\\A\\B\\C".to_string());
+        // Search should auto-expand ancestors even if the user collapsed them.
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "Leaf");
         assert_eq!(p.rows.len(), 4);
     }
@@ -681,26 +681,24 @@ mod tests {
         let defs = vec![make_definition(1, "Deploy", "\\Infra")];
         let mut p = Pipelines::default();
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
-        // Default collapsed: only `Infra` header visible.
+        // Default expanded: `Infra` header plus its child pipeline.
+        assert_eq!(p.rows.len(), 2);
+
+        // Toggle -> collapse.
+        p.toggle_folder_at(0);
+        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
         assert_eq!(p.rows.len(), 1);
 
-        // Toggle → expand.
+        // Toggle -> expand again.
         p.toggle_folder_at(0);
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
         assert_eq!(p.rows.len(), 2);
-
-        // Toggle → collapse again.
-        p.toggle_folder_at(0);
-        p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
-        assert_eq!(p.rows.len(), 1);
     }
 
     #[test]
     fn find_parent_folder_index_walks_to_immediate_parent() {
         let defs = vec![make_definition(1, "Leaf", "\\A\\B")];
         let mut p = Pipelines::default();
-        p.expanded_folders.insert("\\A".to_string());
-        p.expanded_folders.insert("\\A\\B".to_string());
         p.rebuild(&defs, &BTreeMap::new(), &[], &[], &[], "");
         // rows: [A (d0), B (d1), Leaf (d2)].
         assert_eq!(p.find_parent_folder_index(2), Some(1));

@@ -48,10 +48,10 @@ const SECTION_COUNT: usize = 4;
 
 /// Stable section identifiers in display order.
 const SECTION_LABELS: [&str; SECTION_COUNT] = [
-    "Pinned Pipelines",
-    "Pinned Work Items",
-    "Pull Requests",
-    "Work Items",
+    "Pipelines (Pinned)",
+    "Work Items (Pinned)",
+    "Pull Requests (Active)",
+    "Work Items (Active)",
 ];
 
 /// Returns a string of `n` spaces for column padding.
