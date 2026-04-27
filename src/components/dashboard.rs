@@ -308,8 +308,13 @@ impl Dashboard {
         let label_len = label.chars().count() + 2;
         let rule_len = total_w.saturating_sub(label_len);
         let rule = "─".repeat(rule_len);
+        let label_style = if is_active_section {
+            theme::SECTION_HEADER
+        } else {
+            theme::SUBTLE
+        };
         let header_line = Line::from(vec![
-            Span::styled(format!(" {label} "), theme::TEXT),
+            Span::styled(format!(" {label} "), label_style),
             Span::styled(rule, theme::MUTED),
         ]);
         let header_rect = Rect {

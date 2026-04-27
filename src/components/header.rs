@@ -4,12 +4,11 @@ use anyhow::Result;
 use chrono::Utc;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 
 use super::Component;
-use crate::render::helpers::truncate;
+use crate::render::helpers::{badge, truncate};
 use crate::render::theme;
 use crate::state::{App, PaginationStatus, Service, View};
 
@@ -80,28 +79,28 @@ impl Header {
         ])
         .split(area);
 
-        let refresh_text = if app.loading {
-            " ⟳ refreshing...".to_string()
+        let refresh_span = if app.loading {
+            badge("⟳ refreshing", theme::CHIP_ACTIVE)
         } else if let Some(last) = app.last_refresh {
             let elapsed = Utc::now().signed_duration_since(last);
             if elapsed.num_seconds() < 60 {
-                format!(" ⟳ {}s ago", elapsed.num_seconds())
+                badge(format!("⟳ {}s ago", elapsed.num_seconds()), theme::CHIP)
             } else {
-                format!(" ⟳ {}m ago", elapsed.num_minutes())
+                badge(format!("⟳ {}m ago", elapsed.num_minutes()), theme::CHIP)
             }
         } else {
-            " ⟳ --".to_string()
+            badge("⟳ --", theme::CHIP)
         };
 
         let error_span = if let Some(notif) = app.notifications.clone_current() {
-            let (prefix, color) = match notif.level {
-                crate::state::notifications::NotificationLevel::Error => ("⚠", Color::Red),
-                crate::state::notifications::NotificationLevel::Success => ("✓", Color::Green),
-                crate::state::notifications::NotificationLevel::Info => ("ℹ", Color::Cyan),
+            let (prefix, style) = match notif.level {
+                crate::state::notifications::NotificationLevel::Error => ("⚠", theme::ERROR),
+                crate::state::notifications::NotificationLevel::Success => ("✓", theme::SUCCESS),
+                crate::state::notifications::NotificationLevel::Info => ("ℹ", theme::TITLE),
             };
             Span::styled(
                 format!("  {} {}", prefix, truncate(&notif.message, 48)),
-                Style::new().fg(color),
+                style,
             )
         } else {
             Span::raw("")
@@ -110,8 +109,8 @@ impl Header {
         let approvals_span = if app.data.pending_approvals.is_empty() {
             Span::raw("")
         } else {
-            Span::styled(
-                format!("  ⏸ {} pending", app.data.pending_approvals.len()),
+            badge(
+                format!("⏸ {} pending", app.data.pending_approvals.len()),
                 theme::APPROVAL,
             )
         };
@@ -122,20 +121,16 @@ impl Header {
         // indicator and doesn't compete with error/success notifications.
         let pagination_span = app.pagination_status.as_ref().map_or_else(
             || Span::raw(""),
-            |status| {
-                Span::styled(
-                    format!("  {}", format_pagination_status(status)),
-                    theme::MUTED,
-                )
-            },
+            |status| badge(format_pagination_status(status), theme::CHIP),
         );
 
         let bc = breadcrumb(app);
         let mut title_spans = vec![
-            Span::styled(" Azure DevOps", theme::BRAND),
-            Span::styled("  ●  ", theme::MUTED),
-            Span::styled(&app.org_project_label, theme::TEXT),
-            Span::styled(refresh_text, theme::MUTED),
+            Span::styled(" devops", theme::BRAND),
+            Span::styled("  ", theme::MUTED),
+            badge(app.org_project_label.clone(), theme::CHIP),
+            Span::styled(" ", theme::MUTED),
+            refresh_span,
             Span::styled("  │  ", theme::MUTED),
         ];
         title_spans.extend(bc.spans);
@@ -155,10 +150,14 @@ impl Header {
             .position(|service| *service == app.service)
             .unwrap_or(0);
         let service_tabs = Tabs::new(service_titles)
-            .block(Block::new().borders(Borders::BOTTOM))
+            .block(
+                Block::new()
+                    .borders(Borders::BOTTOM)
+                    .border_style(theme::PANEL_BORDER),
+            )
             .select(selected_service)
             .style(theme::MUTED)
-            .highlight_style(theme::BRAND);
+            .highlight_style(theme::MODE_ACTIVE);
         f.render_widget(service_tabs, chunks[1]);
     }
 }
