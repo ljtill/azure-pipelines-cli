@@ -787,7 +787,7 @@ pub fn spawn_fetch_dashboard_work_items(
     app.dashboard_work_items = DashboardWorkItemsState::Loading;
     app.rebuild_dashboard();
 
-    let wiql = build_dashboard_work_items_wiql(&app.current_config().azure_devops.project);
+    let wiql = build_dashboard_work_items_wiql(&app.current_config().devops.connection.project);
     let assigned_scoped_by_id = app.current_user.id.is_some();
     let client = client.clone();
     let tx = tx.clone();
@@ -1004,7 +1004,7 @@ pub fn spawn_fetch_boards(
 
     let client = client.clone();
     let tx = tx.clone();
-    let project = app.current_config().azure_devops.project;
+    let project = app.current_config().devops.connection.project;
     let span = tracing::info_span!("fetch_boards", generation, project = %project);
     spawn_named(
         "fetch_boards",
@@ -1062,7 +1062,8 @@ pub fn spawn_fetch_my_work_items(
     };
     let generation = list.next_generation();
 
-    let Some(wiql) = build_my_work_items_wiql(view, &app.current_config().azure_devops.project)
+    let Some(wiql) =
+        build_my_work_items_wiql(view, &app.current_config().devops.connection.project)
     else {
         return;
     };

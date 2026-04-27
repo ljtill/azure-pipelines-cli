@@ -7,7 +7,7 @@ use crate::client::models::{
     PipelineDefinition, PullRequest, PullRequestThread, Reviewer, TaskState, TimelineRecord,
 };
 use crate::config::{
-    AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
+    Config, ConnectionConfig, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
     UpdateConfig,
 };
 use crate::state::App;
@@ -241,15 +241,17 @@ pub fn make_pr_thread(id: u32, status: &str, comment_count: usize) -> PullReques
 pub fn make_config() -> Config {
     Config {
         schema_version: Some(crate::config::CURRENT_SCHEMA_VERSION),
-        azure_devops: AzureDevOpsConfig {
-            organization: "testorg".to_string(),
-            project: "testproj".to_string(),
+        devops: crate::config::DevOpsConfig {
+            connection: ConnectionConfig {
+                organization: "testorg".to_string(),
+                project: "testproj".to_string(),
+            },
+            filters: FiltersConfig::default(),
+            update: UpdateConfig::default(),
+            logging: LoggingConfig::default(),
+            notifications: NotificationsConfig::default(),
+            display: DisplayConfig::default(),
         },
-        filters: FiltersConfig::default(),
-        update: UpdateConfig::default(),
-        logging: LoggingConfig::default(),
-        notifications: NotificationsConfig::default(),
-        display: DisplayConfig::default(),
     }
 }
 
@@ -257,8 +259,8 @@ pub fn make_config() -> Config {
 pub fn make_app() -> App {
     let config = make_config();
     let mut app = App::new(
-        &config.azure_devops.organization,
-        &config.azure_devops.project,
+        &config.devops.connection.organization,
+        &config.devops.connection.project,
         &config,
         PathBuf::from("/tmp/test-config.toml"),
     );
@@ -353,8 +355,8 @@ mod tests {
     #[test]
     fn make_config_values() {
         let c = make_config();
-        assert_eq!(c.azure_devops.organization, "testorg");
-        assert_eq!(c.azure_devops.project, "testproj");
+        assert_eq!(c.devops.connection.organization, "testorg");
+        assert_eq!(c.devops.connection.project, "testproj");
     }
 
     #[test]

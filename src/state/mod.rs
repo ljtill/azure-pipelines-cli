@@ -428,10 +428,10 @@ impl App {
             endpoints: Endpoints::new(organization, project),
             config_path,
             filters: FilterConfig {
-                folders: config.filters.folders.clone(),
-                definition_ids: config.filters.definition_ids.clone(),
-                pinned_definition_ids: config.filters.pinned_definition_ids.clone(),
-                pinned_work_item_ids: config.filters.pinned_work_item_ids.clone(),
+                folders: config.devops.filters.folders.clone(),
+                definition_ids: config.devops.filters.definition_ids.clone(),
+                pinned_definition_ids: config.devops.filters.pinned_definition_ids.clone(),
+                pinned_work_item_ids: config.devops.filters.pinned_work_item_ids.clone(),
             },
 
             data: CoreData::default(),
@@ -474,14 +474,16 @@ impl App {
             log_refresh: crate::shared::refresh::RefreshState::default(),
             pagination_status: None,
 
-            refresh_interval: Duration::from_secs(config.display.refresh_interval_secs),
-            log_refresh_interval: Duration::from_secs(config.display.log_refresh_interval_secs),
+            refresh_interval: Duration::from_secs(config.devops.display.refresh_interval_secs),
+            log_refresh_interval: Duration::from_secs(
+                config.devops.display.log_refresh_interval_secs,
+            ),
 
-            max_log_lines: config.display.max_log_lines,
+            max_log_lines: config.devops.display.max_log_lines,
 
             reload_requested: false,
 
-            notifications_enabled: config.notifications.enabled,
+            notifications_enabled: config.devops.notifications.enabled,
             prev_latest_builds: BTreeMap::new(),
         }
     }
@@ -829,32 +831,34 @@ impl App {
     pub fn current_config(&self) -> crate::config::Config {
         crate::config::Config {
             schema_version: Some(crate::config::CURRENT_SCHEMA_VERSION),
-            azure_devops: crate::config::AzureDevOpsConfig {
-                organization: self
-                    .org_project_label
-                    .split(" / ")
-                    .next()
-                    .unwrap_or("")
-                    .to_string(),
-                project: self
-                    .org_project_label
-                    .split(" / ")
-                    .nth(1)
-                    .unwrap_or("")
-                    .to_string(),
+            devops: crate::config::DevOpsConfig {
+                connection: crate::config::ConnectionConfig {
+                    organization: self
+                        .org_project_label
+                        .split(" / ")
+                        .next()
+                        .unwrap_or("")
+                        .to_string(),
+                    project: self
+                        .org_project_label
+                        .split(" / ")
+                        .nth(1)
+                        .unwrap_or("")
+                        .to_string(),
+                },
+                filters: crate::config::FiltersConfig {
+                    folders: self.filters.folders.clone(),
+                    definition_ids: self.filters.definition_ids.clone(),
+                    pinned_definition_ids: self.filters.pinned_definition_ids.clone(),
+                    pinned_work_item_ids: self.filters.pinned_work_item_ids.clone(),
+                },
+                update: crate::config::UpdateConfig::default(),
+                logging: crate::config::LoggingConfig::default(),
+                notifications: crate::config::NotificationsConfig {
+                    enabled: self.notifications_enabled,
+                },
+                display: crate::config::DisplayConfig::default(),
             },
-            filters: crate::config::FiltersConfig {
-                folders: self.filters.folders.clone(),
-                definition_ids: self.filters.definition_ids.clone(),
-                pinned_definition_ids: self.filters.pinned_definition_ids.clone(),
-                pinned_work_item_ids: self.filters.pinned_work_item_ids.clone(),
-            },
-            update: crate::config::UpdateConfig::default(),
-            logging: crate::config::LoggingConfig::default(),
-            notifications: crate::config::NotificationsConfig {
-                enabled: self.notifications_enabled,
-            },
-            display: crate::config::DisplayConfig::default(),
         }
     }
 

@@ -54,8 +54,8 @@ pub async fn run(
     rollback_report: Option<crate::update::RollbackReport>,
 ) -> Result<RunResult> {
     let mut app = App::new(
-        &config.azure_devops.organization,
-        &config.azure_devops.project,
+        &config.devops.connection.organization,
+        &config.devops.connection.project,
         config,
         config_path,
     );
@@ -105,7 +105,7 @@ pub async fn run(
     let mut ui_tick = tokio::time::interval(Duration::from_secs(1));
 
     // Spawn background update check (once, at startup).
-    if config.update.check_for_updates {
+    if config.devops.update.check_for_updates {
         let tx = tx.clone();
         tokio::spawn(async move {
             if let Some(version) = crate::update::check_for_update().await {
@@ -118,7 +118,7 @@ pub async fn run(
     spawn_fetch_user_identity(&client, &tx);
 
     tracing::info!(
-        refresh_secs = config.display.refresh_interval_secs,
+        refresh_secs = config.devops.display.refresh_interval_secs,
         "event loop starting"
     );
 

@@ -12,30 +12,30 @@ On first launch with no config file, an interactive setup wizard creates one for
 ## Required keys
 
 ```toml
-[azure_devops]
+[devops.connection]
 organization = "your-org"
 project = "your-project"
 ```
 
-Boards uses the same project and resolves the default team and backlog at runtime — there is no separate `[boards]` section.
+Boards uses the same project and resolves the default team and backlog at runtime — there is no separate `[devops.boards]` section.
 
 ## Sections
 
-The config file may contain the following top-level sections. New keys are added with safe defaults so older configs keep loading on newer binaries.
+The config file groups all app tables under a single top-level `[devops]` table. New keys are added with safe defaults so older configs keep loading on newer binaries.
 
-- `[azure_devops]` — organization, project, and related ADO connection settings.
-- `[filters]` — view-level filters (e.g. authors, assignees) that persist across runs.
-- `[update]` — auto-update check cadence and behavior.
-- `[logging]` — log level and file output.
-- `[notifications]` — toggles for build state-change notifications.
-- `[display]` — refresh cadences and log-viewer caps (see below).
+- `[devops.connection]` — organization, project, and related ADO connection settings.
+- `[devops.filters]` — view-level filters (e.g. authors, assignees) that persist across runs.
+- `[devops.update]` — auto-update check cadence and behavior.
+- `[devops.logging]` — log level and file output.
+- `[devops.notifications]` — toggles for build state-change notifications.
+- `[devops.display]` — refresh cadences and log-viewer caps (see below).
 
 An optional top-level `schema_version` field is accepted (default `1`). See [stability.md](stability.md) for forward/backward compatibility rules.
 
-## `[display]`
+## `[devops.display]`
 
 ```toml
-[display]
+[devops.display]
 refresh_interval_secs = 15      # Data refresh cadence. Min 5.
 log_refresh_interval_secs = 5   # Log refresh cadence. Min 1.
 max_log_lines = 100000          # Ring-buffer cap for live log output. Min 1000.

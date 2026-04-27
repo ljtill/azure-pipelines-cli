@@ -85,11 +85,13 @@ async fn main() -> Result<()> {
     // Uses the configured level as default; RUST_LOG env var overrides.
     let log_level = early_config
         .as_ref()
-        .map_or("info", |c| c.logging.level.as_str());
+        .map_or("info", |c| c.devops.logging.level.as_str());
     let log_dir_override = early_config
         .as_ref()
-        .and_then(|c| c.logging.log_directory.as_deref());
-    let max_log_files = early_config.as_ref().map_or(5, |c| c.logging.max_log_files);
+        .and_then(|c| c.devops.logging.log_directory.as_deref());
+    let max_log_files = early_config
+        .as_ref()
+        .map_or(5, |c| c.devops.logging.max_log_files);
     let log_init_status = init_tracing(log_level, log_dir_override, max_log_files).await;
 
     // Check for and recover from an interrupted self-update BEFORE the TUI
@@ -116,8 +118,8 @@ async fn main() -> Result<()> {
 
     let mut config = if let Some(c) = early_config {
         tracing::info!(
-            org = c.azure_devops.organization,
-            project = c.azure_devops.project,
+            org = c.devops.connection.organization,
+            project = c.devops.connection.project,
             "app starting"
         );
         c
@@ -128,8 +130,8 @@ async fn main() -> Result<()> {
         match result {
             Ok(Some(config)) => {
                 tracing::info!(
-                    org = config.azure_devops.organization,
-                    project = config.azure_devops.project,
+                    org = config.devops.connection.organization,
+                    project = config.devops.connection.project,
                     "config created via setup"
                 );
                 config
@@ -143,8 +145,8 @@ async fn main() -> Result<()> {
 
     loop {
         let mut client = AdoClient::new(
-            &config.azure_devops.organization,
-            &config.azure_devops.project,
+            &config.devops.connection.organization,
+            &config.devops.connection.project,
         )?;
         client.set_api_version(&api_version);
 

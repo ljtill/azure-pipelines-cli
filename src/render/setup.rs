@@ -325,10 +325,10 @@ mod tests {
             .await
             .unwrap();
         let config = Config::load(Some(&path)).await.unwrap();
-        assert_eq!(config.azure_devops.organization, "test-org");
-        assert_eq!(config.azure_devops.project, "test-proj");
-        assert!(config.filters.pinned_definition_ids.is_empty());
-        assert!(config.filters.pinned_work_item_ids.is_empty());
+        assert_eq!(config.devops.connection.organization, "test-org");
+        assert_eq!(config.devops.connection.project, "test-proj");
+        assert!(config.devops.filters.pinned_definition_ids.is_empty());
+        assert!(config.devops.filters.pinned_work_item_ids.is_empty());
 
         // Safe: test-only cleanup.
         let _ = std::fs::remove_dir_all(&dir);

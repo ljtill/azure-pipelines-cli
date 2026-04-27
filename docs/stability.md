@@ -4,7 +4,7 @@ The following public surfaces are frozen for the 1.x line. New behavior may be a
 
 ## Config schema
 
-Keys under `[azure_devops]`, `[filters]`, `[update]`, `[logging]`, `[notifications]`, and `[display]`. New keys may be added (always with defaults so existing configs keep working). An optional top-level `schema_version` field is accepted (default `1`).
+Keys under `[devops.connection]`, `[devops.filters]`, `[devops.update]`, `[devops.logging]`, `[devops.notifications]`, and `[devops.display]`. New keys may be added (always with defaults so existing configs keep working). An optional top-level `schema_version` field is accepted (default `1`).
 
 Configs are forward-compatible within a major version: newer `devops` binaries will load older configs. Downgrading is **not** supported — a binary will refuse to load a config whose `schema_version` is higher than it understands, with a clear error message.
 

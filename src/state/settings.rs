@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::config::{
-    AzureDevOpsConfig, Config, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
+    Config, ConnectionConfig, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
     UpdateConfig,
 };
 
@@ -66,14 +66,14 @@ impl SettingsState {
                 label: "Organization",
                 section: "Connection",
                 kind: FieldKind::Text,
-                value: config.azure_devops.organization.clone(),
+                value: config.devops.connection.organization.clone(),
                 hint: "reload on save",
             },
             SettingsField {
                 label: "Project",
                 section: "Connection",
                 kind: FieldKind::Text,
-                value: config.azure_devops.project.clone(),
+                value: config.devops.connection.project.clone(),
                 hint: "reload on save",
             },
             // --- Filters ---
@@ -81,7 +81,7 @@ impl SettingsState {
                 label: "Filter folders",
                 section: "Filters",
                 kind: FieldKind::StringList,
-                value: config.filters.folders.join(", "),
+                value: config.devops.filters.folders.join(", "),
                 hint: "comma-separated",
             },
             SettingsField {
@@ -89,6 +89,7 @@ impl SettingsState {
                 section: "Filters",
                 kind: FieldKind::IntList,
                 value: config
+                    .devops
                     .filters
                     .definition_ids
                     .iter()
@@ -102,6 +103,7 @@ impl SettingsState {
                 section: "Filters",
                 kind: FieldKind::IntList,
                 value: config
+                    .devops
                     .filters
                     .pinned_definition_ids
                     .iter()
@@ -115,6 +117,7 @@ impl SettingsState {
                 section: "Filters",
                 kind: FieldKind::IntList,
                 value: config
+                    .devops
                     .filters
                     .pinned_work_item_ids
                     .iter()
@@ -128,21 +131,21 @@ impl SettingsState {
                 label: "Refresh interval (secs)",
                 section: "Display",
                 kind: FieldKind::Number,
-                value: config.display.refresh_interval_secs.to_string(),
+                value: config.devops.display.refresh_interval_secs.to_string(),
                 hint: "min 5",
             },
             SettingsField {
                 label: "Log refresh interval (secs)",
                 section: "Display",
                 kind: FieldKind::Number,
-                value: config.display.log_refresh_interval_secs.to_string(),
+                value: config.devops.display.log_refresh_interval_secs.to_string(),
                 hint: "min 1",
             },
             SettingsField {
                 label: "Notifications",
                 section: "Display",
                 kind: FieldKind::Toggle,
-                value: config.notifications.enabled.to_string(),
+                value: config.devops.notifications.enabled.to_string(),
                 hint: "",
             },
             // --- General ---
@@ -150,14 +153,14 @@ impl SettingsState {
                 label: "Log level",
                 section: "General",
                 kind: FieldKind::Cycle,
-                value: config.logging.level.clone(),
+                value: config.devops.logging.level.clone(),
                 hint: "trace/debug/info/warn/error",
             },
             SettingsField {
                 label: "Check for updates",
                 section: "General",
                 kind: FieldKind::Toggle,
-                value: config.update.check_for_updates.to_string(),
+                value: config.devops.update.check_for_updates.to_string(),
                 hint: "",
             },
         ];
@@ -167,7 +170,7 @@ impl SettingsState {
             editing: false,
             config_path,
             cursor: 0,
-            preserved_max_log_lines: config.display.max_log_lines,
+            preserved_max_log_lines: config.devops.display.max_log_lines,
         }
     }
 
@@ -302,31 +305,33 @@ impl SettingsState {
 
         Config {
             schema_version: Some(crate::config::CURRENT_SCHEMA_VERSION),
-            azure_devops: AzureDevOpsConfig {
-                organization: get("Organization").to_string(),
-                project: get("Project").to_string(),
-            },
-            filters: FiltersConfig {
-                folders: parse_string_list("Filter folders"),
-                definition_ids: parse_u32_list("Filter definition IDs"),
-                pinned_definition_ids: parse_u32_list("Pinned definition IDs"),
-                pinned_work_item_ids: parse_u32_list("Pinned work item IDs"),
-            },
-            update: UpdateConfig {
-                check_for_updates: parse_bool("Check for updates"),
-            },
-            logging: LoggingConfig {
-                level: get("Log level").to_string(),
-                log_directory: None,
-                max_log_files: 5,
-            },
-            notifications: NotificationsConfig {
-                enabled: parse_bool("Notifications"),
-            },
-            display: DisplayConfig {
-                refresh_interval_secs: parse_u64("Refresh interval (secs)", 15).max(5),
-                log_refresh_interval_secs: parse_u64("Log refresh interval (secs)", 5).max(1),
-                max_log_lines: self.preserved_max_log_lines,
+            devops: crate::config::DevOpsConfig {
+                connection: ConnectionConfig {
+                    organization: get("Organization").to_string(),
+                    project: get("Project").to_string(),
+                },
+                filters: FiltersConfig {
+                    folders: parse_string_list("Filter folders"),
+                    definition_ids: parse_u32_list("Filter definition IDs"),
+                    pinned_definition_ids: parse_u32_list("Pinned definition IDs"),
+                    pinned_work_item_ids: parse_u32_list("Pinned work item IDs"),
+                },
+                update: UpdateConfig {
+                    check_for_updates: parse_bool("Check for updates"),
+                },
+                logging: LoggingConfig {
+                    level: get("Log level").to_string(),
+                    log_directory: None,
+                    max_log_files: 5,
+                },
+                notifications: NotificationsConfig {
+                    enabled: parse_bool("Notifications"),
+                },
+                display: DisplayConfig {
+                    refresh_interval_secs: parse_u64("Refresh interval (secs)", 15).max(5),
+                    log_refresh_interval_secs: parse_u64("Log refresh interval (secs)", 5).max(1),
+                    max_log_lines: self.preserved_max_log_lines,
+                },
             },
         }
     }
@@ -453,25 +458,25 @@ mod tests {
         let s = SettingsState::from_config(&original, PathBuf::from("/tmp/test.toml"));
         let rebuilt = s.to_config();
 
-        assert_eq!(rebuilt.azure_devops.organization, "testorg");
-        assert_eq!(rebuilt.azure_devops.project, "testproj");
-        assert!(rebuilt.filters.folders.is_empty());
-        assert!(rebuilt.filters.definition_ids.is_empty());
-        assert!(rebuilt.update.check_for_updates);
-        assert_eq!(rebuilt.logging.level, "info");
-        assert!(rebuilt.notifications.enabled);
-        assert_eq!(rebuilt.display.refresh_interval_secs, 15);
-        assert_eq!(rebuilt.display.log_refresh_interval_secs, 5);
+        assert_eq!(rebuilt.devops.connection.organization, "testorg");
+        assert_eq!(rebuilt.devops.connection.project, "testproj");
+        assert!(rebuilt.devops.filters.folders.is_empty());
+        assert!(rebuilt.devops.filters.definition_ids.is_empty());
+        assert!(rebuilt.devops.update.check_for_updates);
+        assert_eq!(rebuilt.devops.logging.level, "info");
+        assert!(rebuilt.devops.notifications.enabled);
+        assert_eq!(rebuilt.devops.display.refresh_interval_secs, 15);
+        assert_eq!(rebuilt.devops.display.log_refresh_interval_secs, 5);
     }
 
     #[test]
     fn to_config_enforces_minimums() {
         let mut config = make_config();
-        config.display.refresh_interval_secs = 1; // below min of 5
-        config.display.log_refresh_interval_secs = 0; // below min of 1
+        config.devops.display.refresh_interval_secs = 1; // below min of 5
+        config.devops.display.log_refresh_interval_secs = 0; // below min of 1
         let s = SettingsState::from_config(&config, PathBuf::from("/tmp/test.toml"));
         let rebuilt = s.to_config();
-        assert_eq!(rebuilt.display.refresh_interval_secs, 5);
-        assert_eq!(rebuilt.display.log_refresh_interval_secs, 1);
+        assert_eq!(rebuilt.devops.display.refresh_interval_secs, 5);
+        assert_eq!(rebuilt.devops.display.log_refresh_interval_secs, 1);
     }
 }

@@ -49,7 +49,21 @@ pub struct Config {
         skip_serializing_if = "Option::is_none"
     )]
     pub schema_version: Option<u32>,
-    pub azure_devops: AzureDevOpsConfig,
+    pub devops: DevOpsConfig,
+}
+
+// Always deserialize as Some(CURRENT_SCHEMA_VERSION) when the field is missing
+// from TOML. Serde can't directly default to `Some(value)` without this helper,
+// so the Option wrapper is intentional and not actually unnecessary.
+#[allow(clippy::unnecessary_wraps)]
+fn default_schema_version() -> Option<u32> {
+    Some(CURRENT_SCHEMA_VERSION)
+}
+
+/// All app config tables, grouped under the top-level `[devops]` table.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DevOpsConfig {
+    pub connection: ConnectionConfig,
     #[serde(default)]
     pub filters: FiltersConfig,
     #[serde(default)]
@@ -62,16 +76,8 @@ pub struct Config {
     pub display: DisplayConfig,
 }
 
-// Always deserialize as Some(CURRENT_SCHEMA_VERSION) when the field is missing
-// from TOML. Serde can't directly default to `Some(value)` without this helper,
-// so the Option wrapper is intentional and not actually unnecessary.
-#[allow(clippy::unnecessary_wraps)]
-fn default_schema_version() -> Option<u32> {
-    Some(CURRENT_SCHEMA_VERSION)
-}
-
 #[derive(Debug, Deserialize, Serialize)]
-pub struct AzureDevOpsConfig {
+pub struct ConnectionConfig {
     pub organization: String,
     pub project: String,
 }
@@ -223,7 +229,7 @@ impl Config {
             tracing::warn!(path = %config_path.display(), "config file not found");
             anyhow::bail!(
                 "Config file not found at {}. Create it with:\n\n\
-                 [azure_devops]\n\
+                 [devops.connection]\n\
                  organization = \"your-org\"\n\
                  project = \"your-project\"\n",
                 config_path.display()
@@ -267,16 +273,18 @@ impl Config {
         }
 
         let mut table = toml::map::Map::new();
-        let mut ado = toml::map::Map::new();
-        ado.insert(
+        let mut devops = toml::map::Map::new();
+
+        let mut connection = toml::map::Map::new();
+        connection.insert(
             "organization".to_string(),
             toml::Value::String(organization.to_string()),
         );
-        ado.insert(
+        connection.insert(
             "project".to_string(),
             toml::Value::String(project.to_string()),
         );
-        table.insert("azure_devops".to_string(), toml::Value::Table(ado));
+        devops.insert("connection".to_string(), toml::Value::Table(connection));
 
         let mut filters = toml::map::Map::new();
         filters.insert(
@@ -287,7 +295,9 @@ impl Config {
             "pinned_work_item_ids".to_string(),
             toml::Value::Array(Vec::new()),
         );
-        table.insert("filters".to_string(), toml::Value::Table(filters));
+        devops.insert("filters".to_string(), toml::Value::Table(filters));
+
+        table.insert("devops".to_string(), toml::Value::Table(devops));
 
         let contents = toml::to_string_pretty(&toml::Value::Table(table))
             .context("Failed to serialize config")?;
@@ -354,7 +364,7 @@ impl Config {
         if !config_path.exists() {
             anyhow::bail!(
                 "Config file not found at {}. Create it with:\n\n\
-                 [azure_devops]\n\
+                 [devops.connection]\n\
                  organization = \"your-org\"\n\
                  project = \"your-project\"\n",
                 config_path.display()
@@ -439,48 +449,48 @@ mod tests {
     #[test]
     fn parse_minimal_config() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "myorg"
 project = "myproject"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert_eq!(config.azure_devops.organization, "myorg");
-        assert_eq!(config.azure_devops.project, "myproject");
-        assert!(config.filters.folders.is_empty());
-        assert!(config.filters.definition_ids.is_empty());
+        assert_eq!(config.devops.connection.organization, "myorg");
+        assert_eq!(config.devops.connection.project, "myproject");
+        assert!(config.devops.filters.folders.is_empty());
+        assert!(config.devops.filters.definition_ids.is_empty());
         // Update config defaults.
-        assert!(config.update.check_for_updates);
+        assert!(config.devops.update.check_for_updates);
         // Logging defaults.
-        assert_eq!(config.logging.level, "info");
-        assert!(config.logging.log_directory.is_none());
-        assert_eq!(config.logging.max_log_files, 5);
+        assert_eq!(config.devops.logging.level, "info");
+        assert!(config.devops.logging.log_directory.is_none());
+        assert_eq!(config.devops.logging.max_log_files, 5);
         // Notifications defaults.
-        assert!(config.notifications.enabled);
+        assert!(config.devops.notifications.enabled);
         // Display defaults.
-        assert_eq!(config.display.refresh_interval_secs, 15);
-        assert_eq!(config.display.log_refresh_interval_secs, 5);
+        assert_eq!(config.devops.display.refresh_interval_secs, 15);
+        assert_eq!(config.devops.display.log_refresh_interval_secs, 5);
     }
 
     #[test]
     fn parse_full_config() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "myorg"
 project = "myproject"
 
-[filters]
+[devops.filters]
 folders = ["\\Infra", "\\Deploy"]
 definition_ids = [42, 99]
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert_eq!(config.filters.folders, vec!["\\Infra", "\\Deploy"]);
-        assert_eq!(config.filters.definition_ids, vec![42, 99]);
+        assert_eq!(config.devops.filters.folders, vec!["\\Infra", "\\Deploy"]);
+        assert_eq!(config.devops.filters.definition_ids, vec![42, 99]);
     }
 
     #[test]
-    fn parse_config_missing_azure_devops_fails() {
+    fn parse_config_missing_connection_fails() {
         let toml = r"
-[filters]
+[devops.filters]
 folders = []
 ";
         let result: Result<Config, _> = toml::from_str(toml);
@@ -516,120 +526,120 @@ folders = []
     #[test]
     fn parse_config_empty_filters() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "org"
 project = "proj"
 
-[filters]
+[devops.filters]
 folders = []
 definition_ids = []
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert!(config.filters.folders.is_empty());
-        assert!(config.filters.definition_ids.is_empty());
+        assert!(config.devops.filters.folders.is_empty());
+        assert!(config.devops.filters.definition_ids.is_empty());
     }
 
     #[test]
     fn parse_config_with_update_section() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "org"
 project = "proj"
 
-[update]
+[devops.update]
 check_for_updates = false
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert!(!config.update.check_for_updates);
+        assert!(!config.devops.update.check_for_updates);
     }
 
     #[test]
     fn parse_config_update_defaults_to_true() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "org"
 project = "proj"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert!(config.update.check_for_updates);
+        assert!(config.devops.update.check_for_updates);
     }
 
     #[test]
     fn parse_config_with_logging_level() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "org"
 project = "proj"
 
-[logging]
+[devops.logging]
 level = "debug"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert_eq!(config.logging.level, "debug");
+        assert_eq!(config.devops.logging.level, "debug");
     }
 
     #[test]
     fn parse_config_notifications_defaults_to_enabled() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "org"
 project = "proj"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert!(config.notifications.enabled);
+        assert!(config.devops.notifications.enabled);
     }
 
     #[test]
     fn parse_config_with_notifications_disabled() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "org"
 project = "proj"
 
-[notifications]
+[devops.notifications]
 enabled = false
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert!(!config.notifications.enabled);
+        assert!(!config.devops.notifications.enabled);
     }
 
     #[test]
     fn parse_config_with_display_section() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "org"
 project = "proj"
 
-[display]
+[devops.display]
 refresh_interval_secs = 30
 log_refresh_interval_secs = 10
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert_eq!(config.display.refresh_interval_secs, 30);
-        assert_eq!(config.display.log_refresh_interval_secs, 10);
+        assert_eq!(config.devops.display.refresh_interval_secs, 30);
+        assert_eq!(config.devops.display.log_refresh_interval_secs, 10);
     }
 
     #[test]
     fn config_round_trip() {
         let toml_input = r#"
-[azure_devops]
+[devops.connection]
 organization = "myorg"
 project = "myproject"
 
-[filters]
+[devops.filters]
 folders = ["\\Infra", "\\Deploy"]
 definition_ids = [42, 99]
 
-[update]
+[devops.update]
 check_for_updates = false
 
-[logging]
+[devops.logging]
 level = "debug"
 
-[notifications]
+[devops.notifications]
 enabled = false
 
-[display]
+[devops.display]
 refresh_interval_secs = 30
 log_refresh_interval_secs = 10
 "#;
@@ -637,15 +647,15 @@ log_refresh_interval_secs = 10
         let serialized = toml::to_string_pretty(&config).unwrap();
         let config2: Config = toml::from_str(&serialized).unwrap();
 
-        assert_eq!(config2.azure_devops.organization, "myorg");
-        assert_eq!(config2.azure_devops.project, "myproject");
-        assert_eq!(config2.filters.folders, vec!["\\Infra", "\\Deploy"]);
-        assert_eq!(config2.filters.definition_ids, vec![42, 99]);
-        assert!(!config2.update.check_for_updates);
-        assert_eq!(config2.logging.level, "debug");
-        assert!(!config2.notifications.enabled);
-        assert_eq!(config2.display.refresh_interval_secs, 30);
-        assert_eq!(config2.display.log_refresh_interval_secs, 10);
+        assert_eq!(config2.devops.connection.organization, "myorg");
+        assert_eq!(config2.devops.connection.project, "myproject");
+        assert_eq!(config2.devops.filters.folders, vec!["\\Infra", "\\Deploy"]);
+        assert_eq!(config2.devops.filters.definition_ids, vec![42, 99]);
+        assert!(!config2.devops.update.check_for_updates);
+        assert_eq!(config2.devops.logging.level, "debug");
+        assert!(!config2.devops.notifications.enabled);
+        assert_eq!(config2.devops.display.refresh_interval_secs, 30);
+        assert_eq!(config2.devops.display.log_refresh_interval_secs, 10);
     }
 
     #[tokio::test]
@@ -657,11 +667,11 @@ log_refresh_interval_secs = 10
 
         let config: Config = toml::from_str(
             r#"
-[azure_devops]
+[devops.connection]
 organization = "save-org"
 project = "save-proj"
 
-[display]
+[devops.display]
 refresh_interval_secs = 60
 log_refresh_interval_secs = 20
 "#,
@@ -670,9 +680,9 @@ log_refresh_interval_secs = 20
 
         config.save(&path).await.unwrap();
         let reloaded = Config::load(Some(&path)).await.unwrap();
-        assert_eq!(reloaded.azure_devops.organization, "save-org");
-        assert_eq!(reloaded.display.refresh_interval_secs, 60);
-        assert_eq!(reloaded.display.log_refresh_interval_secs, 20);
+        assert_eq!(reloaded.devops.connection.organization, "save-org");
+        assert_eq!(reloaded.devops.display.refresh_interval_secs, 60);
+        assert_eq!(reloaded.devops.display.log_refresh_interval_secs, 20);
 
         // Safe: test-only cleanup.
         let _ = std::fs::remove_dir_all(&dir);
@@ -681,7 +691,7 @@ log_refresh_interval_secs = 20
     #[test]
     fn config_without_schema_version_loads_as_v1() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "myorg"
 project = "myproject"
 "#;
@@ -694,7 +704,7 @@ project = "myproject"
         let toml = r#"
 schema_version = 1
 
-[azure_devops]
+[devops.connection]
 organization = "myorg"
 project = "myproject"
 "#;
@@ -709,7 +719,7 @@ project = "myproject"
         let toml = r#"
 schema_version = 99
 
-[azure_devops]
+[devops.connection]
 organization = "myorg"
 project = "myproject"
 "#;
@@ -728,7 +738,7 @@ project = "myproject"
         let toml = r#"
 schema_version = 1
 
-[azure_devops]
+[devops.connection]
 organization = "myorg"
 project = "myproject"
 "#;
@@ -739,7 +749,7 @@ project = "myproject"
     #[test]
     fn load_accepts_missing_schema_version() {
         let toml = r#"
-[azure_devops]
+[devops.connection]
 organization = "myorg"
 project = "myproject"
 "#;

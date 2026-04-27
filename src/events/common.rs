@@ -110,22 +110,25 @@ pub fn handle_settings_save(app: &mut App) -> Action {
                 // Detect connection change (org/project).
                 let new_label = format!(
                     "{} / {}",
-                    config.azure_devops.organization, config.azure_devops.project
+                    config.devops.connection.organization, config.devops.connection.project
                 );
                 let needs_reload = new_label != app.org_project_label;
 
                 // Apply runtime-relevant changes.
-                app.filters.folders = config.filters.folders;
-                app.filters.definition_ids = config.filters.definition_ids.clone();
-                app.filters.pinned_definition_ids = config.filters.pinned_definition_ids.clone();
-                app.filters.pinned_work_item_ids = config.filters.pinned_work_item_ids.clone();
-                app.notifications_enabled = config.notifications.enabled;
+                app.filters.folders = config.devops.filters.folders;
+                app.filters.definition_ids = config.devops.filters.definition_ids.clone();
+                app.filters.pinned_definition_ids =
+                    config.devops.filters.pinned_definition_ids.clone();
+                app.filters.pinned_work_item_ids =
+                    config.devops.filters.pinned_work_item_ids.clone();
+                app.notifications_enabled = config.devops.notifications.enabled;
 
                 // Apply display settings live.
-                app.refresh_interval = Duration::from_secs(config.display.refresh_interval_secs);
+                app.refresh_interval =
+                    Duration::from_secs(config.devops.display.refresh_interval_secs);
                 app.log_refresh_interval =
-                    Duration::from_secs(config.display.log_refresh_interval_secs);
-                app.max_log_lines = config.display.max_log_lines;
+                    Duration::from_secs(config.devops.display.log_refresh_interval_secs);
+                app.max_log_lines = config.devops.display.max_log_lines;
 
                 // Rebuild filtered views with new filters.
                 app.rebuild_dashboard();
