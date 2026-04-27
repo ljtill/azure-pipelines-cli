@@ -61,6 +61,28 @@ pub const VOTE_NONE: Style = Style::new().fg(PENDING_FG);
 pub const MODE_ACTIVE: Style = Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD);
 pub const MODE_INACTIVE: Style = Style::new().fg(TEXT_MUTED_FG);
 
+/// Returns the shared style for Azure Boards work item type labels.
+pub fn work_item_type_style(work_item_type: &str) -> Style {
+    match work_item_type.to_ascii_lowercase().as_str() {
+        "epic" => BRAND,
+        "feature" => TITLE,
+        "bug" | "impediment" => ERROR,
+        "task" | "test case" => SUBTLE,
+        _ => TEXT,
+    }
+}
+
+/// Returns the shared style for Azure Boards work item state labels.
+pub fn work_item_state_style(state: &str) -> Style {
+    match state.to_ascii_lowercase().as_str() {
+        "closed" | "removed" | "cut" => MUTED,
+        "done" | "completed" | "resolved" => SUCCESS,
+        "active" | "in progress" | "committed" => WARNING,
+        "new" | "to do" | "proposed" | "approved" => SUBTLE,
+        _ => TEXT,
+    }
+}
+
 /// Returns a foreground-only style for dynamic semantic colors.
 pub fn foreground(color: Color) -> Style {
     Style::new().fg(color)
@@ -107,5 +129,21 @@ mod tests {
         assert_eq!(STAGE.fg, Some(ACCENT_FG));
         assert_eq!(ARROW.fg, Some(TEXT_MUTED_FG));
         assert_eq!(JOB_ARROW.fg, Some(TEXT_MUTED_FG));
+    }
+
+    #[test]
+    fn work_item_type_styles_are_shared() {
+        assert_eq!(work_item_type_style("Bug").fg, ERROR.fg);
+        assert_eq!(work_item_type_style("Impediment").fg, ERROR.fg);
+        assert_eq!(work_item_type_style("Feature").fg, TITLE.fg);
+        assert_eq!(work_item_type_style("Task").fg, SUBTLE.fg);
+    }
+
+    #[test]
+    fn work_item_state_styles_are_shared() {
+        assert_eq!(work_item_state_style("Active").fg, WARNING.fg);
+        assert_eq!(work_item_state_style("Done").fg, SUCCESS.fg);
+        assert_eq!(work_item_state_style("Closed").fg, MUTED.fg);
+        assert_eq!(work_item_state_style("New").fg, SUBTLE.fg);
     }
 }

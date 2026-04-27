@@ -331,7 +331,7 @@ impl Boards {
                     ListItem::new(Line::from(vec![
                         Span::styled(
                             format!("{:<w_type$}", truncate(&item.work_item_type, w_type)),
-                            work_item_type_style(&item.work_item_type),
+                            theme::work_item_type_style(&item.work_item_type),
                         ),
                         Span::styled(format!("{:<w_id$}", format!("#{}", item.id)), id_style()),
                         Span::styled(
@@ -340,7 +340,7 @@ impl Boards {
                         ),
                         Span::styled(
                             format!("{:<w_state$}", truncate(&item.state, w_state)),
-                            state_style(&item.state),
+                            theme::work_item_state_style(&item.state),
                         ),
                         Span::styled(
                             format!(
@@ -513,26 +513,6 @@ fn id_style() -> Style {
 
 fn title_style() -> Style {
     theme::TEXT
-}
-
-fn work_item_type_style(work_item_type: &str) -> Style {
-    match work_item_type.to_ascii_lowercase().as_str() {
-        "epic" => theme::BRAND,
-        "feature" => theme::TITLE,
-        "bug" | "impediment" => theme::ERROR,
-        "task" | "test case" => theme::SUBTLE,
-        _ => theme::TEXT,
-    }
-}
-
-fn state_style(state: &str) -> Style {
-    match state.to_ascii_lowercase().as_str() {
-        "closed" | "removed" | "cut" => theme::MUTED,
-        "done" | "completed" | "resolved" => theme::SUCCESS,
-        "active" | "in progress" | "committed" => theme::WARNING,
-        "new" | "to do" | "proposed" | "approved" => theme::SUBTLE,
-        _ => theme::TEXT,
-    }
 }
 
 #[cfg(test)]

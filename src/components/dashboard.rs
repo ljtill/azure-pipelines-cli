@@ -521,7 +521,7 @@ impl Dashboard {
                     ),
                     Span::styled(
                         format!("{:<w_type$}", truncate(work_item.work_item_type(), w_type)),
-                        theme::BRANCH,
+                        theme::work_item_type_style(work_item.work_item_type()),
                     ),
                     Span::styled(
                         format!("{:<w_title$}", truncate(work_item.title(), w_title)),
@@ -529,7 +529,7 @@ impl Dashboard {
                     ),
                     Span::styled(
                         format!("{:<w_state$}", truncate(work_item.state_label(), w_state)),
-                        theme::MUTED,
+                        theme::work_item_state_style(work_item.state_label()),
                     ),
                     Span::styled(
                         format!(

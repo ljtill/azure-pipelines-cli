@@ -197,7 +197,7 @@ impl MyWorkItems {
                     ),
                     Span::styled(
                         format!("{:<w_type$}", truncate(&row.work_item_type, w_type)),
-                        work_item_type_style(&row.work_item_type),
+                        theme::work_item_type_style(&row.work_item_type),
                     ),
                     Span::styled(
                         format!("{:<w_title$}", truncate(&row.title, w_title)),
@@ -205,7 +205,7 @@ impl MyWorkItems {
                     ),
                     Span::styled(
                         format!("{:<w_state$}", truncate(&row.state, w_state)),
-                        state_style(&row.state),
+                        theme::work_item_state_style(&row.state),
                     ),
                     Span::styled(
                         format!(
@@ -238,26 +238,6 @@ fn id_style() -> Style {
 
 fn title_style() -> Style {
     theme::TEXT
-}
-
-fn work_item_type_style(work_item_type: &str) -> Style {
-    match work_item_type.to_ascii_lowercase().as_str() {
-        "epic" => theme::BRAND,
-        "feature" => theme::TITLE,
-        "bug" | "impediment" => theme::ERROR,
-        "task" | "test case" => theme::SUBTLE,
-        _ => theme::TEXT,
-    }
-}
-
-fn state_style(state: &str) -> Style {
-    match state.to_ascii_lowercase().as_str() {
-        "closed" | "removed" | "cut" => theme::MUTED,
-        "done" | "completed" | "resolved" => theme::SUCCESS,
-        "active" | "in progress" | "committed" => theme::WARNING,
-        "new" | "to do" | "proposed" | "approved" => theme::SUBTLE,
-        _ => theme::TEXT,
-    }
 }
 
 impl Component for MyWorkItems {

@@ -43,9 +43,15 @@ impl WorkItemDetail {
         let subtitle = self.work_item.as_ref().map(|wi| {
             Line::from(vec![
                 Span::styled(format!(" #{}", wi.id), theme::SECTION_HEADER),
-                Span::styled(format!("  ·  {}", wi.work_item_type()), theme::SUBTLE),
+                Span::styled(
+                    format!("  ·  {}", wi.work_item_type()),
+                    theme::work_item_type_style(wi.work_item_type()),
+                ),
                 Span::styled("  ·  ", theme::MUTED),
-                Span::styled(wi.state_label(), state_style(wi.state_label())),
+                Span::styled(
+                    wi.state_label(),
+                    theme::work_item_state_style(wi.state_label()),
+                ),
                 Span::styled(
                     format!("  ·  {}", wi.assigned_to_display().unwrap_or("Unassigned")),
                     theme::SUBTLE,
@@ -83,7 +89,7 @@ impl WorkItemDetail {
 }
 
 fn draw_header(f: &mut Frame, area: Rect, wi: &WorkItem, is_active: bool) {
-    let state_style = state_style(wi.state_label());
+    let state_style = theme::work_item_state_style(wi.state_label());
 
     let lines = vec![
         Line::from(vec![
@@ -360,23 +366,6 @@ fn format_f64(value: f64) -> String {
 
 fn format_who_when(who: &str, when: Option<&str>) -> String {
     when.map_or_else(|| who.to_string(), |ts| format!("{who} · {ts}"))
-}
-
-fn state_style(state: &str) -> Style {
-    if state.eq_ignore_ascii_case("New") || state.eq_ignore_ascii_case("To Do") {
-        theme::MUTED
-    } else if state.eq_ignore_ascii_case("Active") || state.eq_ignore_ascii_case("In Progress") {
-        theme::WARNING
-    } else if state.eq_ignore_ascii_case("Resolved") || state.eq_ignore_ascii_case("Done") {
-        theme::SUCCESS
-    } else if state.eq_ignore_ascii_case("Closed")
-        || state.eq_ignore_ascii_case("Removed")
-        || state.eq_ignore_ascii_case("Cut")
-    {
-        theme::MUTED
-    } else {
-        theme::TEXT
-    }
 }
 
 /// Strips a simple subset of HTML from ADO rich-text fields and converts
