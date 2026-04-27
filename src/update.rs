@@ -1,9 +1,17 @@
 //! Self-update mechanism that downloads new releases from GitHub.
 
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::{Context, Result, bail};
+use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 
 use crate::shared::SecretString;
 
@@ -11,6 +19,14 @@ const GITHUB_REPO: &str = "ljtill/azure-devops-cli";
 const GITHUB_API_BASE: &str = "https://api.github.com/repos";
 const GITHUB_DOWNLOAD_BASE: &str = "https://github.com";
 const CHECKSUMS_FILE_NAME: &str = "SHA256SUMS";
+const MAX_ARCHIVE_DOWNLOAD_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_CHECKSUM_DOWNLOAD_BYTES: u64 = 64 * 1024;
+const MAX_COSIGN_BUNDLE_DOWNLOAD_BYTES: u64 = 4 * 1024 * 1024;
+const DEFAULT_UPDATE_CHECK_TIMEOUT_SECS: u64 = 5;
+const DEFAULT_UPDATE_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
+const MAX_UPDATE_TIMEOUT_SECS: u64 = 600;
+const UPDATE_CHECK_TIMEOUT_ENV: &str = "DEVOPS_UPDATE_CHECK_TIMEOUT_SECS";
+const UPDATE_DOWNLOAD_TIMEOUT_ENV: &str = "DEVOPS_UPDATE_DOWNLOAD_TIMEOUT_SECS";
 
 /// Defines the number of old versions to keep when pruning.
 ///
@@ -37,6 +53,30 @@ fn github_token() -> Option<SecretString> {
 /// Returns the compiled-in version from `Cargo.toml`.
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
+}
+
+fn update_timeout_from_env(env_var: &str, default_secs: u64) -> Result<Duration> {
+    match std::env::var(env_var) {
+        Ok(raw) => parse_update_timeout_secs(env_var, &raw).map(Duration::from_secs),
+        Err(std::env::VarError::NotPresent) => Ok(Duration::from_secs(default_secs)),
+        Err(std::env::VarError::NotUnicode(_)) => bail!("{env_var} must be valid UTF-8"),
+    }
+}
+
+fn parse_update_timeout_secs(env_var: &str, raw: &str) -> Result<u64> {
+    let secs = raw
+        .trim()
+        .parse::<u64>()
+        .with_context(|| format!("{env_var} must be an integer number of seconds"))?;
+
+    if secs == 0 {
+        bail!("{env_var} must be at least 1 second");
+    }
+    if secs > MAX_UPDATE_TIMEOUT_SECS {
+        bail!("{env_var} must be {MAX_UPDATE_TIMEOUT_SECS} seconds or fewer");
+    }
+
+    Ok(secs)
 }
 
 /// Returns `true` if `remote` is strictly newer than `current` (semver comparison).
@@ -120,71 +160,37 @@ fn parse_checksum_manifest(manifest: &str, artifact: &str) -> Result<String> {
     bail!("Checksum for {artifact} not found in manifest");
 }
 
-fn parse_posix_hash_output(stdout: &[u8]) -> Result<String> {
-    let stdout = String::from_utf8_lossy(stdout);
-    let hash = stdout
-        .split_whitespace()
-        .next()
-        .context("Hash command returned no digest")?
-        .trim()
-        .to_ascii_lowercase();
-
-    if hash.len() == 64 && hash.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        Ok(hash)
-    } else {
-        bail!("Hash command returned an invalid SHA-256 digest");
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        out.push(char::from(HEX[usize::from(byte >> 4)]));
+        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
     }
+    out
 }
 
-#[cfg(unix)]
-fn compute_sha256_sync(path: &std::path::Path) -> Result<String> {
-    // Safe: invoked only via `spawn_blocking` from `compute_sha256`; external
-    // `sha256sum`/`shasum` processes are inherently blocking.
-    let sha256sum = std::process::Command::new("sha256sum").arg(path).output();
-    if let Ok(output) = sha256sum
-        && output.status.success()
-    {
-        return parse_posix_hash_output(&output.stdout);
-    }
+fn compute_sha256_sync(path: &Path) -> Result<String> {
+    let mut file = File::open(path)
+        .with_context(|| format!("Failed to open {} for SHA-256", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0_u8; 64 * 1024];
 
-    let output = std::process::Command::new("shasum")
-        .args(["-a", "256"])
-        .arg(path)
-        .output()
-        .context("Failed to execute shasum for SHA-256 verification")?;
-    if !output.status.success() {
-        bail!("shasum exited with status {}", output.status);
-    }
-
-    parse_posix_hash_output(&output.stdout)
-}
-
-#[cfg(windows)]
-fn compute_sha256_sync(path: &std::path::Path) -> Result<String> {
-    // Safe: invoked only via `spawn_blocking` from `compute_sha256`; `certutil`
-    // is inherently blocking.
-    let output = std::process::Command::new("certutil")
-        .args(["-hashfile"])
-        .arg(path)
-        .arg("SHA256")
-        .output()
-        .context("Failed to execute certutil for SHA-256 verification")?;
-    if !output.status.success() {
-        bail!("certutil exited with status {}", output.status);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        let normalized: String = line.chars().filter(|ch| !ch.is_whitespace()).collect();
-        if normalized.len() == 64 && normalized.chars().all(|ch| ch.is_ascii_hexdigit()) {
-            return Ok(normalized.to_ascii_lowercase());
+    loop {
+        let read = file
+            .read(&mut buf)
+            .with_context(|| format!("Failed to read {} for SHA-256", path.display()))?;
+        if read == 0 {
+            break;
         }
+        hasher.update(&buf[..read]);
     }
 
-    bail!("certutil output did not contain a SHA-256 digest");
+    let digest = hasher.finalize();
+    Ok(encode_hex(digest.as_ref()))
 }
 
-async fn compute_sha256(path: &std::path::Path) -> Result<String> {
+async fn compute_sha256(path: &Path) -> Result<String> {
     let owned = path.to_path_buf();
     tokio::task::spawn_blocking(move || compute_sha256_sync(&owned))
         .await
@@ -213,18 +219,17 @@ const COSIGN_BUNDLE_FILE_NAME: &str = "SHA256SUMS.cosign.bundle";
 /// Actions workflow identities are issued by this exact URL.
 pub(crate) const SIGSTORE_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
 
-/// Prefix of the X.509v3 SAN URI we expect to see in the signing certificate,
-/// up to and including the `refs/tags/v` portion. The remainder must be a
-/// semantic version (`MAJOR.MINOR.PATCH`) matching the release tag.
-pub(crate) const SIGSTORE_CERT_IDENTITY_PREFIX: &str =
-    "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/tags/v";
+/// Defines the X.509v3 SAN URI we expect to see in the signing certificate.
+pub(crate) const SIGSTORE_CERT_IDENTITY: &str =
+    "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/heads/main";
 
-/// Documentation-only equivalent regex for `SIGSTORE_CERT_IDENTITY_PREFIX` +
-/// trailing semver, used by the install scripts via `cosign verify-blob
-/// --certificate-identity-regexp`. Kept in sync with `expected_cert_identity`
-/// and `cert_identity_matches_expected` below.
+/// Provides the documentation-only equivalent regex for
+/// `SIGSTORE_CERT_IDENTITY`, used by the install scripts via `cosign
+/// verify-blob --certificate-identity-regexp`.
+/// Kept in sync with `expected_cert_identity` and
+/// `cert_identity_matches_expected` below.
 #[allow(dead_code)] // Referenced by tests + install scripts (out-of-process), not by runtime code.
-pub(crate) const SIGSTORE_CERT_IDENTITY_RE: &str = r"^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/tags/v\d+\.\d+\.\d+$";
+pub(crate) const SIGSTORE_CERT_IDENTITY_RE: &str = r"^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/heads/main$";
 
 fn cosign_bundle_download_url(version: &str) -> String {
     format!(
@@ -232,27 +237,19 @@ fn cosign_bundle_download_url(version: &str) -> String {
     )
 }
 
-/// Returns the exact SAN URI we expect in the Fulcio-issued signing certificate
-/// for a release tagged `v{version}`.
-fn expected_cert_identity(version: &str) -> String {
-    format!("{SIGSTORE_CERT_IDENTITY_PREFIX}{version}")
+/// Returns the exact SAN URI we expect in the Fulcio-issued signing certificate.
+fn expected_cert_identity() -> &'static str {
+    SIGSTORE_CERT_IDENTITY
 }
 
-/// Validates that a certificate-identity string matches the shape we expect
-/// from our release workflow: the fixed prefix plus a strict `MAJOR.MINOR.PATCH`
-/// suffix. This is the Rust analogue of `SIGSTORE_CERT_IDENTITY_RE` and is used
-/// by unit tests; runtime verification uses [`expected_cert_identity`] for an
-/// exact match via sigstore's `Identity` policy.
+/// Validates that a certificate-identity string matches the exact release
+/// workflow identity. This is the Rust analogue of `SIGSTORE_CERT_IDENTITY_RE`
+/// and is used by unit tests; runtime verification uses
+/// [`expected_cert_identity`] for an exact match via sigstore's `Identity`
+/// policy.
 #[allow(dead_code)] // Referenced by tests; runtime uses expected_cert_identity for exact match.
 fn cert_identity_matches_expected(identity: &str) -> bool {
-    let Some(tag) = identity.strip_prefix(SIGSTORE_CERT_IDENTITY_PREFIX) else {
-        return false;
-    };
-    let parts: Vec<&str> = tag.split('.').collect();
-    parts.len() == 3
-        && parts
-            .iter()
-            .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    identity == SIGSTORE_CERT_IDENTITY
 }
 
 /// Verifies a cosign Sigstore bundle against the signed payload using
@@ -263,7 +260,7 @@ fn cert_identity_matches_expected(identity: &str) -> bool {
 /// Fails closed. The signing certificate must:
 /// 1. Chain back to Sigstore's Fulcio root (via the TUF-distributed trust root).
 /// 2. Contain an OIDC issuer extension equal to [`SIGSTORE_OIDC_ISSUER`].
-/// 3. Contain a SAN URI exactly equal to `expected_cert_identity(version)`.
+/// 3. Contain a SAN URI exactly equal to `expected_cert_identity()`.
 ///
 /// The bundle's embedded Rekor log entry is checked for consistency with the
 /// signing materials in *offline* mode — we trust the SET in the bundle rather
@@ -275,7 +272,7 @@ fn cert_identity_matches_expected(identity: &str) -> bool {
 async fn verify_sigstore_bundle(
     signed_payload: &[u8],
     bundle_json: &[u8],
-    version: &str,
+    _version: &str,
 ) -> Result<()> {
     use sigstore::bundle::Bundle;
     use sigstore::bundle::verify::{Verifier, policy::Identity};
@@ -287,8 +284,8 @@ async fn verify_sigstore_bundle(
         .await
         .context("Failed to initialize Sigstore trust root (public-good)")?;
 
-    let identity = expected_cert_identity(version);
-    let policy = Identity::new(&identity, SIGSTORE_OIDC_ISSUER);
+    let identity = expected_cert_identity();
+    let policy = Identity::new(identity, SIGSTORE_OIDC_ISSUER);
 
     verifier
         .verify(signed_payload, bundle, &policy, true)
@@ -361,7 +358,10 @@ async fn fetch_latest_version() -> Result<String> {
     let url = format!("{GITHUB_API_BASE}/{GITHUB_REPO}/releases/latest");
     tracing::debug!(url = &*url, "fetching latest version from GitHub");
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(update_timeout_from_env(
+            UPDATE_CHECK_TIMEOUT_ENV,
+            DEFAULT_UPDATE_CHECK_TIMEOUT_SECS,
+        )?)
         .build()?;
 
     let mut request = client
@@ -386,61 +386,228 @@ async fn fetch_latest_version() -> Result<String> {
     Ok(version.to_string())
 }
 
+fn enforce_download_content_length(
+    content_length: Option<u64>,
+    display_url: &str,
+    limit: u64,
+    label: &str,
+) -> Result<()> {
+    if let Some(content_length) = content_length
+        && content_length > limit
+    {
+        bail!(
+            "{label} download too large for {display_url}: Content-Length {content_length} bytes exceeds {limit}-byte cap"
+        );
+    }
+
+    Ok(())
+}
+
+async fn read_stream_capped<S, C, E>(
+    mut stream: S,
+    display_url: &str,
+    limit: u64,
+    label: &str,
+) -> Result<Vec<u8>>
+where
+    S: Stream<Item = std::result::Result<C, E>> + Unpin,
+    C: AsRef<[u8]>,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    let mut buf = Vec::new();
+    let mut bytes_read = 0_u64;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.with_context(|| format!("Error reading {label} download from {display_url}"))?;
+        let bytes = chunk.as_ref();
+        let chunk_len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if bytes_read.saturating_add(chunk_len) > limit {
+            bail!(
+                "{label} download too large for {display_url}: exceeded {limit}-byte cap while streaming"
+            );
+        }
+        bytes_read = bytes_read.saturating_add(chunk_len);
+        buf.extend_from_slice(bytes);
+    }
+
+    Ok(buf)
+}
+
+async fn write_stream_to_file_capped<S, C, E>(
+    mut stream: S,
+    file: &mut tokio::fs::File,
+    display_url: &str,
+    limit: u64,
+    label: &str,
+) -> Result<u64>
+where
+    S: Stream<Item = std::result::Result<C, E>> + Unpin,
+    C: AsRef<[u8]>,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    let mut bytes_written = 0_u64;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.with_context(|| format!("Error reading {label} download from {display_url}"))?;
+        let bytes = chunk.as_ref();
+        let chunk_len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if bytes_written.saturating_add(chunk_len) > limit {
+            bail!(
+                "{label} download too large for {display_url}: exceeded {limit}-byte cap while streaming"
+            );
+        }
+        file.write_all(bytes)
+            .await
+            .with_context(|| format!("Failed to write {label} download from {display_url}"))?;
+        bytes_written = bytes_written.saturating_add(chunk_len);
+    }
+
+    Ok(bytes_written)
+}
+
+async fn read_response_bytes_capped(
+    resp: reqwest::Response,
+    display_url: &str,
+    limit: u64,
+    label: &str,
+) -> Result<Vec<u8>> {
+    enforce_download_content_length(resp.content_length(), display_url, limit, label)?;
+    read_stream_capped(resp.bytes_stream(), display_url, limit, label).await
+}
+
+async fn download_response_to_file_capped(
+    resp: reqwest::Response,
+    dest_path: &Path,
+    display_url: &str,
+    limit: u64,
+    label: &str,
+) -> Result<u64> {
+    enforce_download_content_length(resp.content_length(), display_url, limit, label)?;
+    let mut file = tokio::fs::File::create(dest_path)
+        .await
+        .with_context(|| format!("Failed to create {}", dest_path.display()))?;
+    let bytes_written =
+        write_stream_to_file_capped(resp.bytes_stream(), &mut file, display_url, limit, label)
+            .await?;
+    file.flush()
+        .await
+        .with_context(|| format!("Failed to flush {}", dest_path.display()))?;
+
+    Ok(bytes_written)
+}
+
 /// Represents the result of a successful self-update.
 pub struct UpdateResult {
     pub version: String,
     pub path: PathBuf,
 }
 
-/// Extracts the binary from a `.tar.gz` archive into the given directory.
-#[cfg(unix)]
-async fn extract_archive(archive_path: &std::path::Path, dest_dir: &std::path::Path) -> Result<()> {
-    let archive = archive_path.to_path_buf();
-    let dest = dest_dir.to_path_buf();
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        // Safe: `std::process::Command` is inherently blocking; this closure runs on the blocking pool.
-        let status = std::process::Command::new("tar")
-            .args(["xzf"])
-            .arg(&archive)
-            .arg("-C")
-            .arg(&dest)
-            .status()
-            .context("Failed to execute tar")?;
-        if !status.success() {
-            bail!("tar exited with status {status}");
-        }
-        Ok(())
-    })
-    .await
-    .context("tar extraction task panicked")?
+fn artifact_member_name(artifact: &str) -> Result<String> {
+    let member = if let Some(name) = artifact.strip_suffix(".tar.gz") {
+        name.to_string()
+    } else if let Some(name) = artifact.strip_suffix(".zip") {
+        format!("{name}.exe")
+    } else {
+        bail!("Unsupported archive format for {artifact}");
+    };
+
+    validate_archive_member_name(&member)?;
+    Ok(member)
 }
 
-/// Extracts the binary from a `.zip` archive into the given directory.
+fn validate_archive_member_name(member_name: &str) -> Result<()> {
+    if member_name.is_empty() || member_name.contains('/') || member_name.contains('\\') {
+        bail!("Archive member name must be a single relative file name");
+    }
+
+    let mut components = Path::new(member_name).components();
+    if matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.next().is_none()
+    {
+        Ok(())
+    } else {
+        bail!("Archive member name must be a single relative file name");
+    }
+}
+
+fn build_tar_extraction_command(
+    tar_program: &Path,
+    archive_path: &Path,
+    dest_dir: &Path,
+    member_name: &str,
+    gzip: bool,
+) -> std::process::Command {
+    let mut command = std::process::Command::new(tar_program);
+    command
+        .arg(if gzip { "-xzf" } else { "-xf" })
+        .arg(archive_path)
+        .arg("-C")
+        .arg(dest_dir)
+        .arg("--")
+        .arg(member_name);
+    command
+}
+
+fn run_tar_extraction(
+    tar_program: &Path,
+    archive_path: &Path,
+    dest_dir: &Path,
+    member_name: &str,
+    gzip: bool,
+) -> Result<()> {
+    let status =
+        build_tar_extraction_command(tar_program, archive_path, dest_dir, member_name, gzip)
+            .status()
+            .with_context(|| format!("Failed to execute {}", tar_program.display()))?;
+    if !status.success() {
+        bail!("{} exited with status {status}", tar_program.display());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn system_tar_program() -> Result<PathBuf> {
+    for candidate in ["/usr/bin/tar", "/bin/tar"] {
+        let path = Path::new(candidate);
+        if path.is_file() {
+            return Ok(path.to_path_buf());
+        }
+    }
+
+    bail!(
+        "No system tar found at /usr/bin/tar or /bin/tar; fully in-process .tar.gz extraction remains blocked because no archive extraction crate is available"
+    );
+}
+
 #[cfg(windows)]
-async fn extract_archive(archive_path: &std::path::Path, dest_dir: &std::path::Path) -> Result<()> {
+fn system_tar_program() -> Result<PathBuf> {
+    let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+    let path = PathBuf::from(system_root).join("System32").join("tar.exe");
+    if path.is_file() {
+        return Ok(path);
+    }
+
+    bail!(
+        "No system tar found at {}; fully in-process .zip extraction remains blocked because no archive extraction crate is available",
+        path.display()
+    );
+}
+
+/// Extracts the expected binary member from a release archive into the given directory.
+#[cfg(any(unix, windows))]
+async fn extract_archive(archive_path: &Path, dest_dir: &Path, member_name: &str) -> Result<()> {
+    validate_archive_member_name(member_name)?;
     let archive = archive_path.to_path_buf();
     let dest = dest_dir.to_path_buf();
+    let member = member_name.to_string();
     tokio::task::spawn_blocking(move || -> Result<()> {
-        // Safe: `std::process::Command` is inherently blocking; this closure runs on the blocking pool.
-        let status = std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
-                    archive.display(),
-                    dest.display()
-                ),
-            ])
-            .status()
-            .context("Failed to execute Expand-Archive")?;
-        if !status.success() {
-            bail!("Expand-Archive exited with status {status}");
-        }
-        Ok(())
+        let tar = system_tar_program()?;
+        run_tar_extraction(&tar, &archive, &dest, &member, cfg!(unix))
     })
     .await
-    .context("Expand-Archive task panicked")?
+    .context("archive extraction task panicked")?
 }
 
 /// Downloads the latest release, installs to the versioned directory, updates the symlink, and prunes old versions.
@@ -479,26 +646,14 @@ pub async fn self_update() -> Result<UpdateResult> {
     // archive path after SHA-256 verification succeeds.
     let staging_path = version_dir.join(format!(".tmp-{artifact}"));
 
-    // Downloads the archive.
-    tracing::info!(url = &*download_url, "downloading archive");
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_mins(1))
+        .timeout(update_timeout_from_env(
+            UPDATE_DOWNLOAD_TIMEOUT_ENV,
+            DEFAULT_UPDATE_DOWNLOAD_TIMEOUT_SECS,
+        )?)
         .build()?;
 
     let token = github_token();
-
-    let mut archive_req = client
-        .get(&download_url)
-        .header("User-Agent", format!("devops/{}", current_version()));
-    if let Some(ref token) = token {
-        archive_req =
-            archive_req.header("Authorization", format!("token {}", token.expose_secret()));
-    }
-    let resp = archive_req
-        .send()
-        .await?
-        .error_for_status()
-        .with_context(|| format!("Failed to download {download_url}"))?;
 
     tracing::debug!(url = &*checksums_url, "downloading checksums");
     let mut checksums_req = client
@@ -508,19 +663,24 @@ pub async fn self_update() -> Result<UpdateResult> {
         checksums_req =
             checksums_req.header("Authorization", format!("token {}", token.expose_secret()));
     }
-    let checksums_bytes = checksums_req
+    let checksums_resp = checksums_req
         .send()
         .await?
         .error_for_status()
-        .with_context(|| format!("Failed to download {checksums_url}"))?
-        .bytes()
-        .await
-        .context("Failed to read checksum manifest")?;
+        .with_context(|| format!("Failed to download {checksums_url}"))?;
+    let checksums_bytes = read_response_bytes_capped(
+        checksums_resp,
+        &checksums_url,
+        MAX_CHECKSUM_DOWNLOAD_BYTES,
+        "checksum manifest",
+    )
+    .await
+    .context("Failed to read checksum manifest")?;
 
     // Downloads the cosign Sigstore bundle and verifies the SHA256SUMS payload
     // BEFORE trusting any hash it contains. Keyless verification checks:
     //   - Fulcio-issued signing cert chains to the Sigstore TUF trust root
-    //   - cert SAN identity == our release workflow at the matching tag
+    //   - cert SAN identity == our release workflow on the protected main ref
     //   - cert OIDC issuer == GitHub Actions
     //   - signature over SHA256SUMS bytes
     // Fails closed: no skip flag, no fallback, no "missing bundle" path.
@@ -532,14 +692,19 @@ pub async fn self_update() -> Result<UpdateResult> {
     if let Some(ref token) = token {
         bundle_req = bundle_req.header("Authorization", format!("token {}", token.expose_secret()));
     }
-    let bundle_bytes = bundle_req
+    let bundle_resp = bundle_req
         .send()
         .await?
         .error_for_status()
-        .with_context(|| format!("Failed to download {bundle_url}"))?
-        .bytes()
-        .await
-        .context("Failed to read cosign bundle")?;
+        .with_context(|| format!("Failed to download {bundle_url}"))?;
+    let bundle_bytes = read_response_bytes_capped(
+        bundle_resp,
+        &bundle_url,
+        MAX_COSIGN_BUNDLE_DOWNLOAD_BYTES,
+        "cosign bundle",
+    )
+    .await
+    .context("Failed to read cosign bundle")?;
 
     verify_sigstore_bundle(&checksums_bytes, &bundle_bytes, &latest)
         .await
@@ -550,18 +715,51 @@ pub async fn self_update() -> Result<UpdateResult> {
         std::str::from_utf8(&checksums_bytes).context("SHA256SUMS is not valid UTF-8")?;
     let expected_sha256 = parse_checksum_manifest(checksums, &artifact)?;
 
-    let bytes = resp.bytes().await?;
-    tracing::debug!(size_bytes = bytes.len(), "download complete");
-
     // Clears any stale staging file from a previous interrupted run.
-    if tokio::fs::try_exists(&staging_path).await.unwrap_or(false) {
+    if tokio::fs::try_exists(&staging_path)
+        .await
+        .with_context(|| format!("Failed to check {}", staging_path.display()))?
+    {
         tokio::fs::remove_file(&staging_path)
             .await
             .with_context(|| format!("Failed to remove stale {}", staging_path.display()))?;
     }
-    tokio::fs::write(&staging_path, &bytes)
-        .await
-        .with_context(|| format!("Failed to write archive to {}", staging_path.display()))?;
+
+    // Downloads the archive.
+    tracing::info!(
+        url = &*download_url,
+        max_bytes = MAX_ARCHIVE_DOWNLOAD_BYTES,
+        "downloading archive"
+    );
+    let mut archive_req = client
+        .get(&download_url)
+        .header("User-Agent", format!("devops/{}", current_version()));
+    if let Some(ref token) = token {
+        archive_req =
+            archive_req.header("Authorization", format!("token {}", token.expose_secret()));
+    }
+    let archive_resp = archive_req
+        .send()
+        .await?
+        .error_for_status()
+        .with_context(|| format!("Failed to download {download_url}"))?;
+    let bytes_written = match download_response_to_file_capped(
+        archive_resp,
+        &staging_path,
+        &download_url,
+        MAX_ARCHIVE_DOWNLOAD_BYTES,
+        "archive",
+    )
+    .await
+    {
+        Ok(bytes_written) => bytes_written,
+        Err(err) => {
+            let _ = tokio::fs::remove_file(&staging_path).await;
+            return Err(err);
+        }
+    };
+    tracing::debug!(size_bytes = bytes_written, "download complete");
+
     if let Err(err) = verify_sha256(&staging_path, &expected_sha256).await {
         tracing::warn!(error = %err, "SHA256 verification failed");
         let _ = tokio::fs::remove_file(&staging_path).await;
@@ -570,7 +768,10 @@ pub async fn self_update() -> Result<UpdateResult> {
     tracing::debug!("SHA256 verification passed");
 
     // Promotes the verified archive atomically into place.
-    if tokio::fs::try_exists(&archive_path).await.unwrap_or(false) {
+    if tokio::fs::try_exists(&archive_path)
+        .await
+        .with_context(|| format!("Failed to check {}", archive_path.display()))?
+    {
         tokio::fs::remove_file(&archive_path)
             .await
             .with_context(|| format!("Failed to remove stale {}", archive_path.display()))?;
@@ -585,21 +786,18 @@ pub async fn self_update() -> Result<UpdateResult> {
             )
         })?;
 
-    // Extracts the binary from the archive.
+    let extracted_name = artifact_member_name(&artifact)?;
+
+    // Extracts the expected binary from the archive.
     tracing::debug!("extracting archive");
-    extract_archive(&archive_path, &version_dir).await?;
+    extract_archive(&archive_path, &version_dir, &extracted_name).await?;
     let _ = tokio::fs::remove_file(&archive_path).await;
 
     // Removes the platform-named binary left by extraction (e.g. devops-darwin-arm64).
-    let extracted_name = if cfg!(target_os = "windows") {
-        artifact.strip_suffix(".zip").unwrap_or(&artifact)
-    } else {
-        artifact.strip_suffix(".tar.gz").unwrap_or(&artifact)
-    };
-    let extracted_path = version_dir.join(extracted_name);
+    let extracted_path = version_dir.join(&extracted_name);
     if tokio::fs::try_exists(&extracted_path)
         .await
-        .unwrap_or(false)
+        .with_context(|| format!("Failed to check {}", extracted_path.display()))?
         && extracted_path != binary_path
     {
         tokio::fs::rename(&extracted_path, &binary_path)
@@ -718,7 +916,10 @@ async fn install_to_path(target: &std::path::Path, dest: &std::path::Path) -> Re
         // Rename the existing binary out of the way (Windows allows renaming
         // a running executable even though it cannot delete one).
         let old_path = dest.with_extension("exe.old");
-        if tokio::fs::try_exists(dest).await.unwrap_or(false) {
+        if tokio::fs::try_exists(dest)
+            .await
+            .with_context(|| format!("Failed to check {}", dest.display()))?
+        {
             let _ = tokio::fs::remove_file(&old_path).await;
             tokio::fs::rename(dest, &old_path).await.with_context(|| {
                 format!(
@@ -743,7 +944,10 @@ async fn install_to_path(target: &std::path::Path, dest: &std::path::Path) -> Re
 /// Keeps the `keep` most recent versions and deletes the rest.
 async fn prune_old_versions(keep: usize) -> Result<()> {
     let base = versions_dir()?;
-    if !tokio::fs::try_exists(&base).await.unwrap_or(false) {
+    if !tokio::fs::try_exists(&base)
+        .await
+        .with_context(|| format!("Failed to check {}", base.display()))?
+    {
         return Ok(());
     }
 
@@ -810,8 +1014,6 @@ pub enum UpdateLockStatus {
 /// `fsync`s its contents to disk, then renames over the destination so a
 /// concurrent reader never observes a half-written file.
 pub async fn write_lock(path: &Path, lock: &UpdateLock) -> Result<()> {
-    use tokio::io::AsyncWriteExt;
-
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await.with_context(|| {
             format!(
@@ -940,7 +1142,7 @@ async fn recover_from_interrupted_update_with_paths(
                 .join(binary_name());
             if tokio::fs::try_exists(&rollback_binary)
                 .await
-                .unwrap_or(false)
+                .with_context(|| format!("Failed to check {}", rollback_binary.display()))?
             {
                 if let Err(e) = install_to_path(&rollback_binary, symlink_dest).await {
                     tracing::error!(
@@ -999,6 +1201,29 @@ mod tests {
         // Pre-release suffix is stripped — "0.2.0-beta" compares as "0.2.0".
         assert!(is_newer("0.2.0-beta", "0.1.0"));
         assert!(!is_newer("0.1.0-beta", "0.1.0"));
+    }
+
+    #[test]
+    fn update_timeout_env_values_are_validated() {
+        assert_eq!(
+            parse_update_timeout_secs(UPDATE_CHECK_TIMEOUT_ENV, "30").unwrap(),
+            30
+        );
+        assert!(
+            parse_update_timeout_secs(UPDATE_CHECK_TIMEOUT_ENV, "0")
+                .unwrap_err()
+                .to_string()
+                .contains("at least 1 second")
+        );
+        assert!(
+            parse_update_timeout_secs(
+                UPDATE_DOWNLOAD_TIMEOUT_ENV,
+                &(MAX_UPDATE_TIMEOUT_SECS + 1).to_string(),
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("seconds or fewer")
+        );
     }
 
     #[test]
@@ -1065,6 +1290,153 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
         assert!(err.to_string().contains("not found"));
     }
 
+    #[tokio::test]
+    async fn compute_sha256_hashes_file_contents() {
+        let dir = unique_temp_dir("sha256");
+        let path = dir.join("payload.bin");
+        tokio::fs::write(&path, b"abc").await.unwrap();
+
+        let hash = compute_sha256(&path).await.unwrap();
+
+        assert_eq!(
+            hash,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+
+        std::fs::remove_dir_all(&dir).ok(); // Safe: test cleanup.
+    }
+
+    #[test]
+    fn artifact_member_name_matches_release_payloads() {
+        assert_eq!(
+            artifact_member_name("devops-linux-amd64.tar.gz").unwrap(),
+            "devops-linux-amd64"
+        );
+        assert_eq!(
+            artifact_member_name("devops-windows-amd64.zip").unwrap(),
+            "devops-windows-amd64.exe"
+        );
+    }
+
+    #[test]
+    fn archive_member_name_rejects_path_traversal() {
+        for member in [
+            "",
+            ".",
+            "..",
+            "../devops",
+            "dir/devops",
+            r"dir\devops.exe",
+            "/devops",
+        ] {
+            let err = validate_archive_member_name(member).unwrap_err();
+            assert!(err.to_string().contains("single relative file name"));
+        }
+    }
+
+    #[test]
+    fn tar_extraction_command_uses_literal_arguments() {
+        let tar = if cfg!(windows) {
+            Path::new(r"C:\Windows\System32\tar.exe")
+        } else {
+            Path::new("/usr/bin/tar")
+        };
+        let archive = Path::new("archive with spaces.tar.gz");
+        let dest = Path::new("dest with spaces");
+        let command = build_tar_extraction_command(tar, archive, dest, "devops-linux-amd64", true);
+        let args = command
+            .get_args()
+            .map(std::ffi::OsStr::to_os_string)
+            .collect::<Vec<_>>();
+
+        assert_eq!(command.get_program(), tar.as_os_str());
+        assert_eq!(
+            args,
+            vec![
+                std::ffi::OsString::from("-xzf"),
+                archive.as_os_str().to_os_string(),
+                std::ffi::OsString::from("-C"),
+                dest.as_os_str().to_os_string(),
+                std::ffi::OsString::from("--"),
+                std::ffi::OsString::from("devops-linux-amd64"),
+            ]
+        );
+
+        let zip_command =
+            build_tar_extraction_command(tar, archive, dest, "devops-windows-amd64.exe", false);
+        assert_eq!(
+            zip_command
+                .get_args()
+                .next()
+                .map(std::ffi::OsStr::to_os_string),
+            Some(std::ffi::OsString::from("-xf"))
+        );
+    }
+
+    #[test]
+    fn download_content_length_cap_rejects_oversized_response() {
+        let err = enforce_download_content_length(
+            Some(MAX_COSIGN_BUNDLE_DOWNLOAD_BYTES + 1),
+            "https://example.invalid/SHA256SUMS.cosign.bundle",
+            MAX_COSIGN_BUNDLE_DOWNLOAD_BYTES,
+            "cosign bundle",
+        )
+        .expect_err("oversized bundle content length must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("cosign bundle"));
+        assert!(msg.contains("Content-Length"));
+        assert!(msg.contains("byte cap"));
+    }
+
+    #[tokio::test]
+    async fn read_stream_capped_rejects_streaming_overflow() {
+        let stream = futures::stream::iter([
+            Ok::<_, std::io::Error>(b"abc".to_vec()),
+            Ok::<_, std::io::Error>(b"def".to_vec()),
+        ]);
+
+        let err = read_stream_capped(
+            stream,
+            "https://example.invalid/SHA256SUMS",
+            5,
+            "checksum manifest",
+        )
+        .await
+        .expect_err("checksum stream exceeding cap must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("checksum manifest"));
+        assert!(msg.contains("exceeded 5-byte cap"));
+    }
+
+    #[tokio::test]
+    async fn archive_stream_to_file_rejects_streaming_overflow() {
+        let dir = unique_temp_dir("archive-cap");
+        let path = dir.join("archive.tar.gz");
+        let mut file = tokio::fs::File::create(&path).await.unwrap();
+        let stream = futures::stream::iter([
+            Ok::<_, std::io::Error>(b"abc".to_vec()),
+            Ok::<_, std::io::Error>(b"def".to_vec()),
+        ]);
+
+        let err = write_stream_to_file_capped(
+            stream,
+            &mut file,
+            "https://example.invalid/devops.tar.gz",
+            5,
+            "archive",
+        )
+        .await
+        .expect_err("archive stream exceeding cap must fail");
+        drop(file);
+
+        let msg = err.to_string();
+        assert!(msg.contains("archive"));
+        assert!(msg.contains("exceeded 5-byte cap"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"abc");
+
+        std::fs::remove_dir_all(&dir).ok(); // Safe: test cleanup.
+    }
+
     // --- Sigstore / cosign verification ---
 
     #[test]
@@ -1074,27 +1446,18 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
     }
 
     #[test]
-    fn expected_cert_identity_embeds_version() {
-        let id = expected_cert_identity("1.2.3");
+    fn expected_cert_identity_matches_release_workflow_on_main() {
+        let id = expected_cert_identity();
         assert_eq!(
             id,
-            "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/tags/v1.2.3"
+            "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/heads/main"
         );
     }
 
     #[test]
     fn cert_identity_matches_known_good_urls() {
-        // Exact identity for a real release tag.
-        assert!(cert_identity_matches_expected(
-            "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/tags/v1.0.0"
-        ));
-        assert!(cert_identity_matches_expected(
-            "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/tags/v10.20.30"
-        ));
         // Round-trips expected_cert_identity().
-        assert!(cert_identity_matches_expected(&expected_cert_identity(
-            "1.0.1"
-        )));
+        assert!(cert_identity_matches_expected(expected_cert_identity()));
     }
 
     #[test]
@@ -1111,9 +1474,13 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
         assert!(!cert_identity_matches_expected(
             "https://github.com/ljtill/azure-devops-cli/.github/workflows/other.yml@refs/tags/v1.0.0"
         ));
-        // Branch ref instead of tag ref.
+        // Tag ref instead of the protected main branch ref.
         assert!(!cert_identity_matches_expected(
-            "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/heads/main"
+            "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/tags/v1.0.0"
+        ));
+        // Different branch ref.
+        assert!(!cert_identity_matches_expected(
+            "https://github.com/ljtill/azure-devops-cli/.github/workflows/ci.release.yml@refs/heads/feature"
         ));
         // Missing "v" prefix on the tag.
         assert!(!cert_identity_matches_expected(
@@ -1142,7 +1509,7 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
     fn cert_identity_regex_constant_is_stable() {
         assert_eq!(
             SIGSTORE_CERT_IDENTITY_RE,
-            r"^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/tags/v\d+\.\d+\.\d+$"
+            r"^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/heads/main$"
         );
     }
 
@@ -1248,15 +1615,7 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
     #[tokio::test]
     async fn install_to_path_atomically_swaps_symlink() {
         use std::fs;
-        let tmp = std::env::temp_dir().join(format!(
-            "devops-install-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&tmp).unwrap(); // Safe: test setup.
+        let tmp = unique_temp_dir("install");
 
         let v1 = tmp.join("v1");
         let v2 = tmp.join("v2");
@@ -1289,15 +1648,7 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
     #[tokio::test]
     async fn install_to_path_copies_and_swaps_on_windows() {
         use std::fs;
-        let tmp = std::env::temp_dir().join(format!(
-            "devops-install-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&tmp).unwrap(); // Safe: test setup.
+        let tmp = unique_temp_dir("install");
 
         let v1 = tmp.join("v1.exe");
         let v2 = tmp.join("v2.exe");
@@ -1322,17 +1673,21 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
 
     // --- Update lock / rollback tests ---
 
-    /// Returns a unique temp directory for a test, created on disk.
+    /// Returns a unique scratch directory under `target/` for a test.
     fn unique_temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "devops-{}-test-{}-{}",
-            label,
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let dir = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join("update-tests")
+            .join(format!(
+                "devops-{}-test-{}-{}",
+                label,
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
         std::fs::create_dir_all(&dir).unwrap(); // Safe: test setup.
         dir
     }
@@ -1362,6 +1717,21 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
 
         // No stale `.tmp` sibling left behind by the atomic write.
         assert!(!path.with_extension("tmp").exists());
+
+        std::fs::remove_dir_all(&dir).ok(); // Safe: test cleanup.
+    }
+
+    #[tokio::test]
+    async fn write_lock_removes_stale_tmp_lock() {
+        let dir = unique_temp_dir("lock-stale-tmp");
+        let path = dir.join(".update-lock");
+        let tmp_path = path.with_extension("tmp");
+        std::fs::write(&tmp_path, b"stale partial lock").unwrap(); // Safe: test setup.
+
+        write_lock(&path, &sample_lock()).await.unwrap();
+
+        assert!(!tmp_path.exists());
+        assert!(read_lock(&path).await.unwrap().is_some());
 
         std::fs::remove_dir_all(&dir).ok(); // Safe: test cleanup.
     }
@@ -1463,6 +1833,61 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  devops-windows
         assert_eq!(fs::read(&symlink).unwrap(), b"binary v1"); // Safe: test assertion.
 
         fs::remove_dir_all(&dir).ok(); // Safe: test cleanup.
+    }
+
+    #[tokio::test]
+    async fn recover_from_interrupted_update_clears_lock_when_previous_binary_missing() {
+        let dir = unique_temp_dir("recover-missing-previous");
+        let install_root = dir.clone();
+        let lock_file = install_root.join(".update-lock");
+        write_lock(&lock_file, &sample_lock()).await.unwrap();
+
+        let symlink = install_root.join("bin").join(binary_name());
+        std::fs::create_dir_all(symlink.parent().unwrap()).unwrap(); // Safe: test setup.
+        std::fs::write(&symlink, b"new binary remains").unwrap(); // Safe: test setup.
+
+        let report = recover_from_interrupted_update_with_paths(&install_root, &symlink)
+            .await
+            .unwrap()
+            .expect("rollback report expected even when previous binary is missing");
+
+        assert_eq!(report.from_version, "1.0.0");
+        assert_eq!(report.to_version, "1.0.1");
+        assert!(!lock_file.exists());
+        assert_eq!(std::fs::read(&symlink).unwrap(), b"new binary remains");
+
+        std::fs::remove_dir_all(&dir).ok(); // Safe: test cleanup.
+    }
+
+    #[tokio::test]
+    async fn recover_from_interrupted_update_clears_lock_when_rollback_install_fails() {
+        let dir = unique_temp_dir("recover-install-fails");
+        let install_root = dir.clone();
+        let rollback_dir = install_root.join("versions").join("1.0.0");
+        std::fs::create_dir_all(&rollback_dir).unwrap(); // Safe: test setup.
+        std::fs::write(rollback_dir.join(binary_name()), b"binary v1").unwrap(); // Safe: test setup.
+
+        let lock_file = install_root.join(".update-lock");
+        write_lock(&lock_file, &sample_lock()).await.unwrap();
+
+        let blocked_parent = install_root.join("not-a-directory");
+        std::fs::write(&blocked_parent, b"blocks create_dir_all").unwrap(); // Safe: test setup.
+        let symlink = blocked_parent.join(binary_name());
+
+        let report = recover_from_interrupted_update_with_paths(&install_root, &symlink)
+            .await
+            .unwrap()
+            .expect("rollback report expected when install fails");
+
+        assert_eq!(report.from_version, "1.0.0");
+        assert_eq!(report.to_version, "1.0.1");
+        assert!(!lock_file.exists());
+        assert_eq!(
+            std::fs::read(&blocked_parent).unwrap(),
+            b"blocks create_dir_all"
+        );
+
+        std::fs::remove_dir_all(&dir).ok(); // Safe: test cleanup.
     }
 
     #[cfg(unix)]

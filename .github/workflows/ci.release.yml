@@ -26,6 +26,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   BINARY_NAME: devops
+  COSIGN_CERT_IDENTITY_RE: ^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/heads/main$
+  COSIGN_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
   version:
@@ -39,6 +41,13 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Verify release ref
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Release signing is restricted to refs/heads/main; dispatch this workflow from main."
+            exit 1
+          fi
 
       - name: Calculate next version
         id: calc
@@ -316,6 +325,7 @@ jobs:
           (
             cd artifacts
             sha256sum devops-*.tar.gz devops-*.zip > SHA256SUMS
+            sha256sum --check SHA256SUMS
           )
           cat artifacts/SHA256SUMS
 
@@ -330,6 +340,36 @@ jobs:
             --bundle artifacts/SHA256SUMS.cosign.bundle \
             artifacts/SHA256SUMS
           ls -l artifacts/SHA256SUMS.cosign.bundle
+
+      - name: Verify release artifact trust path
+        run: |
+          archive_count=0
+          for archive in artifacts/devops-*.tar.gz artifacts/devops-*.zip; do
+            [ -f "$archive" ] || continue
+            archive_count=$((archive_count + 1))
+          done
+
+          if [ "$archive_count" -eq 0 ]; then
+            echo "::error::No release archives were produced"
+            exit 1
+          fi
+
+          manifest_count=$(awk '$2 ~ /^devops-.*\.(tar\.gz|zip)$/ { count++ } END { print count + 0 }' artifacts/SHA256SUMS)
+          if [ "$archive_count" -ne "$manifest_count" ]; then
+            echo "::error::SHA256SUMS lists ${manifest_count} archives, but ${archive_count} archives were produced"
+            exit 1
+          fi
+
+          (
+            cd artifacts
+            sha256sum --check SHA256SUMS
+          )
+
+          cosign verify-blob \
+            --bundle artifacts/SHA256SUMS.cosign.bundle \
+            --certificate-identity-regexp "$COSIGN_CERT_IDENTITY_RE" \
+            --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+            artifacts/SHA256SUMS
 
       - name: Create GitHub Release
         env:

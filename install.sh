@@ -95,7 +95,7 @@ TAG="v${VERSION}"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ARTIFACT}"
 CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
 COSIGN_BUNDLE_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS.cosign.bundle"
-COSIGN_CERT_IDENTITY_RE='^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/tags/v.+$'
+COSIGN_CERT_IDENTITY_RE='^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/heads/main$'
 COSIGN_OIDC_ISSUER='https://token.actions.githubusercontent.com'
 ISSUES_URL="https://github.com/${REPO}/issues"
 

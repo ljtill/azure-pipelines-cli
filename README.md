@@ -7,7 +7,10 @@
 
 ### Installing and running
 
-Install with the script for your platform:
+Install with the convenience script for your platform. The scripts verify the
+Sigstore-signed checksum manifest and the archive SHA-256 before installing; if
+your environment does not allow piping downloaded scripts to a shell, use the
+[secure manual flow](./docs/install.md#recommended-secure-flow).
 
 ```sh
 # macOS / Linux
@@ -19,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/instal
 irm https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.ps1 | iex
 ```
 
-Then run `devops` to get started. On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project.
+Then run `devops` to get started. On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project. Do not store tokens, PATs, or other secrets in this file; authentication comes from Azure CLI or Azure Developer CLI credentials.
 
 <details>
 <summary>You can also pin a specific version, build from source, or download a release binary.</summary>
@@ -27,7 +30,7 @@ Then run `devops` to get started. On first launch, an interactive setup wizard c
 Pin a specific version:
 
 ```sh
-VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | VERSION=0.1.0 sh
 ```
 
 Build from source (requires the Rust toolchain pinned in `Cargo.toml`):
@@ -36,7 +39,7 @@ Build from source (requires the Rust toolchain pinned in `Cargo.toml`):
 cargo install --path .
 ```
 
-Or download a binary directly from the [latest GitHub Release](https://github.com/ljtill/azure-devops-cli/releases/latest). Release archives are signed with [Sigstore](https://www.sigstore.dev/) — see [SECURITY.md](SECURITY.md) for verification steps.
+Or download a binary directly from the [latest GitHub Release](https://github.com/ljtill/azure-devops-cli/releases/latest). Release archives are covered by a Sigstore-signed `SHA256SUMS` manifest — see [SECURITY.md](SECURITY.md) for verification steps.
 
 </details>
 

@@ -35,7 +35,7 @@ $Tag = "v$Version"
 $Url = "https://github.com/$Repo/releases/download/$Tag/$Artifact"
 $ChecksumsUrl = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS"
 $CosignBundleUrl = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS.cosign.bundle"
-$CosignCertIdentityRegex = '^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/tags/v.+$'
+$CosignCertIdentityRegex = '^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/heads/main$'
 $CosignOidcIssuer = 'https://token.actions.githubusercontent.com'
 $IssuesUrl = "https://github.com/$Repo/issues"
 

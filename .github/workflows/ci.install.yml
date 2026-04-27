@@ -8,6 +8,8 @@ on:
 
 env:
   REPO: ljtill/azure-devops-cli
+  COSIGN_CERT_IDENTITY_RE: ^https://github\.com/ljtill/azure-devops-cli/\.github/workflows/ci\.release\.yml@refs/heads/main$
+  COSIGN_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
   # ------------------------------------------------------------------
@@ -52,6 +54,49 @@ jobs:
           fi
 
   # ------------------------------------------------------------------
+  # Release artifact verification: trust path used by installers/update
+  # ------------------------------------------------------------------
+  release-artifacts:
+    name: Release Artifact Verification
+    needs: check-release
+    if: needs.check-release.outputs.has_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Verify latest release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="v${{ needs.check-release.outputs.latest_version }}"
+          mkdir -p verified-release
+          gh release download "$tag" \
+            --repo "${{ env.REPO }}" \
+            --dir verified-release \
+            --pattern "SHA256SUMS" \
+            --pattern "SHA256SUMS.cosign.bundle" \
+            --pattern "devops-*.tar.gz" \
+            --pattern "devops-*.zip"
+
+          test -s verified-release/SHA256SUMS
+          test -s verified-release/SHA256SUMS.cosign.bundle
+
+          cosign verify-blob \
+            --bundle verified-release/SHA256SUMS.cosign.bundle \
+            --certificate-identity-regexp "$COSIGN_CERT_IDENTITY_RE" \
+            --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+            verified-release/SHA256SUMS
+
+          (
+            cd verified-release
+            sha256sum --check SHA256SUMS
+          )
+
+  # ------------------------------------------------------------------
   # Install script E2E: install.sh (Linux / macOS)
   # ------------------------------------------------------------------
   install-sh:
@@ -65,6 +110,9 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
 
       - name: Install via install.sh (latest)
         env:
@@ -125,6 +173,9 @@ jobs:
         os: [windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
 
       - name: Install via install.ps1 (latest)
         shell: pwsh
@@ -200,6 +251,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
       - name: Install older version
         env:
           VERSION: ${{ needs.check-release.outputs.previous_version }}
@@ -256,6 +310,9 @@ jobs:
         os: [windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
 
       - name: Install older version
         shell: pwsh
