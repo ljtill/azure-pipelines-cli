@@ -3,6 +3,7 @@
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -166,7 +167,7 @@ impl MyWorkItems {
             } else {
                 " No work items found"
             };
-            draw_state_message(f, list_area, hint, theme::MUTED);
+            draw_state_message(f, list_area, hint, theme::SUBTLE);
             return;
         }
 
@@ -182,6 +183,7 @@ impl MyWorkItems {
             .iter()
             .enumerate()
             .map(|(i, row)| {
+                let is_selected = i == list.nav.index();
                 let w_id = widths[schema.id];
                 let w_type = widths[schema.work_item_type];
                 let w_title = widths[schema.title];
@@ -191,42 +193,78 @@ impl MyWorkItems {
                 ListItem::new(Line::from(vec![
                     Span::styled(
                         format!("#{:<w$}", row.id, w = w_id.saturating_sub(1)),
-                        theme::MUTED,
+                        id_style(is_selected),
                     ),
                     Span::styled(
                         format!("{:<w_type$}", truncate(&row.work_item_type, w_type)),
-                        theme::BRANCH,
+                        work_item_type_style(&row.work_item_type),
                     ),
                     Span::styled(
                         format!("{:<w_title$}", truncate(&row.title, w_title)),
-                        theme::TEXT,
+                        title_style(is_selected),
                     ),
                     Span::styled(
                         format!("{:<w_state$}", truncate(&row.state, w_state)),
-                        theme::MUTED,
+                        state_style(&row.state),
                     ),
                     Span::styled(
                         format!(
                             "{:<w_assigned$}",
                             truncate(row.assigned_to.as_deref().unwrap_or("—"), w_assigned)
                         ),
-                        theme::MUTED,
+                        theme::SUBTLE,
                     ),
                     Span::styled(
                         format!(
                             "{:<w_iter$}",
                             truncate(row.iteration_path.as_deref().unwrap_or(""), w_iter)
                         ),
-                        theme::MUTED,
+                        theme::SUBTLE,
                     ),
                 ]))
-                .style(row_style(i == list.nav.index()))
+                .style(row_style(is_selected))
             })
             .collect();
 
         let mut state = ListState::default();
         state.select(Some(list.nav.index()));
         f.render_stateful_widget(List::new(items).scroll_padding(3), list_area, &mut state);
+    }
+}
+
+fn id_style(is_selected: bool) -> Style {
+    if is_selected {
+        theme::SELECTED_ACCENT
+    } else {
+        theme::MUTED
+    }
+}
+
+fn title_style(is_selected: bool) -> Style {
+    if is_selected {
+        theme::SELECTED_ACCENT
+    } else {
+        theme::TEXT
+    }
+}
+
+fn work_item_type_style(work_item_type: &str) -> Style {
+    match work_item_type.to_ascii_lowercase().as_str() {
+        "epic" => theme::BRAND,
+        "feature" => theme::TITLE,
+        "bug" | "impediment" => theme::ERROR,
+        "task" | "test case" => theme::SUBTLE,
+        _ => theme::TEXT,
+    }
+}
+
+fn state_style(state: &str) -> Style {
+    match state.to_ascii_lowercase().as_str() {
+        "closed" | "removed" | "cut" => theme::MUTED,
+        "done" | "completed" | "resolved" => theme::SUCCESS,
+        "active" | "in progress" | "committed" => theme::WARNING,
+        "new" | "to do" | "proposed" | "approved" => theme::SUBTLE,
+        _ => theme::TEXT,
     }
 }
 

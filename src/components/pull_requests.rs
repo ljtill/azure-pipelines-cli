@@ -29,6 +29,101 @@ pub struct PullRequests {
     pub generation: u64,
 }
 
+fn pr_status_style(status: &str, is_draft: bool) -> Style {
+    if is_draft {
+        return theme::PR_DRAFT;
+    }
+
+    match status.to_ascii_lowercase().as_str() {
+        "active" => theme::PR_ACTIVE,
+        "completed" => theme::PR_COMPLETED,
+        "abandoned" => theme::PR_ABANDONED,
+        _ => theme::VOTE_NONE,
+    }
+}
+
+fn pr_title_style(status: &str, is_draft: bool, is_selected: bool) -> Style {
+    if is_selected {
+        return theme::SELECTED_ACCENT;
+    }
+
+    if is_draft {
+        return theme::SUBTLE;
+    }
+
+    match status.to_ascii_lowercase().as_str() {
+        "completed" => theme::SUBTLE,
+        "abandoned" => theme::MUTED,
+        _ => theme::TEXT,
+    }
+}
+
+fn pr_title_spans(
+    pr: &crate::client::models::PullRequest,
+    width: usize,
+    is_selected: bool,
+) -> Vec<Span<'static>> {
+    let draft_marker = if pr.is_draft { " [draft]" } else { "" };
+    let prefix = format!("#{} ", pr.pull_request_id);
+    let title_text = format!("{prefix}{}{}", pr.title, draft_marker);
+    let title_cell = format!("{:<width$}", truncate(&title_text, width));
+    let title_style = pr_title_style(&pr.status, pr.is_draft, is_selected);
+    let prefix_style = if is_selected {
+        theme::SELECTED_ACCENT
+    } else {
+        theme::SUBTLE
+    };
+
+    if !title_cell.starts_with(&prefix) {
+        return vec![Span::styled(title_cell, title_style)];
+    }
+
+    let mut spans = vec![Span::styled(prefix.clone(), prefix_style)];
+    let rest = &title_cell[prefix.len()..];
+    if pr.is_draft
+        && let Some(marker_start) = rest.find(draft_marker)
+    {
+        let (title, marker_and_padding) = rest.split_at(marker_start);
+        let (marker, padding) = marker_and_padding.split_at(draft_marker.len());
+        spans.push(Span::styled(title.to_string(), title_style));
+        spans.push(Span::styled(marker.to_string(), theme::PR_DRAFT));
+        if !padding.is_empty() {
+            spans.push(Span::styled(padding.to_string(), title_style));
+        }
+    } else {
+        spans.push(Span::styled(rest.to_string(), title_style));
+    }
+    spans
+}
+
+fn vote_spans(
+    approved: usize,
+    rejected: usize,
+    waiting: usize,
+    has_reviewers: bool,
+    width: usize,
+) -> Vec<Span<'static>> {
+    if !has_reviewers {
+        return vec![Span::styled(format!("{:<width$}", ""), theme::VOTE_NONE)];
+    }
+
+    let approved_text = format!("✓{approved}");
+    let rejected_text = format!("✗{rejected}");
+    let waiting_text = format!("●{waiting}");
+    let vote_summary = format!("{approved_text} {rejected_text} {waiting_text}");
+    let vote_cell = format!("{vote_summary:<width$}");
+    let padding = vote_cell[vote_summary.len()..].to_string();
+
+    vec![
+        Span::styled(approved_text, theme::VOTE_APPROVED),
+        Span::styled(" ".to_string(), theme::VOTE_NONE),
+        Span::styled(rejected_text, theme::VOTE_REJECTED),
+        Span::styled(" ".to_string(), theme::VOTE_NONE),
+        Span::styled(waiting_text, theme::VOTE_WAITING),
+        Span::styled(padding, theme::VOTE_NONE),
+    ]
+}
+
 impl PullRequests {
     /// Increments the generation counter and returns the new value.
     pub fn next_generation(&mut self) -> u64 {
@@ -109,16 +204,10 @@ impl PullRequests {
             .iter()
             .enumerate()
             .map(|(i, pr)| {
-                let (icon, color) = pr_status_icon(&pr.status, pr.is_draft);
+                let (icon, _) = pr_status_icon(&pr.status, pr.is_draft);
                 let (approved, rejected, waiting, _no_vote) = pr.vote_summary();
+                let is_selected = i == self.nav.index();
 
-                let vote_summary = if pr.reviewers.is_empty() {
-                    String::new()
-                } else {
-                    format!("✓{approved} ✗{rejected} ●{waiting}")
-                };
-
-                let draft_marker = if pr.is_draft { " [draft]" } else { "" };
                 let w_icon = widths[schema.icon];
                 let w_title = widths[schema.title];
                 let w_repo = widths[schema.repo];
@@ -126,21 +215,15 @@ impl PullRequests {
                 let w_branch = widths[schema.branch];
                 let w_votes = widths[schema.votes];
 
-                ListItem::new(Line::from(vec![
-                    Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(color)),
-                    Span::styled(
-                        format!(
-                            "{:<w_title$}",
-                            truncate(
-                                &format!("#{} {}{}", pr.pull_request_id, pr.title, draft_marker),
-                                w_title
-                            )
-                        ),
-                        theme::TEXT,
-                    ),
+                let mut spans = vec![Span::styled(
+                    format!("{icon:<w_icon$}"),
+                    pr_status_style(&pr.status, pr.is_draft),
+                )];
+                spans.extend(pr_title_spans(pr, w_title, is_selected));
+                spans.extend([
                     Span::styled(
                         format!("{:<w_repo$}", truncate(pr.repo_name(), w_repo)),
-                        theme::MUTED,
+                        theme::SUBTLE,
                     ),
                     Span::styled(
                         format!("{:<w_author$}", truncate(pr.author(), w_author)),
@@ -153,9 +236,16 @@ impl PullRequests {
                         ),
                         theme::BRANCH,
                     ),
-                    Span::styled(format!("{vote_summary:<w_votes$}"), theme::MUTED),
-                ]))
-                .style(row_style(i == self.nav.index()))
+                ]);
+                spans.extend(vote_spans(
+                    approved,
+                    rejected,
+                    waiting,
+                    !pr.reviewers.is_empty(),
+                    w_votes,
+                ));
+
+                ListItem::new(Line::from(spans)).style(row_style(is_selected))
             })
             .collect();
 

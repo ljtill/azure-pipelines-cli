@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -361,7 +361,7 @@ impl Pipelines {
             } else {
                 " No pipelines found"
             };
-            draw_state_message(f, list_area, hint, theme::MUTED);
+            draw_state_message(f, list_area, hint, theme::SUBTLE);
             return;
         }
 
@@ -385,14 +385,25 @@ impl Pipelines {
                     expanded,
                     ..
                 } => {
+                    let is_focused = i == self.nav.index();
                     let icon = if *expanded { "▾" } else { "▸" };
                     let indent = "  ".repeat(*depth);
+                    let folder_style = if is_focused {
+                        theme::SELECTED_ACCENT
+                    } else {
+                        theme::FOLDER
+                    };
+                    let arrow_style = if is_focused {
+                        theme::SELECTED_ACCENT
+                    } else {
+                        theme::ARROW
+                    };
                     ListItem::new(Line::from(vec![
                         Span::raw(indent),
-                        Span::styled(format!(" {icon} "), theme::ARROW),
-                        Span::styled(label.clone(), theme::FOLDER),
+                        Span::styled(format!(" {icon} "), arrow_style),
+                        Span::styled(label.clone(), folder_style),
                     ]))
-                    .style(row_style(i == self.nav.index()))
+                    .style(row_style(is_focused))
                 }
                 PipelineRow::Pipeline {
                     definition,
@@ -400,8 +411,14 @@ impl Pipelines {
                     pinned,
                     depth,
                 } => {
+                    let is_focused = i == self.nav.index();
+                    let secondary_style = if is_focused {
+                        theme::SELECTED_ACCENT
+                    } else {
+                        theme::SUBTLE
+                    };
                     let (icon, icon_color) =
-                        latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
+                        latest_build.as_ref().map_or(("○", theme::PENDING_FG), |b| {
                             let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
                             effective_status_icon(b.status, b.result, awaiting)
                         });
@@ -411,7 +428,7 @@ impl Pipelines {
                     });
 
                     let build_spans = latest_build.as_ref().map_or_else(
-                        || vec![Span::styled("no builds", theme::MUTED)],
+                        || vec![Span::styled("no builds", secondary_style)],
                         |b| {
                             let branch = b.branch_display();
                             let elapsed = build_elapsed(b);
@@ -422,7 +439,7 @@ impl Pipelines {
                                         truncate(&b.build_number, widths[4] - 1),
                                         width = widths[4] - 1
                                     ),
-                                    theme::MUTED,
+                                    secondary_style,
                                 ),
                                 Span::styled(
                                     format!(
@@ -438,11 +455,11 @@ impl Pipelines {
                                         truncate(b.requestor(), widths[6].saturating_sub(1)),
                                         width = widths[6].saturating_sub(1)
                                     ),
-                                    theme::MUTED,
+                                    secondary_style,
                                 ),
                                 Span::styled(
                                     format!("{:>width$}", elapsed, width = widths[7]),
-                                    theme::MUTED,
+                                    secondary_style,
                                 ),
                             ]
                         },
@@ -454,11 +471,14 @@ impl Pipelines {
                     } else {
                         "  "
                     };
-                    let name_style = if latest_build.is_some() {
+                    let name_style = if is_focused {
+                        theme::SELECTED_ACCENT
+                    } else if latest_build.is_some() {
                         theme::TEXT
                     } else {
-                        theme::MUTED
+                        theme::SUBTLE
                     };
+                    let pin_style = if *pinned { theme::WARNING } else { name_style };
                     let indent = "  ".repeat(*depth);
 
                     let mut spans = vec![
@@ -469,10 +489,10 @@ impl Pipelines {
                             format!("{:<width$}", label, width = widths[2]),
                             Style::new().fg(icon_color),
                         ),
+                        Span::styled(pin_indicator, pin_style),
                         Span::styled(
                             format!(
-                                "{}{:<width$} ",
-                                pin_indicator,
+                                "{:<width$} ",
                                 truncate(
                                     &definition.name,
                                     widths[3]
@@ -489,7 +509,7 @@ impl Pipelines {
 
                     spans.extend(build_spans);
 
-                    ListItem::new(Line::from(spans)).style(row_style(i == self.nav.index()))
+                    ListItem::new(Line::from(spans)).style(row_style(is_focused))
                 }
             })
             .collect();

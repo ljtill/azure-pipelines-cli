@@ -278,7 +278,7 @@ impl Boards {
         );
 
         if self.loading && self.rows.is_empty() {
-            draw_state_message(f, list_area, " Loading backlog...", theme::MUTED);
+            draw_state_message(f, list_area, " Loading backlog...", theme::SUBTLE);
             return;
         }
 
@@ -295,7 +295,7 @@ impl Boards {
             } else {
                 " No backlog items found"
             };
-            draw_state_message(f, list_area, hint, theme::MUTED);
+            draw_state_message(f, list_area, hint, theme::SUBTLE);
             return;
         }
 
@@ -312,6 +312,7 @@ impl Boards {
             .enumerate()
             .filter_map(|(index, row)| {
                 let item = self.items.get(&row.work_item_id)?;
+                let is_selected = index == self.nav.index();
                 let arrow = if row.has_children {
                     if row.collapsed { "▸" } else { "▾" }
                 } else {
@@ -332,10 +333,13 @@ impl Boards {
                             format!("{:<w_type$}", truncate(&item.work_item_type, w_type)),
                             work_item_type_style(&item.work_item_type),
                         ),
-                        Span::styled(format!("{:<w_id$}", format!("#{}", item.id)), theme::MUTED),
+                        Span::styled(
+                            format!("{:<w_id$}", format!("#{}", item.id)),
+                            id_style(is_selected),
+                        ),
                         Span::styled(
                             format!("{:<w_title$}", truncate(&title, w_title)),
-                            theme::TEXT,
+                            title_style(is_selected),
                         ),
                         Span::styled(
                             format!("{:<w_state$}", truncate(&item.state, w_state)),
@@ -346,14 +350,14 @@ impl Boards {
                                 "{:<w_assigned$}",
                                 truncate(item.assigned_to.as_deref().unwrap_or(""), w_assigned)
                             ),
-                            theme::MUTED,
+                            theme::SUBTLE,
                         ),
                         Span::styled(
                             truncate(item.iteration_path.as_deref().unwrap_or(""), w_iter),
-                            theme::BRANCH,
+                            theme::SUBTLE,
                         ),
                     ]))
-                    .style(row_style(index == self.nav.index())),
+                    .style(row_style(is_selected)),
                 )
             })
             .collect();
@@ -506,20 +510,38 @@ fn is_terminal_state(state: &str) -> bool {
     )
 }
 
+fn id_style(is_selected: bool) -> Style {
+    if is_selected {
+        theme::SELECTED_ACCENT
+    } else {
+        theme::MUTED
+    }
+}
+
+fn title_style(is_selected: bool) -> Style {
+    if is_selected {
+        theme::SELECTED_ACCENT
+    } else {
+        theme::TEXT
+    }
+}
+
 fn work_item_type_style(work_item_type: &str) -> Style {
     match work_item_type.to_ascii_lowercase().as_str() {
         "epic" => theme::BRAND,
         "feature" => theme::TITLE,
-        "task" | "bug" => theme::WARNING,
+        "bug" | "impediment" => theme::ERROR,
+        "task" | "test case" => theme::SUBTLE,
         _ => theme::TEXT,
     }
 }
 
 fn state_style(state: &str) -> Style {
     match state.to_ascii_lowercase().as_str() {
-        "closed" | "done" | "completed" | "resolved" => theme::SUCCESS,
-        "active" | "in progress" => theme::WARNING,
-        "new" | "to do" | "proposed" => theme::MUTED,
+        "closed" | "removed" | "cut" => theme::MUTED,
+        "done" | "completed" | "resolved" => theme::SUCCESS,
+        "active" | "in progress" | "committed" => theme::WARNING,
+        "new" | "to do" | "proposed" | "approved" => theme::SUBTLE,
         _ => theme::TEXT,
     }
 }

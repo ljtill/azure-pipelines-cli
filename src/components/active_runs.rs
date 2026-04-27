@@ -107,7 +107,7 @@ impl ActiveRuns {
             } else {
                 " No active runs found"
             };
-            draw_state_message(f, list_area, hint, theme::MUTED);
+            draw_state_message(f, list_area, hint, theme::SUBTLE);
             return;
         }
 
@@ -125,6 +125,7 @@ impl ActiveRuns {
             .iter()
             .enumerate()
             .map(|(i, build)| {
+                let is_focused = i == self.nav.index();
                 let elapsed = build_elapsed(build);
                 let selected = self.selected.contains(&build.id);
                 let retained = app.retention_leases.retained_run_ids.contains(&build.id);
@@ -133,6 +134,16 @@ impl ActiveRuns {
                 let (icon, icon_color) =
                     effective_status_icon(build.status, build.result, awaiting);
                 let label = effective_status_label(build.status, build.result, awaiting);
+                let primary_style = if is_focused {
+                    theme::SELECTED_ACCENT
+                } else {
+                    theme::TEXT
+                };
+                let secondary_style = if is_focused {
+                    theme::SELECTED_ACCENT
+                } else {
+                    theme::SUBTLE
+                };
 
                 ListItem::new(Line::from(vec![
                     Span::styled(
@@ -154,7 +165,7 @@ impl ActiveRuns {
                             truncate(&build.definition.name, widths[3].saturating_sub(1)),
                             width = widths[3].saturating_sub(1)
                         ),
-                        theme::TEXT,
+                        primary_style,
                     ),
                     Span::styled(
                         format!(
@@ -162,7 +173,7 @@ impl ActiveRuns {
                             truncate(&build.build_number, widths[4] - 1),
                             width = widths[4] - 1
                         ),
-                        theme::MUTED,
+                        secondary_style,
                     ),
                     Span::styled(if retained { "◈ " } else { "  " }, theme::WARNING),
                     Span::styled(
@@ -179,14 +190,14 @@ impl ActiveRuns {
                             truncate(build.requestor(), widths[7].saturating_sub(1)),
                             width = widths[7].saturating_sub(1)
                         ),
-                        theme::MUTED,
+                        secondary_style,
                     ),
                     Span::styled(
                         format!("{:>width$}", elapsed, width = widths[8]),
                         theme::WARNING,
                     ),
                 ]))
-                .style(row_style(i == self.nav.index()))
+                .style(row_style(is_focused))
             })
             .collect();
         let list = List::new(items).scroll_padding(3);

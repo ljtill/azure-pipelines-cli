@@ -82,7 +82,7 @@ impl BuildHistory {
         let content_area = draw_view_frame(f, area, " Build History ", Some(subtitle));
 
         if self.builds.is_empty() {
-            draw_state_message(f, content_area, " No builds found", theme::MUTED);
+            draw_state_message(f, content_area, " No builds found", theme::SUBTLE);
             return;
         }
 
@@ -100,6 +100,7 @@ impl BuildHistory {
             .iter()
             .enumerate()
             .map(|(i, build)| {
+                let is_focused = i == self.nav.index();
                 let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
                 let (icon, icon_color) =
                     effective_status_icon(build.status, build.result, awaiting);
@@ -109,6 +110,16 @@ impl BuildHistory {
                 let retained = app.retention_leases.retained_run_ids.contains(&build.id);
                 let selected = self.selected.contains(&build.id);
                 let check = if selected { "✓ " } else { "  " };
+                let primary_style = if is_focused {
+                    theme::SELECTED_ACCENT
+                } else {
+                    theme::TEXT
+                };
+                let secondary_style = if is_focused {
+                    theme::SELECTED_ACCENT
+                } else {
+                    theme::SUBTLE
+                };
 
                 ListItem::new(Line::from(vec![
                     Span::styled(
@@ -130,7 +141,7 @@ impl BuildHistory {
                             truncate(&build.build_number, widths[3] - 1),
                             width = widths[3] - 1
                         ),
-                        theme::TEXT,
+                        primary_style,
                     ),
                     Span::styled(if retained { "◈ " } else { "  " }, theme::WARNING),
                     Span::styled(
@@ -147,26 +158,26 @@ impl BuildHistory {
                             truncate(build.requestor(), widths[6].saturating_sub(1)),
                             width = widths[6].saturating_sub(1)
                         ),
-                        theme::MUTED,
+                        secondary_style,
                     ),
                     Span::styled(
                         format!("{:>width$}", time_info, width = widths[7]),
-                        theme::MUTED,
+                        secondary_style,
                     ),
                 ]))
-                .style(row_style(i == self.nav.index()))
+                .style(row_style(is_focused))
             })
             .collect();
 
         if self.loading_more {
             items.push(ListItem::new(Line::from(vec![Span::styled(
                 "   ⟳ Loading more...",
-                theme::MUTED,
+                theme::SUBTLE,
             )])));
         } else if self.has_more {
             items.push(ListItem::new(Line::from(vec![Span::styled(
                 "   ▾ ↓ for more",
-                theme::MUTED,
+                theme::SUBTLE,
             )])));
         }
 
