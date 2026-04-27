@@ -36,7 +36,7 @@ keyless signing via GitHub Actions OIDC (cosign). Every release publishes:
 With [cosign](https://docs.sigstore.dev/cosign/installation/) installed:
 
 ```sh
-TAG=v0.1.0   # or whichever release
+TAG=v1.0.0   # or whichever release
 BASE="https://github.com/ljtill/azure-devops-cli/releases/download/$TAG"
 curl -fsSLO "$BASE/SHA256SUMS"
 curl -fsSLO "$BASE/SHA256SUMS.cosign.bundle"
