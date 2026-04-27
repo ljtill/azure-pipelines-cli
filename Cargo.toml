@@ -4,6 +4,7 @@ version = "1.0.0"
 edition = "2024"
 description = "A terminal dashboard for Azure DevOps"
 repository = "https://github.com/ljtill/azure-devops-cli"
+license = "MIT"
 readme = "README.md"
 rust-version = "1.94"
 

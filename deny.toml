@@ -4,7 +4,23 @@
 version = 2
 yanked = "warn"
 # Ignored advisories must include a link and a justification.
-ignore = []
+ignore = [
+    # rsa 0.9.x: Marvin Attack timing sidechannel. No safe upgrade is available
+    # upstream. Pulled in transitively via `sigstore` (release-signature
+    # verification on self-update); this CLI does not expose RSA over a network
+    # in a way that an attacker could observe timing sidechannels. Re-evaluate
+    # when `rsa` ships a constant-time implementation or when `sigstore`
+    # migrates off it.
+    # https://rustsec.org/advisories/RUSTSEC-2023-0071
+    "RUSTSEC-2023-0071",
+
+    # proc-macro-error 1.0.4: unmaintained. Build-time only (proc macro), pulled
+    # in transitively via sigstore -> json-syntax -> locspan-derive. No
+    # vulnerability, no upstream replacement available without dropping
+    # `sigstore`. Re-evaluate when `sigstore`/`json-syntax` migrate off it.
+    # https://rustsec.org/advisories/RUSTSEC-2024-0370
+    "RUSTSEC-2024-0370",
+]
 
 [licenses]
 version = 2
@@ -24,6 +40,10 @@ allow = [
     "MPL-2.0",
     "0BSD",
     "OpenSSL",
+    # CDLA-Permissive-2.0: permissive, redistribution-friendly Community Data
+    # License Agreement. Required by `webpki-roots` (bundled root certificate
+    # data set). Compatible with downstream distribution.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
