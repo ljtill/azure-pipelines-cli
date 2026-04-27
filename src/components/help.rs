@@ -49,9 +49,10 @@ impl Component for Help {
             Line::from(vec![Span::styled("  Views", theme::SECTION_HEADER)]),
             Line::from(""),
             shortcut_line(
-                "  1–5            ",
-                "Switch area: Dashboard / Boards / Repos / Pipelines / Active Runs",
+                "  1–4            ",
+                "Switch area: Dashboard / Boards / Repos / Pipelines",
             ),
+            shortcut_line("  Tab / Shift+Tab", "Cycle views within the current area"),
             Line::from(""),
             shortcut_line("  Dashboard      ", "Overview"),
             shortcut_line("  Boards         ", "Read-only backlog tree"),
@@ -62,11 +63,11 @@ impl Component for Help {
             Line::from(""),
             shortcut_line(
                 "  /              ",
-                "Search / filter (Boards / Pipelines / Active Runs / Pull Requests)",
+                "Search / filter (Boards / My Work Items / Pipelines / Active Runs / Pull Requests)",
             ),
             shortcut_line(
                 "  Space          ",
-                "Select / deselect (Pipelines / Active Runs)",
+                "Select / deselect (Pipelines / Active Runs / Build History)",
             ),
             shortcut_line(
                 "  p              ",
@@ -88,7 +89,7 @@ impl Component for Help {
             ),
             shortcut_line(
                 "  c              ",
-                "Cancel build (Active Runs / Log Viewer)",
+                "Cancel build (Active Runs / Build History / Log Viewer)",
             ),
             shortcut_line(
                 "  d              ",

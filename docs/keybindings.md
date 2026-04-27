@@ -9,7 +9,7 @@
 | 1 / 2 / 3 / 4      | Switch between Dashboard / Boards / Repos / Pipelines areas |
 | Tab / Shift+Tab    | Cycle views within the current area                   |
 | /                  | Search / filter (Boards / My Work Items / Pipelines / Active Runs / Pull Requests) |
-| Space              | Select / deselect build (Active Runs)                 |
+| Space              | Select / deselect row (Pipelines / Active Runs / Build History) |
 | p                  | Pin / unpin (Pipelines / Boards / My Work Items)      |
 | n                  | Queue pipeline run (new run)                          |
 | t                  | Retry failed stage (Log Viewer)                       |
