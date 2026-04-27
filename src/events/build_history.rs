@@ -16,7 +16,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Char('c') => navigation::handle_cancel_request(app),
         KeyCode::Char('d') => navigation::handle_delete_build_leases_request(app),
-        KeyCode::Char('Q') => navigation::handle_queue_request(app),
+        KeyCode::Char('n') => navigation::handle_queue_request(app),
         KeyCode::Down => {
             // Load more builds when scrolling past the bottom.
             if app.build_history.nav.is_at_bottom()

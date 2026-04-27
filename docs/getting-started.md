@@ -51,10 +51,10 @@ Read-only backlog tree plus personal "Assigned to me" and "Created by me" work i
 - **Active Runs view** — All currently running builds across the fleet.
 - **Build History** — Drill into a pipeline's recent builds; delete retention leases to allow pruning.
 - **Log Viewer** — Drill into a build to view live log output with collapsible timeline tree.
-- **Queue pipeline** — Trigger a new pipeline run directly from the TUI (`Q`).
+- **Queue pipeline** — Trigger a new pipeline run directly from the TUI (`n`).
 - **Cancel build** — Stop a running build (`c`); multi-select batch cancel in Active Runs.
-- **Retry stage** — Re-run a failed stage without re-queuing the entire pipeline (`R`).
-- **Approve / Reject checks** — Approve (`A`) or reject (`D`) environment approval gates inline from the Log Viewer.
+- **Retry stage** — Re-run a failed stage without re-queuing the entire pipeline (`t`).
+- **Approve / Reject checks** — Approve (`a`) or reject (`j`) environment approval gates inline from the Log Viewer.
 
 ### General
 

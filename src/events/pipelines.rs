@@ -20,7 +20,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Enter => handle_enter(app),
         KeyCode::Char(' ') => handle_space(app),
         KeyCode::Char('p') => handle_pin(app),
-        KeyCode::Char('Q') => navigation::handle_queue_request(app),
+        KeyCode::Char('n') => navigation::handle_queue_request(app),
         KeyCode::Char('o') => navigation::handle_open_in_browser(app),
         _ => Action::None,
     }

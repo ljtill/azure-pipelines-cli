@@ -59,9 +59,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('c') => navigation::handle_cancel_request(app),
-        KeyCode::Char('R') => handle_retry_request(app),
-        KeyCode::Char('A') => handle_approve_request(app),
-        KeyCode::Char('D') => handle_reject_request(app),
+        KeyCode::Char('t') => handle_retry_request(app),
+        KeyCode::Char('a') => handle_approve_request(app),
+        KeyCode::Char('j') => handle_reject_request(app),
         KeyCode::Char('o') => navigation::handle_open_in_browser(app),
         _ => Action::None,
     }

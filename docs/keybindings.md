@@ -11,10 +11,10 @@
 | /                  | Search / filter (Boards / My Work Items / Pipelines / Active Runs / Pull Requests) |
 | Space              | Select / deselect build (Active Runs)                 |
 | p                  | Pin / unpin (Pipelines / Boards / My Work Items)      |
-| Q                  | Queue pipeline run                                    |
-| R                  | Retry failed stage (Log Viewer)                       |
-| A                  | Approve check (Log Viewer, on checkpoint row)         |
-| D                  | Reject check (Log Viewer, on checkpoint row)          |
+| n                  | Queue pipeline run (new run)                          |
+| t                  | Retry failed stage (Log Viewer)                       |
+| a                  | Approve check (Log Viewer, on checkpoint row)         |
+| j                  | Reject check (Log Viewer, on checkpoint row)          |
 | c                  | Cancel build (Active Runs / Build History / Log Viewer) |
 | d                  | Delete retention leases (Build History)               |
 | o                  | Open in browser                                       |
