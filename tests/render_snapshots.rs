@@ -142,22 +142,22 @@ fn snapshot_dashboard_narrow() {
 │ Pinned Pipelines ─────────────────────────────────────────────────────────── │
 │✓   Succeeded   CI Pipeline         #100          main        Unknown         │
 │●   Running     Deploy Pipeline     #101          main        Unknown         │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 │ Pinned Work Items ────────────────────────────────────────────────────────── │
 │#501     User Story  Investigate flaky test Active      Alice                 │
 │#502     User Story  Document pipeline conv…New         Bob Smith             │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 │ Pull Requests ────────────────────────────────────────────────────────────── │
 │    Loading pull requests...                                                  │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 │ Work Items ───────────────────────────────────────────────────────────────── │
 │    Loading work items...                                                     │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -183,12 +183,12 @@ fn snapshot_dashboard_wide_header() {
 │ Pinned Pipelines ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
 │✓   Succeeded   CI Pipeline                                                  #100          main                          Unknown                              │
 │●   Running     Deploy Pipeline                                              #101          main                          Unknown                        queued│
-│ Pinned Work Items ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
-│#501     User Story  Investigate flaky test                                                       Active      Alice                                           │
-│#502     User Story  Document pipeline conventions                                                New         Bob Smith                                       │
-│ Pull Requests ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
-│    Loading pull requests...                                                                                                                                  │
-│ Work Items ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
 ";
     assert_snapshot("dashboard_wide_header", &head, expected);
 }

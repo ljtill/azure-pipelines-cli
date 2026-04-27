@@ -2,12 +2,14 @@
 
 use std::collections::BTreeMap;
 
+use std::ops::Range;
+
 use anyhow::Result;
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
 use super::Component;
 use crate::client::models::{Build, PipelineDefinition, PullRequest, WorkItem};
@@ -23,7 +25,7 @@ use crate::state::{
     App, DashboardPullRequestsState, DashboardWorkItemsState, PinnedWorkItemsState,
 };
 
-/// Represents a row in the dashboard view.
+/// Represents a selectable row in the dashboard view.
 #[derive(Debug, Clone)]
 pub enum DashboardRow {
     PinnedPipeline {
@@ -39,10 +41,18 @@ pub enum DashboardRow {
     EmptyHint {
         message: String,
     },
-    SectionHeader {
-        label: String,
-    },
 }
+
+/// Number of sections rendered as separate panels on the dashboard.
+const SECTION_COUNT: usize = 4;
+
+/// Stable section identifiers in display order.
+const SECTION_LABELS: [&str; SECTION_COUNT] = [
+    "Pinned Pipelines",
+    "Pinned Work Items",
+    "Pull Requests",
+    "Work Items",
+];
 
 /// Returns a string of `n` spaces for column padding.
 fn pad(n: usize) -> String {
@@ -52,7 +62,10 @@ fn pad(n: usize) -> String {
 /// Renders the cross-service dashboard with pinned pipelines and pull requests.
 #[derive(Debug, Default)]
 pub struct Dashboard {
+    /// Flat list of selectable rows across all sections, in display order.
     pub rows: Vec<DashboardRow>,
+    /// Index range into `rows` for each of the four sections (in `SECTION_LABELS` order).
+    pub section_ranges: [Range<usize>; SECTION_COUNT],
     pub nav: ListNav,
 }
 
@@ -67,13 +80,11 @@ impl Dashboard {
         dashboard_wis: &DashboardWorkItemsState,
         pinned_wis: &PinnedWorkItemsState,
     ) {
-        let mut rows = Vec::new();
+        let mut rows: Vec<DashboardRow> = Vec::new();
+        let mut ranges: [Range<usize>; SECTION_COUNT] = std::array::from_fn(|_| 0..0);
 
-        rows.push(DashboardRow::SectionHeader {
-            label: "Pinned Pipelines".to_string(),
-        });
-
-        // --- Pinned Pipelines section ---
+        // --- Section 0: Pinned Pipelines ---
+        let start = rows.len();
         let mut pinned: Vec<(PipelineDefinition, Option<Build>)> = pinned_ids
             .iter()
             .filter_map(|id| {
@@ -97,12 +108,10 @@ impl Dashboard {
                 });
             }
         }
+        ranges[0] = start..rows.len();
 
-        rows.push(DashboardRow::SectionHeader {
-            label: "Pinned Work Items".to_string(),
-        });
-
-        // --- Pinned Work Items section ---
+        // --- Section 1: Pinned Work Items ---
+        let start = rows.len();
         match pinned_wis {
             PinnedWorkItemsState::Loading => rows.push(DashboardRow::EmptyHint {
                 message: "Loading pinned work items...".to_string(),
@@ -125,12 +134,10 @@ impl Dashboard {
                 }
             }
         }
+        ranges[1] = start..rows.len();
 
-        rows.push(DashboardRow::SectionHeader {
-            label: "Pull Requests".to_string(),
-        });
-
-        // --- My Pull Requests section ---
+        // --- Section 2: Pull Requests ---
+        let start = rows.len();
         match dashboard_prs {
             DashboardPullRequestsState::Loading => rows.push(DashboardRow::EmptyHint {
                 message: "Loading pull requests...".to_string(),
@@ -151,12 +158,10 @@ impl Dashboard {
                 }
             }
         }
+        ranges[2] = start..rows.len();
 
-        rows.push(DashboardRow::SectionHeader {
-            label: "Work Items".to_string(),
-        });
-
-        // --- My Work Items section ---
+        // --- Section 3: Work Items ---
+        let start = rows.len();
         match dashboard_wis {
             DashboardWorkItemsState::Loading => rows.push(DashboardRow::EmptyHint {
                 message: "Loading work items...".to_string(),
@@ -177,12 +182,11 @@ impl Dashboard {
                 }
             }
         }
+        ranges[3] = start..rows.len();
 
         self.rows = rows;
+        self.section_ranges = ranges;
         self.nav.set_len(self.rows.len());
-        if self.is_separator(self.nav.index()) {
-            self.skip_separator(true);
-        }
     }
 
     /// Returns the pipeline definition at the given row index, if it is a pinned pipeline.
@@ -209,31 +213,11 @@ impl Dashboard {
         }
     }
 
-    /// Returns true if the row at the given index is a non-selectable section header.
-    pub fn is_separator(&self, index: usize) -> bool {
-        matches!(
-            self.rows.get(index),
-            Some(DashboardRow::SectionHeader { .. })
-        )
-    }
-
-    /// Nudges the cursor off a separator row by stepping one more in the given direction.
-    /// Falls back to the opposite direction if the requested step would leave nothing selectable.
-    pub fn skip_separator(&mut self, forward: bool) {
-        if !self.is_separator(self.nav.index()) {
-            return;
-        }
-        if forward {
-            self.nav.down();
-            if self.is_separator(self.nav.index()) {
-                self.nav.up();
-            }
-        } else {
-            self.nav.up();
-            if self.is_separator(self.nav.index()) {
-                self.nav.down();
-            }
-        }
+    /// Returns the index of the section containing `flat_index`, if any.
+    fn section_for(&self, flat_index: usize) -> Option<usize> {
+        self.section_ranges
+            .iter()
+            .position(|r| r.contains(&flat_index))
     }
 
     /// Renders the dashboard using data from the App.
@@ -261,212 +245,308 @@ impl Dashboard {
             .map(|&w| w as usize)
             .collect();
 
-        let items: Vec<ListItem> = self
-            .rows
+        // Compute proportional weights from each section's row count (clamped),
+        // and place a 1-row gap between adjacent panels for visual breathing room.
+        let weights: [u16; SECTION_COUNT] = std::array::from_fn(|i| {
+            let n = self.section_ranges[i].len() as u16;
+            n.clamp(3, 12)
+        });
+        let constraints = [
+            Constraint::Fill(weights[0]),
+            Constraint::Length(1),
+            Constraint::Fill(weights[1]),
+            Constraint::Length(1),
+            Constraint::Fill(weights[2]),
+            Constraint::Length(1),
+            Constraint::Fill(weights[3]),
+        ];
+        let chunks = Layout::vertical(constraints).split(content_area);
+        let panel_chunks = [chunks[0], chunks[2], chunks[4], chunks[6]];
+
+        let selected_section = self.section_for(self.nav.index());
+
+        for (section_idx, panel_rect) in panel_chunks.iter().enumerate() {
+            self.draw_panel(
+                f,
+                *panel_rect,
+                section_idx,
+                selected_section == Some(section_idx),
+                app,
+                &pinned_schema,
+                &pinned_widths,
+                &pr_schema,
+                &pr_widths,
+                &wi_schema,
+                &wi_widths,
+            );
+        }
+    }
+
+    /// Renders a single dashboard panel: a header line followed by a list of its rows.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_panel(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        section_idx: usize,
+        is_active_section: bool,
+        app: &App,
+        pinned_schema: &crate::render::columns::BuildRowSchema,
+        pinned_widths: &[usize],
+        pr_schema: &crate::render::columns::PullRequestSchema,
+        pr_widths: &[usize],
+        wi_schema: &crate::render::columns::WorkItemSchema,
+        wi_widths: &[usize],
+    ) {
+        if area.height == 0 {
+            return;
+        }
+
+        // --- Header line ---
+        let label = SECTION_LABELS[section_idx];
+        let total_w = area.width.saturating_sub(1) as usize;
+        let label_len = label.chars().count() + 2;
+        let rule_len = total_w.saturating_sub(label_len);
+        let rule = "─".repeat(rule_len);
+        let header_line = Line::from(vec![
+            Span::styled(format!(" {label} "), theme::TEXT),
+            Span::styled(rule, theme::MUTED),
+        ]);
+        let header_rect = Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: 1,
+        };
+        f.render_widget(Paragraph::new(header_line), header_rect);
+
+        if area.height < 2 {
+            return;
+        }
+        let body_rect = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: area.height - 1,
+        };
+
+        // --- Body list ---
+        let range = self.section_ranges[section_idx].clone();
+        let local_selected = if is_active_section {
+            Some(self.nav.index() - range.start)
+        } else {
+            None
+        };
+
+        let items: Vec<ListItem> = self.rows[range]
             .iter()
             .enumerate()
-            .map(|(i, row)| {
-                let sel_style = row_style(i == self.nav.index());
-
-                match row {
-                    DashboardRow::SectionHeader { label } => {
-                        let total_w = content_area.width.saturating_sub(1) as usize;
-                        let label_len = label.chars().count() + 2;
-                        let rule_len = total_w.saturating_sub(label_len);
-                        let rule = "─".repeat(rule_len);
-                        ListItem::new(Line::from(vec![
-                            Span::styled(format!(" {label} "), theme::TEXT),
-                            Span::styled(rule, theme::MUTED),
-                        ]))
-                    }
-
-                    DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
-                        Span::raw(pad(pinned_widths[pinned_schema.icon])),
-                        Span::styled(message.clone(), theme::MUTED),
-                    ]))
-                    .style(sel_style),
-
-                    DashboardRow::PinnedPipeline {
-                        definition,
-                        latest_build,
-                    } => {
-                        let (icon, icon_color) =
-                            latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
-                                let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
-                                effective_status_icon(b.status, b.result, awaiting)
-                            });
-                        let label = latest_build.as_ref().map_or("", |b| {
-                            let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
-                            effective_status_label(b.status, b.result, awaiting)
-                        });
-                        let name_style = if latest_build.is_some() {
-                            theme::TEXT
-                        } else {
-                            theme::MUTED
-                        };
-                        let w_icon = pinned_widths[pinned_schema.icon];
-                        let w_status = pinned_widths[pinned_schema.status];
-                        let w_name = pinned_widths[pinned_schema.name.unwrap()];
-                        let w_build = pinned_widths[pinned_schema.build_number];
-                        let w_branch = pinned_widths[pinned_schema.branch];
-                        let w_req = pinned_widths[pinned_schema.requestor];
-                        let w_elapsed = pinned_widths[pinned_schema.elapsed];
-
-                        let mut spans = vec![
-                            Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(icon_color)),
-                            Span::styled(
-                                format!("{label:<w_status$}"),
-                                Style::new().fg(icon_color),
-                            ),
-                            Span::styled(
-                                format!("{:<w_name$}", truncate(&definition.name, w_name)),
-                                name_style,
-                            ),
-                        ];
-
-                        if let Some(b) = latest_build {
-                            let branch = b.branch_display();
-                            let elapsed = build_elapsed(b);
-                            spans.extend([
-                                Span::styled(
-                                    format!(
-                                        "{:<w_build$}",
-                                        format!(
-                                            "#{}",
-                                            truncate(&b.build_number, w_build.saturating_sub(1))
-                                        )
-                                    ),
-                                    theme::MUTED,
-                                ),
-                                Span::styled(
-                                    format!("{:<w_branch$}", truncate(&branch, w_branch)),
-                                    theme::BRANCH,
-                                ),
-                                Span::styled(
-                                    format!("{:<w_req$}", truncate(b.requestor(), w_req)),
-                                    theme::MUTED,
-                                ),
-                                Span::styled(format!("{elapsed:>w_elapsed$}"), theme::MUTED),
-                            ]);
-                        } else {
-                            spans.push(Span::styled("no builds", theme::MUTED));
-                        }
-
-                        ListItem::new(Line::from(spans)).style(sel_style)
-                    }
-
-                    DashboardRow::DashboardPullRequest { pull_request } => {
-                        let (icon, color) =
-                            pr_status_icon(&pull_request.status, pull_request.is_draft);
-                        let (approved, rejected, waiting, _) = pull_request.vote_summary();
-                        let vote_summary = if pull_request.reviewers.is_empty() {
-                            String::new()
-                        } else {
-                            format!("✓{approved} ✗{rejected} ●{waiting}")
-                        };
-                        let draft_marker = if pull_request.is_draft {
-                            " [draft]"
-                        } else {
-                            ""
-                        };
-                        let title_text = format!(
-                            "#{} {}{}",
-                            pull_request.pull_request_id, pull_request.title, draft_marker
-                        );
-                        let w_icon = pr_widths[pr_schema.icon];
-                        let w_title = pr_widths[pr_schema.title];
-                        let w_repo = pr_widths[pr_schema.repo];
-                        let w_branch = pr_widths[pr_schema.branch];
-                        let w_votes = pr_widths[pr_schema.votes];
-
-                        ListItem::new(Line::from(vec![
-                            Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(color)),
-                            Span::styled(
-                                format!("{:<w_title$}", truncate(&title_text, w_title)),
-                                theme::TEXT,
-                            ),
-                            Span::styled(
-                                format!("{:<w_repo$}", truncate(pull_request.repo_name(), w_repo)),
-                                theme::MUTED,
-                            ),
-                            Span::styled(
-                                format!(
-                                    "{:<w_branch$}",
-                                    format!(
-                                        "→ {}",
-                                        truncate(
-                                            pull_request.short_target_branch(),
-                                            w_branch.saturating_sub(2)
-                                        )
-                                    )
-                                ),
-                                theme::BRANCH,
-                            ),
-                            Span::styled(format!("{vote_summary:<w_votes$}"), theme::MUTED),
-                        ]))
-                        .style(sel_style)
-                    }
-
-                    DashboardRow::DashboardWorkItem { work_item } => {
-                        let w_id = wi_widths[wi_schema.id];
-                        let w_type = wi_widths[wi_schema.work_item_type];
-                        let w_title = wi_widths[wi_schema.title];
-                        let w_state = wi_widths[wi_schema.state];
-                        let w_assigned = wi_widths[wi_schema.assigned];
-                        let w_iter = wi_widths[wi_schema.iteration];
-
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                format!("#{:<w$}", work_item.id, w = w_id.saturating_sub(1)),
-                                theme::MUTED,
-                            ),
-                            Span::styled(
-                                format!(
-                                    "{:<w_type$}",
-                                    truncate(work_item.work_item_type(), w_type)
-                                ),
-                                theme::BRANCH,
-                            ),
-                            Span::styled(
-                                format!("{:<w_title$}", truncate(work_item.title(), w_title)),
-                                theme::TEXT,
-                            ),
-                            Span::styled(
-                                format!("{:<w_state$}", truncate(work_item.state_label(), w_state)),
-                                theme::MUTED,
-                            ),
-                            Span::styled(
-                                format!(
-                                    "{:<w_assigned$}",
-                                    truncate(
-                                        work_item.assigned_to_display().unwrap_or("—"),
-                                        w_assigned
-                                    )
-                                ),
-                                theme::MUTED,
-                            ),
-                            Span::styled(
-                                format!(
-                                    "{:<w_iter$}",
-                                    truncate(
-                                        work_item.fields.iteration_path.as_deref().unwrap_or(""),
-                                        w_iter
-                                    )
-                                ),
-                                theme::MUTED,
-                            ),
-                        ]))
-                        .style(sel_style)
-                    }
-                }
+            .map(|(local_idx, row)| {
+                let is_selected = is_active_section && Some(local_idx) == local_selected;
+                let sel_style = row_style(is_selected);
+                Self::render_row(
+                    row,
+                    sel_style,
+                    app,
+                    pinned_schema,
+                    pinned_widths,
+                    pr_schema,
+                    pr_widths,
+                    wi_schema,
+                    wi_widths,
+                )
             })
             .collect();
 
         let list = List::new(items).scroll_padding(3);
-
         let mut state = ListState::default();
-        state.select(Some(self.nav.index()));
-        f.render_stateful_widget(list, content_area, &mut state);
+        state.select(local_selected);
+        f.render_stateful_widget(list, body_rect, &mut state);
+    }
+
+    /// Builds a single `ListItem` for the given row, sharing styling helpers across panels.
+    #[allow(clippy::too_many_arguments)]
+    fn render_row<'a>(
+        row: &'a DashboardRow,
+        sel_style: Style,
+        app: &App,
+        pinned_schema: &crate::render::columns::BuildRowSchema,
+        pinned_widths: &[usize],
+        pr_schema: &crate::render::columns::PullRequestSchema,
+        pr_widths: &[usize],
+        wi_schema: &crate::render::columns::WorkItemSchema,
+        wi_widths: &[usize],
+    ) -> ListItem<'a> {
+        match row {
+            DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
+                Span::raw(pad(pinned_widths[pinned_schema.icon])),
+                Span::styled(message.clone(), theme::MUTED),
+            ]))
+            .style(sel_style),
+
+            DashboardRow::PinnedPipeline {
+                definition,
+                latest_build,
+            } => {
+                let (icon, icon_color) =
+                    latest_build.as_ref().map_or(("○", Color::DarkGray), |b| {
+                        let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
+                        effective_status_icon(b.status, b.result, awaiting)
+                    });
+                let label = latest_build.as_ref().map_or("", |b| {
+                    let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
+                    effective_status_label(b.status, b.result, awaiting)
+                });
+                let name_style = if latest_build.is_some() {
+                    theme::TEXT
+                } else {
+                    theme::MUTED
+                };
+                let w_icon = pinned_widths[pinned_schema.icon];
+                let w_status = pinned_widths[pinned_schema.status];
+                let w_name = pinned_widths[pinned_schema.name.unwrap()];
+                let w_build = pinned_widths[pinned_schema.build_number];
+                let w_branch = pinned_widths[pinned_schema.branch];
+                let w_req = pinned_widths[pinned_schema.requestor];
+                let w_elapsed = pinned_widths[pinned_schema.elapsed];
+
+                let mut spans = vec![
+                    Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(icon_color)),
+                    Span::styled(format!("{label:<w_status$}"), Style::new().fg(icon_color)),
+                    Span::styled(
+                        format!("{:<w_name$}", truncate(&definition.name, w_name)),
+                        name_style,
+                    ),
+                ];
+
+                if let Some(b) = latest_build {
+                    let branch = b.branch_display();
+                    let elapsed = build_elapsed(b);
+                    spans.extend([
+                        Span::styled(
+                            format!(
+                                "{:<w_build$}",
+                                format!(
+                                    "#{}",
+                                    truncate(&b.build_number, w_build.saturating_sub(1))
+                                )
+                            ),
+                            theme::MUTED,
+                        ),
+                        Span::styled(
+                            format!("{:<w_branch$}", truncate(&branch, w_branch)),
+                            theme::BRANCH,
+                        ),
+                        Span::styled(
+                            format!("{:<w_req$}", truncate(b.requestor(), w_req)),
+                            theme::MUTED,
+                        ),
+                        Span::styled(format!("{elapsed:>w_elapsed$}"), theme::MUTED),
+                    ]);
+                } else {
+                    spans.push(Span::styled("no builds", theme::MUTED));
+                }
+
+                ListItem::new(Line::from(spans)).style(sel_style)
+            }
+
+            DashboardRow::DashboardPullRequest { pull_request } => {
+                let (icon, color) = pr_status_icon(&pull_request.status, pull_request.is_draft);
+                let (approved, rejected, waiting, _) = pull_request.vote_summary();
+                let vote_summary = if pull_request.reviewers.is_empty() {
+                    String::new()
+                } else {
+                    format!("✓{approved} ✗{rejected} ●{waiting}")
+                };
+                let draft_marker = if pull_request.is_draft {
+                    " [draft]"
+                } else {
+                    ""
+                };
+                let title_text = format!(
+                    "#{} {}{}",
+                    pull_request.pull_request_id, pull_request.title, draft_marker
+                );
+                let w_icon = pr_widths[pr_schema.icon];
+                let w_title = pr_widths[pr_schema.title];
+                let w_repo = pr_widths[pr_schema.repo];
+                let w_branch = pr_widths[pr_schema.branch];
+                let w_votes = pr_widths[pr_schema.votes];
+
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("{icon:<w_icon$}"), Style::new().fg(color)),
+                    Span::styled(
+                        format!("{:<w_title$}", truncate(&title_text, w_title)),
+                        theme::TEXT,
+                    ),
+                    Span::styled(
+                        format!("{:<w_repo$}", truncate(pull_request.repo_name(), w_repo)),
+                        theme::MUTED,
+                    ),
+                    Span::styled(
+                        format!(
+                            "{:<w_branch$}",
+                            format!(
+                                "→ {}",
+                                truncate(
+                                    pull_request.short_target_branch(),
+                                    w_branch.saturating_sub(2)
+                                )
+                            )
+                        ),
+                        theme::BRANCH,
+                    ),
+                    Span::styled(format!("{vote_summary:<w_votes$}"), theme::MUTED),
+                ]))
+                .style(sel_style)
+            }
+
+            DashboardRow::DashboardWorkItem { work_item } => {
+                let w_id = wi_widths[wi_schema.id];
+                let w_type = wi_widths[wi_schema.work_item_type];
+                let w_title = wi_widths[wi_schema.title];
+                let w_state = wi_widths[wi_schema.state];
+                let w_assigned = wi_widths[wi_schema.assigned];
+                let w_iter = wi_widths[wi_schema.iteration];
+
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("#{:<w$}", work_item.id, w = w_id.saturating_sub(1)),
+                        theme::MUTED,
+                    ),
+                    Span::styled(
+                        format!("{:<w_type$}", truncate(work_item.work_item_type(), w_type)),
+                        theme::BRANCH,
+                    ),
+                    Span::styled(
+                        format!("{:<w_title$}", truncate(work_item.title(), w_title)),
+                        theme::TEXT,
+                    ),
+                    Span::styled(
+                        format!("{:<w_state$}", truncate(work_item.state_label(), w_state)),
+                        theme::MUTED,
+                    ),
+                    Span::styled(
+                        format!(
+                            "{:<w_assigned$}",
+                            truncate(work_item.assigned_to_display().unwrap_or("—"), w_assigned)
+                        ),
+                        theme::MUTED,
+                    ),
+                    Span::styled(
+                        format!(
+                            "{:<w_iter$}",
+                            truncate(
+                                work_item.fields.iteration_path.as_deref().unwrap_or(""),
+                                w_iter
+                            )
+                        ),
+                        theme::MUTED,
+                    ),
+                ]))
+                .style(sel_style)
+            }
+        }
     }
 }
 
@@ -503,20 +583,22 @@ mod tests {
             &DashboardWorkItemsState::EmptyVerified,
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        // Pinned Pipelines: Header + 2 pinned
-        // Pinned Work Items: Header + EmptyHint
-        // Pull Requests: Header + EmptyHint
-        // Work Items: Header + EmptyHint = 9
-        assert_eq!(d.rows.len(), 9);
-        assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
+        // Pinned Pipelines: 2 pinned
+        // Pinned Work Items: 1 EmptyHint
+        // Pull Requests: 1 EmptyHint
+        // Work Items: 1 EmptyHint = 5
+        assert_eq!(d.rows.len(), 5);
+        assert_eq!(d.section_ranges[0], 0..2);
+        assert_eq!(d.section_ranges[1], 2..3);
+        assert_eq!(d.section_ranges[2], 3..4);
+        assert_eq!(d.section_ranges[3], 4..5);
         assert!(
-            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
+            matches!(&d.rows[0], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
         );
         assert!(
-            matches!(&d.rows[2], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 3)
+            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 3)
         );
-        assert!(matches!(&d.rows[3], DashboardRow::SectionHeader { .. }));
-        assert!(matches!(&d.rows[4], DashboardRow::EmptyHint { .. }));
+        assert!(matches!(&d.rows[2], DashboardRow::EmptyHint { .. }));
     }
 
     #[test]
@@ -531,15 +613,11 @@ mod tests {
             &DashboardWorkItemsState::EmptyVerified,
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        // Pinned Pipelines: Header + EmptyHint
-        // Pinned Work Items: Header + EmptyHint
-        // Pull Requests: Header + EmptyHint
-        // Work Items: Header + EmptyHint = 8
-        assert_eq!(d.rows.len(), 8);
-        assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
-        assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
-        assert!(matches!(&d.rows[2], DashboardRow::SectionHeader { .. }));
-        assert!(matches!(&d.rows[3], DashboardRow::EmptyHint { .. }));
+        // 1 EmptyHint per section = 4
+        assert_eq!(d.rows.len(), 4);
+        for row in &d.rows {
+            assert!(matches!(row, DashboardRow::EmptyHint { .. }));
+        }
     }
 
     #[test]
@@ -558,18 +636,18 @@ mod tests {
             &DashboardWorkItemsState::EmptyVerified,
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        // Pinned Pipelines: Header + EmptyHint (no pins)
-        // Pinned Work Items: Header + EmptyHint
-        // Pull Requests: Header + 2 PRs
-        // Work Items: Header + EmptyHint = 9
-        assert_eq!(d.rows.len(), 9);
-        assert!(matches!(&d.rows[0], DashboardRow::SectionHeader { .. }));
-        assert!(matches!(&d.rows[1], DashboardRow::EmptyHint { .. }));
-        assert!(matches!(&d.rows[2], DashboardRow::SectionHeader { .. }));
-        assert!(matches!(&d.rows[3], DashboardRow::EmptyHint { .. }));
-        assert!(matches!(&d.rows[4], DashboardRow::SectionHeader { .. }));
+        // Pinned Pipelines: 1 EmptyHint
+        // Pinned Work Items: 1 EmptyHint
+        // Pull Requests: 2 PRs
+        // Work Items: 1 EmptyHint = 5
+        assert_eq!(d.rows.len(), 5);
+        assert_eq!(d.section_ranges[2], 2..4);
         assert!(matches!(
-            &d.rows[5],
+            &d.rows[2],
+            DashboardRow::DashboardPullRequest { .. }
+        ));
+        assert!(matches!(
+            &d.rows[3],
             DashboardRow::DashboardPullRequest { .. }
         ));
     }
@@ -586,9 +664,8 @@ mod tests {
             &DashboardWorkItemsState::EmptyVerified,
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        assert_eq!(d.pinned_definition_at(1).unwrap().id, 1);
-        assert!(d.pinned_definition_at(0).is_none()); // SectionHeader
-        assert!(d.pinned_definition_at(2).is_none()); // SectionHeader
+        assert_eq!(d.pinned_definition_at(0).unwrap().id, 1);
+        assert!(d.pinned_definition_at(1).is_none());
     }
 
     #[test]
@@ -603,11 +680,11 @@ mod tests {
             &DashboardWorkItemsState::EmptyVerified,
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        // Row 5 is the first PR (after Pinned Pipelines, Pinned WIs, PR header).
+        // Layout: [0]=Pinned Pipelines empty, [1]=Pinned WIs empty, [2]=PR, [3]=WIs empty.
         assert!(d.pull_request_at(0).is_none());
+        assert!(d.pull_request_at(1).is_none());
+        assert_eq!(d.pull_request_at(2).unwrap().pull_request_id, 42);
         assert!(d.pull_request_at(3).is_none());
-        assert!(d.pull_request_at(4).is_none());
-        assert_eq!(d.pull_request_at(5).unwrap().pull_request_id, 42);
     }
 
     #[test]
@@ -630,6 +707,7 @@ mod tests {
             .filter(|r| matches!(r, DashboardRow::DashboardPullRequest { .. }))
             .count();
         assert_eq!(pr_count, 10);
+        assert_eq!(d.section_ranges[2].len(), 10);
     }
 
     #[test]
@@ -643,8 +721,9 @@ mod tests {
             &DashboardWorkItemsState::EmptyVerified,
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
+        let pr_idx = d.section_ranges[2].start;
         assert!(matches!(
-            &d.rows[5],
+            &d.rows[pr_idx],
             DashboardRow::EmptyHint { message } if message == "Loading pull requests..."
         ));
     }
@@ -660,9 +739,54 @@ mod tests {
             &DashboardWorkItemsState::EmptyVerified,
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
+        let pr_idx = d.section_ranges[2].start;
         assert!(matches!(
-            &d.rows[5],
+            &d.rows[pr_idx],
             DashboardRow::EmptyHint { message } if message == "Unavailable"
+        ));
+    }
+
+    #[test]
+    fn nav_flows_across_panels() {
+        // 2 pinned pipelines, then empty pinned WIs, then 2 PRs, then empty WIs.
+        let defs = vec![
+            make_definition(1, "CI", "\\"),
+            make_definition(2, "Deploy", "\\"),
+        ];
+        let prs = vec![
+            make_pull_request(10, "PR A", "active", "repo"),
+            make_pull_request(11, "PR B", "active", "repo"),
+        ];
+        let mut d = Dashboard::default();
+        d.rebuild(
+            &defs,
+            &BTreeMap::new(),
+            &[1, 2],
+            &DashboardPullRequestsState::Ready(prs),
+            &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
+        );
+        // Layout: [0,1]=pipelines, [2]=pinned WIs hint, [3,4]=PRs, [5]=WIs hint.
+        assert_eq!(d.rows.len(), 6);
+        assert_eq!(d.section_ranges[0], 0..2);
+        assert_eq!(d.section_ranges[1], 2..3);
+        assert_eq!(d.section_ranges[2], 3..5);
+        assert_eq!(d.section_ranges[3], 5..6);
+        // Selection at end of pipelines panel...
+        d.nav.set_index(1);
+        d.nav.down();
+        // ...lands on the pinned-WIs hint, which is the next selectable row.
+        assert_eq!(d.nav.index(), 2);
+        assert!(matches!(
+            d.rows[d.nav.index()],
+            DashboardRow::EmptyHint { .. }
+        ));
+        d.nav.down();
+        // Then continues into the first PR.
+        assert_eq!(d.nav.index(), 3);
+        assert!(matches!(
+            d.rows[d.nav.index()],
+            DashboardRow::DashboardPullRequest { .. }
         ));
     }
 }
