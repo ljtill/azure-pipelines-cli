@@ -4,7 +4,7 @@ use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use super::Component;
 use crate::render::helpers::centered_rect;
@@ -25,55 +25,102 @@ impl Component for Help {
             Line::from(""),
             Line::from(vec![Span::styled("  Navigation", theme::SECTION_HEADER)]),
             Line::from(""),
-            Line::from("  ↑ / ↓          Move selection up / down"),
-            Line::from("  →              Drill into selected item / expand tree rows"),
-            Line::from("  Enter          Drill into selected item / toggle backlog row"),
-            Line::from("  ← / q / Esc    Go back (drill-in) / q to Dashboard (root)"),
-            Line::from("  ← / →          Collapse / expand folder (Pipelines)"),
-            Line::from("  ← / →          Collapse / expand timeline node (Log Viewer)"),
-            Line::from("  PgUp / PgDn    Scroll log content"),
-            Line::from("  Mouse wheel    Scroll log content"),
+            shortcut_line("  ↑ / ↓          ", "Move selection up / down"),
+            shortcut_line(
+                "  →              ",
+                "Drill into selected item / expand tree rows",
+            ),
+            shortcut_line(
+                "  Enter          ",
+                "Drill into selected item / toggle backlog row",
+            ),
+            shortcut_line(
+                "  ← / q / Esc    ",
+                "Go back (drill-in) / q to Dashboard (root)",
+            ),
+            shortcut_line("  ← / →          ", "Collapse / expand folder (Pipelines)"),
+            shortcut_line(
+                "  ← / →          ",
+                "Collapse / expand timeline node (Log Viewer)",
+            ),
+            shortcut_line("  PgUp / PgDn    ", "Scroll log content"),
+            shortcut_line("  Mouse wheel    ", "Scroll log content"),
             Line::from(""),
             Line::from(vec![Span::styled("  Views", theme::SECTION_HEADER)]),
             Line::from(""),
-            Line::from(
-                "  1–5            Switch area: Dashboard / Boards / Repos / Pipelines / Active Runs",
+            shortcut_line(
+                "  1–5            ",
+                "Switch area: Dashboard / Boards / Repos / Pipelines / Active Runs",
             ),
             Line::from(""),
-            Line::from("  Dashboard      Overview"),
-            Line::from("  Boards         Read-only backlog tree"),
-            Line::from("  Repos          Pull Requests"),
-            Line::from("  Pipelines      Definitions / Active Runs"),
+            shortcut_line("  Dashboard      ", "Overview"),
+            shortcut_line("  Boards         ", "Read-only backlog tree"),
+            shortcut_line("  Repos          ", "Pull Requests"),
+            shortcut_line("  Pipelines      ", "Definitions / Active Runs"),
             Line::from(""),
             Line::from(vec![Span::styled("  Actions", theme::SECTION_HEADER)]),
             Line::from(""),
-            Line::from(
-                "  /              Search / filter (Boards / Pipelines / Active Runs / Pull Requests)",
+            shortcut_line(
+                "  /              ",
+                "Search / filter (Boards / Pipelines / Active Runs / Pull Requests)",
             ),
-            Line::from("  Space          Select / deselect (Pipelines / Active Runs)"),
-            Line::from("  p              Pin / unpin (Pipelines / Boards / My Work Items)"),
-            Line::from("  f              Follow latest active task (Log Viewer)"),
-            Line::from("  n              Queue pipeline run (new run)"),
-            Line::from("  t              Retry failed stage (Log Viewer)"),
-            Line::from("  a              Approve check (Log Viewer, on checkpoint row)"),
-            Line::from("  j              Reject check (Log Viewer, on checkpoint row)"),
-            Line::from("  c              Cancel build (Active Runs / Log Viewer)"),
-            Line::from("  d              Delete retention leases (Build History)"),
-            Line::from("  o              Open in browser"),
-            Line::from("  r              Force data refresh"),
-            Line::from("  x              Dismiss notification"),
-            Line::from("  ,              Open settings"),
-            Line::from("  ?              Toggle this help"),
-            Line::from("  Ctrl+C         Quit immediately"),
+            shortcut_line(
+                "  Space          ",
+                "Select / deselect (Pipelines / Active Runs)",
+            ),
+            shortcut_line(
+                "  p              ",
+                "Pin / unpin (Pipelines / Boards / My Work Items)",
+            ),
+            shortcut_line(
+                "  f              ",
+                "Follow latest active task (Log Viewer)",
+            ),
+            shortcut_line("  n              ", "Queue pipeline run (new run)"),
+            shortcut_line("  t              ", "Retry failed stage (Log Viewer)"),
+            shortcut_line(
+                "  a              ",
+                "Approve check (Log Viewer, on checkpoint row)",
+            ),
+            shortcut_line(
+                "  j              ",
+                "Reject check (Log Viewer, on checkpoint row)",
+            ),
+            shortcut_line(
+                "  c              ",
+                "Cancel build (Active Runs / Log Viewer)",
+            ),
+            shortcut_line(
+                "  d              ",
+                "Delete retention leases (Build History)",
+            ),
+            shortcut_line("  o              ", "Open in browser"),
+            shortcut_line("  r              ", "Force data refresh"),
+            shortcut_line("  x              ", "Dismiss notification"),
+            shortcut_line("  ,              ", "Open settings"),
+            shortcut_line("  ?              ", "Toggle this help"),
+            shortcut_line("  Ctrl+C         ", "Quit immediately"),
             Line::from(""),
         ];
 
         let block = Block::bordered()
             .title(" Help — Keybindings ")
-            .title_style(theme::BRAND);
+            .title_style(theme::BRAND)
+            .border_type(BorderType::Rounded)
+            .border_style(theme::PANEL_BORDER_FOCUSED)
+            .style(theme::PANEL_ELEVATED);
 
-        let help = Paragraph::new(help_text).style(theme::TEXT).block(block);
+        let help = Paragraph::new(help_text)
+            .style(theme::PANEL_ELEVATED)
+            .block(block);
         f.render_widget(help, popup);
         Ok(())
     }
+}
+
+fn shortcut_line(prefix: &'static str, description: &'static str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(prefix, theme::KEY),
+        Span::styled(description, theme::TEXT),
+    ])
 }

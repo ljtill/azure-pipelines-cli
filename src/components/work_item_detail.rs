@@ -5,11 +5,11 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::Component;
 use crate::client::models::{AssignedToField, WorkItem, WorkItemComment};
-use crate::render::helpers::{draw_state_message, draw_view_frame, view_block};
+use crate::render::helpers::{card_block, draw_state_message, draw_view_frame};
 use crate::render::theme;
 use crate::state::{App, ListNav};
 
@@ -42,13 +42,13 @@ impl WorkItemDetail {
     pub fn draw_with_app(&self, f: &mut Frame, _app: &App, area: Rect) {
         let subtitle = self.work_item.as_ref().map(|wi| {
             Line::from(vec![
-                Span::styled(format!(" #{}", wi.id), theme::TEXT),
-                Span::styled(format!("  ·  {}", wi.work_item_type()), theme::MUTED),
+                Span::styled(format!(" #{}", wi.id), theme::SECTION_HEADER),
+                Span::styled(format!("  ·  {}", wi.work_item_type()), theme::SUBTLE),
                 Span::styled("  ·  ", theme::MUTED),
-                Span::styled(wi.state_label(), theme::TEXT),
+                Span::styled(wi.state_label(), state_style(wi.state_label())),
                 Span::styled(
                     format!("  ·  {}", wi.assigned_to_display().unwrap_or("Unassigned")),
-                    theme::MUTED,
+                    theme::SUBTLE,
                 ),
             ])
         });
@@ -70,17 +70,19 @@ impl WorkItemDetail {
         ])
         .split(content_area);
 
-        draw_header(f, chunks[0], wi);
+        let nav_index = self.nav.index();
+
+        draw_header(f, chunks[0], wi, nav_index == 0);
 
         let body =
             Layout::horizontal([Constraint::Ratio(3, 5), Constraint::Ratio(2, 5)]).split(chunks[1]);
 
-        draw_description_pane(f, body[0], wi);
-        draw_side_pane(f, body[1], wi, &self.comments);
+        draw_description_pane(f, body[0], wi, nav_index == 2);
+        draw_side_pane(f, body[1], wi, &self.comments, nav_index);
     }
 }
 
-fn draw_header(f: &mut Frame, area: Rect, wi: &WorkItem) {
+fn draw_header(f: &mut Frame, area: Rect, wi: &WorkItem, is_active: bool) {
     let state_style = state_style(wi.state_label());
 
     let lines = vec![
@@ -88,7 +90,7 @@ fn draw_header(f: &mut Frame, area: Rect, wi: &WorkItem) {
             Span::styled(" ", theme::MUTED),
             Span::styled(
                 format!("{} #{}", wi.work_item_type(), wi.id),
-                theme::SECTION_HEADER,
+                section_title_style(is_active),
             ),
             Span::styled("    ", theme::MUTED),
             Span::styled(wi.state_label().to_string(), state_style),
@@ -99,12 +101,12 @@ fn draw_header(f: &mut Frame, area: Rect, wi: &WorkItem) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled(" Assigned: ", theme::MUTED),
+            Span::styled(" Assigned: ", theme::SUBTLE),
             Span::styled(
                 wi.assigned_to_display().unwrap_or("Unassigned").to_string(),
                 theme::TEXT,
             ),
-            Span::styled("    Iteration: ", theme::MUTED),
+            Span::styled("    Iteration: ", theme::SUBTLE),
             Span::styled(
                 wi.fields
                     .iteration_path
@@ -113,7 +115,7 @@ fn draw_header(f: &mut Frame, area: Rect, wi: &WorkItem) {
                     .to_string(),
                 theme::TEXT,
             ),
-            Span::styled("    Area: ", theme::MUTED),
+            Span::styled("    Area: ", theme::SUBTLE),
             Span::styled(
                 wi.fields.area_path.as_deref().unwrap_or("—").to_string(),
                 theme::TEXT,
@@ -124,7 +126,7 @@ fn draw_header(f: &mut Frame, area: Rect, wi: &WorkItem) {
     f.render_widget(Paragraph::new(lines), area);
 }
 
-fn draw_description_pane(f: &mut Frame, area: Rect, wi: &WorkItem) {
+fn draw_description_pane(f: &mut Frame, area: Rect, wi: &WorkItem, is_active: bool) {
     let mut lines: Vec<Line> = Vec::new();
 
     append_html_section(&mut lines, "Description", wi.fields.description.as_deref());
@@ -148,7 +150,7 @@ fn draw_description_pane(f: &mut Frame, area: Rect, wi: &WorkItem) {
     }
 
     let paragraph = Paragraph::new(lines)
-        .block(view_block(" Body "))
+        .block(detail_block(" Body ", is_active))
         .wrap(Wrap { trim: false });
     f.render_widget(paragraph, area);
 }
@@ -174,7 +176,13 @@ fn append_html_section<'a>(lines: &mut Vec<Line<'a>>, heading: &'a str, html: Op
     }
 }
 
-fn draw_side_pane(f: &mut Frame, area: Rect, wi: &WorkItem, comments: &[WorkItemComment]) {
+fn draw_side_pane(
+    f: &mut Frame,
+    area: Rect,
+    wi: &WorkItem,
+    comments: &[WorkItemComment],
+    nav_index: usize,
+) {
     let halves =
         Layout::vertical([Constraint::Length(metadata_height(wi)), Constraint::Min(3)]).split(area);
 
@@ -245,7 +253,7 @@ fn draw_side_pane(f: &mut Frame, area: Rect, wi: &WorkItem, comments: &[WorkItem
     }
 
     let meta = Paragraph::new(meta_lines)
-        .block(view_block(" Metadata "))
+        .block(detail_block(" Metadata ", nav_index == 1))
         .wrap(Wrap { trim: false });
     f.render_widget(meta, halves[0]);
 
@@ -282,16 +290,31 @@ fn draw_side_pane(f: &mut Frame, area: Rect, wi: &WorkItem, comments: &[WorkItem
     }
 
     let comments_panel = Paragraph::new(comment_lines)
-        .block(view_block(title))
+        .block(detail_block(title, nav_index == 3))
         .wrap(Wrap { trim: false });
     f.render_widget(comments_panel, halves[1]);
 }
 
 fn meta_row(label: &str, value: String) -> Line<'_> {
     Line::from(vec![
-        Span::styled(format!("  {label}: "), theme::MUTED),
+        Span::styled(format!("  {label}: "), theme::SUBTLE),
         Span::styled(value, theme::TEXT),
     ])
+}
+
+fn detail_block<'a, T>(title: T, is_active: bool) -> Block<'a>
+where
+    T: Into<Line<'a>>,
+{
+    card_block(title).title_style(section_title_style(is_active))
+}
+
+fn section_title_style(is_active: bool) -> Style {
+    if is_active {
+        theme::SECTION_HEADER
+    } else {
+        theme::TITLE
+    }
 }
 
 fn metadata_height(wi: &WorkItem) -> u16 {

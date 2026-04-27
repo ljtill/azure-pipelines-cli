@@ -3,11 +3,12 @@
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use super::Component;
-use crate::render::helpers::centered_rect;
+use crate::render::helpers::{centered_rect, key_hint_spans};
 use crate::render::theme;
 use crate::state::settings::{FieldKind, SettingsState};
 
@@ -43,7 +44,7 @@ impl Settings {
             let is_editing = is_selected && settings.editing;
 
             let label_style = if is_selected {
-                theme::BRAND
+                theme::SELECTED_ACCENT.add_modifier(Modifier::BOLD)
             } else {
                 theme::MUTED
             };
@@ -54,37 +55,59 @@ impl Settings {
 
             if is_editing {
                 let (before, after) = field.value.split_at(settings.cursor.min(field.value.len()));
-                spans.push(Span::styled(before.to_string(), theme::TEXT));
+                spans.push(Span::styled(
+                    before.to_string(),
+                    field_value_style(is_selected),
+                ));
                 spans.push(Span::styled("█", theme::CURSOR));
-                spans.push(Span::styled(after.to_string(), theme::TEXT));
+                spans.push(Span::styled(
+                    after.to_string(),
+                    field_value_style(is_selected),
+                ));
             } else {
-                spans.push(Span::styled(value_display, theme::TEXT));
+                spans.push(Span::styled(value_display, field_value_style(is_selected)));
             }
 
             if !field.hint.is_empty() && !is_editing {
                 spans.push(Span::styled(format!("  ({})", field.hint), theme::MUTED));
             }
 
-            lines.push(Line::from(spans));
+            let line = if is_selected {
+                Line::from(spans).style(theme::SELECTED)
+            } else {
+                Line::from(spans)
+            };
+            lines.push(line);
         }
 
         lines.push(Line::from(""));
-        let hint_text = if settings.editing {
-            "Enter confirm  Esc cancel  ←→ move cursor"
+        let hint_line = if settings.editing {
+            command_hints(&[
+                ("Enter", "confirm"),
+                ("Esc", "cancel"),
+                ("←→", "move cursor"),
+            ])
         } else {
-            "↑↓ navigate  Enter/Space edit  Ctrl+S save  q close"
+            command_hints(&[
+                ("↑↓", "navigate"),
+                ("Enter/Space", "edit"),
+                ("Ctrl+S", "save"),
+                ("q", "close"),
+            ])
         };
-        lines.push(Line::from(vec![Span::styled(
-            format!("  {hint_text}"),
-            theme::MUTED,
-        )]));
+        lines.push(hint_line);
         lines.push(Line::from(""));
 
         let block = Block::bordered()
             .title(" Settings ")
-            .title_style(theme::BRAND);
+            .title_style(theme::BRAND)
+            .border_type(BorderType::Rounded)
+            .border_style(theme::PANEL_BORDER_FOCUSED)
+            .style(theme::PANEL_ELEVATED);
 
-        let content = Paragraph::new(lines).style(theme::TEXT).block(block);
+        let content = Paragraph::new(lines)
+            .style(theme::PANEL_ELEVATED)
+            .block(block);
         f.render_widget(content, area);
     }
 }
@@ -106,4 +129,23 @@ fn format_field_value(kind: FieldKind, value: &str) -> String {
         }
         _ => value.to_string(),
     }
+}
+
+fn field_value_style(selected: bool) -> ratatui::style::Style {
+    if selected {
+        theme::TEXT.add_modifier(Modifier::BOLD)
+    } else {
+        theme::TEXT
+    }
+}
+
+fn command_hints(commands: &[(&str, &str)]) -> Line<'static> {
+    let mut spans = vec![Span::raw("  ")];
+    for (i, (key, label)) in commands.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.extend(key_hint_spans(key, label));
+    }
+    Line::from(spans)
 }

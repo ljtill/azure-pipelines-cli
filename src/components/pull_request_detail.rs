@@ -5,11 +5,11 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::Component;
 use crate::render::helpers::{
-    draw_state_message, draw_view_frame, pr_status_icon, reviewer_vote_icon, view_block,
+    card_block, draw_state_message, draw_view_frame, pr_status_icon, reviewer_vote_icon,
 };
 use crate::render::theme;
 use crate::state::{App, ListNav};
@@ -63,6 +63,12 @@ impl PullRequestDetail {
             return;
         };
 
+        let nav_index = self.nav.index();
+        let reviewer_sections = pr.reviewers.len().max(1);
+        let header_active = nav_index == 0;
+        let reviewers_active = (1..=reviewer_sections).contains(&nav_index);
+        let threads_active = nav_index == reviewer_sections + 1;
+
         let chunks = Layout::vertical([
             Constraint::Length(4), // header
             Constraint::Min(4),    // reviewers + threads
@@ -71,6 +77,7 @@ impl PullRequestDetail {
 
         // Header section.
         let (status_icon, status_color) = pr_status_icon(&pr.status, pr.is_draft);
+        let status_style = pr_status_style(&pr.status, pr.is_draft);
         let draft_badge = if pr.is_draft { " [DRAFT]" } else { "" };
         let header_lines = vec![
             Line::from(vec![
@@ -80,20 +87,18 @@ impl PullRequestDetail {
                 ),
                 Span::styled(
                     format!("PR #{}{draft_badge}", pr.pull_request_id),
-                    theme::SECTION_HEADER,
+                    section_title_style(header_active),
                 ),
             ]),
             Line::from(vec![Span::raw("   "), Span::styled(&pr.title, theme::TEXT)]),
             Line::from(""),
             Line::from(vec![
-                Span::styled(" Author: ", theme::MUTED),
+                Span::styled(" Author: ", theme::SUBTLE),
                 Span::styled(pr.author(), theme::TEXT),
-                Span::styled("    Status: ", theme::MUTED),
-                Span::styled(&pr.status, Style::new().fg(status_color)),
-                Span::styled(
-                    format!("    Merge: {}", pr.merge_status.as_deref().unwrap_or("—")),
-                    theme::MUTED,
-                ),
+                Span::styled("    Status: ", theme::SUBTLE),
+                Span::styled(&pr.status, status_style),
+                Span::styled("    Merge: ", theme::SUBTLE),
+                Span::styled(pr.merge_status.as_deref().unwrap_or("—"), theme::TEXT),
             ]),
         ];
         let header = Paragraph::new(header_lines);
@@ -106,19 +111,26 @@ impl PullRequestDetail {
         // Reviewers panel.
         let mut reviewer_lines = Vec::new();
         if pr.reviewers.is_empty() {
-            reviewer_lines.push(Line::from(Span::styled("  No reviewers", theme::MUTED)));
+            reviewer_lines.push(Line::from(Span::styled("  No reviewers", theme::SUBTLE)));
         } else {
-            for r in &pr.reviewers {
-                let (icon, color) = reviewer_vote_icon(r.vote);
+            for (idx, r) in pr.reviewers.iter().enumerate() {
+                let (icon, _) = reviewer_vote_icon(r.vote);
+                let vote_style = reviewer_vote_style(r.vote);
+                let name_style = if nav_index == idx + 1 {
+                    theme::SELECTED_ACCENT
+                } else {
+                    theme::TEXT
+                };
                 let required = if r.is_required { " (required)" } else { "" };
                 reviewer_lines.push(Line::from(vec![
-                    Span::styled(format!("  {icon} "), Style::new().fg(color)),
-                    Span::styled(&r.display_name, theme::TEXT),
-                    Span::styled(required, theme::MUTED),
+                    Span::styled(format!("  {icon} "), vote_style),
+                    Span::styled(&r.display_name, name_style),
+                    Span::styled(required, theme::SUBTLE),
                 ]));
             }
         }
-        let reviewers_panel = Paragraph::new(reviewer_lines).block(view_block(" Reviewers "));
+        let reviewers_panel =
+            Paragraph::new(reviewer_lines).block(detail_block(" Reviewers ", reviewers_active));
         f.render_widget(reviewers_panel, bottom[0]);
 
         // Threads panel.
@@ -133,13 +145,52 @@ impl PullRequestDetail {
         if let Some(desc) = &pr.description {
             thread_lines.push(Line::from(""));
             for line in desc.lines().take(8) {
-                thread_lines.push(Line::from(Span::styled(format!("  {line}"), theme::MUTED)));
+                thread_lines.push(Line::from(Span::styled(format!("  {line}"), theme::SUBTLE)));
             }
         }
         let threads_panel = Paragraph::new(thread_lines)
-            .block(view_block(" Threads "))
+            .block(detail_block(" Threads ", threads_active))
             .wrap(Wrap { trim: false });
         f.render_widget(threads_panel, bottom[1]);
+    }
+}
+
+fn detail_block<'a, T>(title: T, is_active: bool) -> Block<'a>
+where
+    T: Into<Line<'a>>,
+{
+    card_block(title).title_style(section_title_style(is_active))
+}
+
+fn section_title_style(is_active: bool) -> Style {
+    if is_active {
+        theme::SECTION_HEADER
+    } else {
+        theme::TITLE
+    }
+}
+
+fn pr_status_style(status: &str, is_draft: bool) -> Style {
+    if is_draft {
+        return theme::PR_DRAFT;
+    }
+    if status.eq_ignore_ascii_case("active") {
+        theme::PR_ACTIVE
+    } else if status.eq_ignore_ascii_case("completed") {
+        theme::PR_COMPLETED
+    } else if status.eq_ignore_ascii_case("abandoned") {
+        theme::PR_ABANDONED
+    } else {
+        theme::PENDING
+    }
+}
+
+fn reviewer_vote_style(vote: i32) -> Style {
+    match vote {
+        10 | 5 => theme::VOTE_APPROVED,
+        -10 => theme::VOTE_REJECTED,
+        -5 => theme::VOTE_WAITING,
+        _ => theme::VOTE_NONE,
     }
 }
 

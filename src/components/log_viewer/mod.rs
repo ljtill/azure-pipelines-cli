@@ -16,6 +16,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
 
 use super::Component;
+use crate::client::models::{BuildResult, TaskState};
 use crate::render::helpers::{
     checkpoint_status_icon, draw_view_frame, row_style, timeline_status_icon, view_block,
 };
@@ -31,7 +32,7 @@ pub fn draw_log_viewer(f: &mut Frame, app: &mut App, area: Rect) {
         |b| format!("{} #{}", b.definition.name, b.build_number),
     );
     let subtitle = Line::from(vec![
-        Span::styled(format!(" {build_label}"), theme::TEXT),
+        Span::styled(format!(" {build_label}"), theme::SUBTLE),
         Span::styled(
             if app.log_viewer.is_following() {
                 "  ·  Follow mode"
@@ -39,9 +40,9 @@ pub fn draw_log_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 "  ·  Inspect mode"
             },
             if app.log_viewer.is_following() {
-                theme::SUCCESS
+                theme::FOLLOW_TITLE
             } else {
-                theme::MUTED
+                theme::MODE_ACTIVE
             },
         ),
     ]);
@@ -71,7 +72,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
     if app.log_viewer.timeline_rows().is_empty() {
         let loading = Paragraph::new(" Loading timeline...")
             .style(theme::MUTED)
-            .block(view_block(" Pipeline Stages "));
+            .block(view_block(" Pipeline Stages ").title_style(theme::SECTION_HEADER));
         f.render_widget(loading, area);
         return;
     }
@@ -96,7 +97,10 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ListItem::new(Line::from(vec![
                         Span::styled(format!("{arrow} "), theme::ARROW),
                         Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
-                        Span::styled(name.as_str(), theme::STAGE),
+                        Span::styled(
+                            name.as_str(),
+                            timeline_name_style(theme::STAGE, *state, *result),
+                        ),
                     ]))
                     .style(row_style(selected))
                 }
@@ -113,7 +117,10 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                         Span::raw("  "),
                         Span::styled(format!("{arrow} "), theme::JOB_ARROW),
                         Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
-                        Span::styled(name.as_str(), theme::JOB),
+                        Span::styled(
+                            name.as_str(),
+                            timeline_name_style(theme::JOB, *state, *result),
+                        ),
                     ]))
                     .style(row_style(selected))
                 }
@@ -129,7 +136,10 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ListItem::new(Line::from(vec![
                         Span::raw("      "),
                         Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
-                        Span::styled(name.as_str(), theme::JOB),
+                        Span::styled(
+                            name.as_str(),
+                            timeline_name_style(theme::SUBTLE, *state, *result),
+                        ),
                         Span::styled(log_indicator, theme::MUTED),
                     ]))
                     .style(row_style(selected))
@@ -144,7 +154,7 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
                     ListItem::new(Line::from(vec![
                         Span::raw("  "),
                         Span::styled(format!("{icon} "), Style::new().fg(icon_color)),
-                        Span::styled(name.as_str(), Style::new().fg(icon_color)),
+                        Span::styled(name.as_str(), checkpoint_name_style(*state, *result)),
                     ]))
                     .style(row_style(selected))
                 }
@@ -152,7 +162,8 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items).block(view_block(" Pipeline Stages "));
+    let list =
+        List::new(items).block(view_block(" Pipeline Stages ").title_style(theme::SECTION_HEADER));
 
     let mut state = ListState::default();
     state.select(Some(app.log_viewer.nav().index()));
@@ -183,7 +194,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
     if app.log_viewer.log_content().is_empty() {
         let hint = Paragraph::new(" Select a task and press Enter to view its log")
             .style(theme::MUTED)
-            .block(view_block(title));
+            .block(log_block(title, app.log_viewer.is_following()));
         f.render_widget(hint, area);
     } else {
         let dropped = app.log_viewer.log_content().dropped();
@@ -199,7 +210,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             app.log_viewer
                 .log_content()
                 .iter()
-                .map(|l| Line::from(Span::raw(l.as_str()))),
+                .map(|l| Line::styled(l.as_str(), theme::TEXT)),
         );
 
         let total_lines = lines.len() as u32;
@@ -213,19 +224,49 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         };
         let scroll_offset = scroll_offset_u32.min(u32::from(u16::MAX)) as u16;
 
-        let title_style = if app.log_viewer.is_following() {
-            theme::FOLLOW_TITLE
-        } else {
-            theme::TITLE
-        };
-
         let log = Paragraph::new(Text::from(lines))
-            .block(view_block(title).title_style(title_style))
+            .style(theme::TEXT)
+            .block(log_block(title, app.log_viewer.is_following()))
             .wrap(Wrap { trim: false })
             .scroll((scroll_offset, 0));
         f.render_widget(log, area);
     }
 }
+
+fn log_block<'a>(title: String, is_following: bool) -> ratatui::widgets::Block<'a> {
+    let title_style = if is_following {
+        theme::FOLLOW_TITLE
+    } else {
+        theme::TITLE
+    };
+
+    view_block(title).title_style(title_style)
+}
+
+fn timeline_name_style(
+    base: Style,
+    state: Option<TaskState>,
+    result: Option<BuildResult>,
+) -> Style {
+    match result {
+        Some(BuildResult::Succeeded) => base.fg(theme::SUCCESS_FG),
+        Some(BuildResult::Failed) => base.fg(theme::ERROR_FG),
+        Some(BuildResult::PartiallySucceeded) => base.fg(theme::WARNING_FG),
+        Some(BuildResult::Canceled | BuildResult::Skipped) => base.fg(theme::PENDING_FG),
+        _ if matches!(state, Some(TaskState::InProgress)) => base.fg(theme::WARNING_FG),
+        _ => base,
+    }
+}
+
+fn checkpoint_name_style(state: Option<TaskState>, result: Option<BuildResult>) -> Style {
+    match result {
+        Some(BuildResult::Succeeded) => theme::SUCCESS,
+        Some(BuildResult::Failed | BuildResult::Canceled) => theme::ERROR,
+        _ if matches!(state, Some(TaskState::Completed)) => theme::SUCCESS,
+        _ => theme::APPROVAL,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

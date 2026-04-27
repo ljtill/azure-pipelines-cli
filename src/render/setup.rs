@@ -6,11 +6,13 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use crate::config::Config;
+use crate::render::helpers::key_hint_spans;
+use crate::render::theme;
 
 // --- State ---
 
@@ -102,7 +104,9 @@ fn draw(f: &mut Frame, state: &SetupState) {
         .title(" Welcome to devops ")
         .title_alignment(Alignment::Center)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(Color::Cyan));
+        .title_style(theme::BRAND)
+        .border_style(theme::PANEL_BORDER_FOCUSED)
+        .style(theme::PANEL_ELEVATED);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -118,7 +122,7 @@ fn draw(f: &mut Frame, state: &SetupState) {
 
     // Subtitle.
     let subtitle = Paragraph::new("No configuration found. Let's set things up.")
-        .style(Style::new().fg(Color::DarkGray))
+        .style(theme::MUTED)
         .alignment(Alignment::Center);
     f.render_widget(subtitle, rows[0]);
 
@@ -139,41 +143,50 @@ fn draw(f: &mut Frame, state: &SetupState) {
     );
 
     // Hints.
-    let hints = Paragraph::new(Line::from(vec![
-        Span::styled(
-            "Enter",
-            Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" next  "),
-        Span::styled(
-            "Tab",
-            Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" switch  "),
-        Span::styled(
-            "Esc",
-            Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" quit"),
+    let hints = Paragraph::new(command_hints(&[
+        ("Enter", "next"),
+        ("Tab", "switch"),
+        ("Esc", "quit"),
     ]))
     .alignment(Alignment::Center);
     f.render_widget(hints, rows[5]);
 }
 
 fn draw_field(f: &mut Frame, area: Rect, label: &str, value: &str, active: bool) {
-    let style = if active {
-        Style::new().fg(Color::Cyan)
+    let label_style = if active {
+        theme::SELECTED_ACCENT.add_modifier(Modifier::BOLD)
     } else {
-        Style::new().fg(Color::DarkGray)
+        theme::MUTED.add_modifier(Modifier::BOLD)
+    };
+    let value_style = if active {
+        theme::TEXT.add_modifier(Modifier::BOLD)
+    } else {
+        theme::TEXT
     };
 
     let cursor = if active { "█" } else { "" };
     let line = Line::from(vec![
-        Span::styled(format!("  {label}: "), style.add_modifier(Modifier::BOLD)),
-        Span::styled(value, Style::new().fg(Color::White)),
-        Span::styled(cursor, Style::new().fg(Color::Cyan)),
+        Span::styled(format!("  {label}: "), label_style),
+        Span::styled(value.to_string(), value_style),
+        Span::styled(cursor, theme::CURSOR),
     ]);
-    f.render_widget(Paragraph::new(line), area);
+    let style = if active {
+        theme::SELECTED
+    } else {
+        theme::PANEL_ELEVATED
+    };
+    f.render_widget(Paragraph::new(line).style(style), area);
+}
+
+fn command_hints(commands: &[(&str, &str)]) -> Line<'static> {
+    let mut spans = Vec::new();
+    for (i, (key, label)) in commands.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.extend(key_hint_spans(key, label));
+    }
+    Line::from(spans)
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
