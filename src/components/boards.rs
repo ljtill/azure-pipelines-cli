@@ -333,13 +333,10 @@ impl Boards {
                             format!("{:<w_type$}", truncate(&item.work_item_type, w_type)),
                             work_item_type_style(&item.work_item_type),
                         ),
-                        Span::styled(
-                            format!("{:<w_id$}", format!("#{}", item.id)),
-                            id_style(is_selected),
-                        ),
+                        Span::styled(format!("{:<w_id$}", format!("#{}", item.id)), id_style()),
                         Span::styled(
                             format!("{:<w_title$}", truncate(&title, w_title)),
-                            title_style(is_selected),
+                            title_style(),
                         ),
                         Span::styled(
                             format!("{:<w_state$}", truncate(&item.state, w_state)),
@@ -510,20 +507,12 @@ fn is_terminal_state(state: &str) -> bool {
     )
 }
 
-fn id_style(is_selected: bool) -> Style {
-    if is_selected {
-        theme::SELECTED_ACCENT
-    } else {
-        theme::MUTED
-    }
+fn id_style() -> Style {
+    theme::MUTED
 }
 
-fn title_style(is_selected: bool) -> Style {
-    if is_selected {
-        theme::SELECTED_ACCENT
-    } else {
-        theme::TEXT
-    }
+fn title_style() -> Style {
+    theme::TEXT
 }
 
 fn work_item_type_style(work_item_type: &str) -> Style {

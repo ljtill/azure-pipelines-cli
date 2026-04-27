@@ -4,7 +4,7 @@ use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
+use ratatui::widgets::{Block, Clear, Paragraph};
 
 use super::Component;
 use crate::render::helpers::centered_rect;
@@ -106,14 +106,9 @@ impl Component for Help {
 
         let block = Block::bordered()
             .title(" Help — Keybindings ")
-            .title_style(theme::BRAND)
-            .border_type(BorderType::Rounded)
-            .border_style(theme::PANEL_BORDER_FOCUSED)
-            .style(theme::PANEL_ELEVATED);
+            .title_style(theme::BRAND);
 
-        let help = Paragraph::new(help_text)
-            .style(theme::PANEL_ELEVATED)
-            .block(block);
+        let help = Paragraph::new(help_text).block(block);
         f.render_widget(help, popup);
         Ok(())
     }

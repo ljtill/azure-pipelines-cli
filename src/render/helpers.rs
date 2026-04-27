@@ -1,10 +1,10 @@
 //! Shared rendering utilities for status icons, elapsed time, and text truncation.
 
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
+use ratatui::widgets::{Block, Paragraph};
 
 use super::theme;
 use crate::client::models::{Build, BuildResult, BuildStatus, TaskState};
@@ -154,39 +154,12 @@ pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: Input
     f.render_widget(search, area);
 }
 
-/// Returns a softly bordered block used for primary content surfaces.
-pub fn surface_block<'a, T>(title: T) -> Block<'a>
-where
-    T: Into<Line<'a>>,
-{
-    Block::bordered()
-        .border_type(BorderType::Rounded)
-        .title(title)
-        .title_style(theme::TITLE)
-        .border_style(theme::PANEL_BORDER)
-        .style(theme::PANEL)
-}
-
-/// Returns an elevated bordered block for nested cards and detail panes.
-pub fn card_block<'a, T>(title: T) -> Block<'a>
-where
-    T: Into<Line<'a>>,
-{
-    surface_block(title)
-        .border_style(theme::PANEL_BORDER_FOCUSED)
-        .style(theme::PANEL_ELEVATED)
-}
-
 /// Returns the standard bordered block used for top-level view panels.
 pub fn view_block<'a, T>(title: T) -> Block<'a>
 where
     T: Into<Line<'a>>,
 {
-    Block::bordered()
-        .title(title)
-        .title_style(theme::TITLE)
-        .border_style(theme::PANEL_BORDER)
-        .style(theme::PANEL)
+    Block::bordered().title(title).title_style(theme::TITLE)
 }
 
 /// Renders the standard outer frame for a view and returns the remaining body area.
@@ -242,58 +215,6 @@ where
     T: Into<Line<'a>>,
 {
     f.render_widget(Paragraph::new(message.into()).style(style), area);
-}
-
-/// Returns a compact pill-style span for metadata and status labels.
-pub fn badge(label: impl Into<String>, style: Style) -> Span<'static> {
-    Span::styled(format!(" {} ", label.into()), style)
-}
-
-/// Returns styled spans for command-style key hints.
-pub fn key_hint_spans(key: &str, label: &str) -> Vec<Span<'static>> {
-    vec![
-        Span::styled(key.to_string(), theme::KEY),
-        Span::styled(format!(" {label}"), theme::MUTED),
-    ]
-}
-
-/// Renders a centered empty-state message inside an already-framed area.
-pub fn draw_empty_state(f: &mut Frame, area: Rect, title: &str, hint: &str) {
-    draw_centered_state(f, area, title, hint, theme::TEXT);
-}
-
-/// Renders a centered loading-state message inside an already-framed area.
-pub fn draw_loading_state(f: &mut Frame, area: Rect, title: &str, hint: &str) {
-    draw_centered_state(f, area, &format!("⟳ {title}"), hint, theme::MUTED);
-}
-
-/// Renders a centered error-state message inside an already-framed area.
-pub fn draw_error_state(f: &mut Frame, area: Rect, title: &str, hint: &str) {
-    draw_centered_state(f, area, title, hint, theme::WARNING);
-}
-
-fn draw_centered_state(f: &mut Frame, area: Rect, title: &str, hint: &str, title_style: Style) {
-    let target = centered_message_area(area, 3);
-    let paragraph = Paragraph::new(vec![
-        Line::from(Span::styled(title.to_string(), title_style)),
-        Line::from(""),
-        Line::from(Span::styled(hint.to_string(), theme::MUTED)),
-    ])
-    .alignment(Alignment::Center)
-    .wrap(Wrap { trim: true });
-    f.render_widget(paragraph, target);
-}
-
-fn centered_message_area(area: Rect, height: u16) -> Rect {
-    if area.height <= height {
-        return area;
-    }
-    Rect {
-        x: area.x,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width: area.width,
-        height,
-    }
 }
 
 /// Truncates a string to at most `max_len` characters, safe for multi-byte UTF-8.
@@ -483,20 +404,6 @@ mod tests {
     #[test]
     fn truncate_zero_len() {
         assert_eq!(truncate("hello", 0), "…");
-    }
-
-    #[test]
-    fn badge_pads_label() {
-        let span = badge("Active", theme::CHIP_ACTIVE);
-        assert_eq!(&*span.content, " Active ");
-    }
-
-    #[test]
-    fn key_hint_spans_split_key_and_label() {
-        let spans = key_hint_spans("Enter", "open");
-        assert_eq!(spans.len(), 2);
-        assert_eq!(&*spans[0].content, "Enter");
-        assert_eq!(&*spans[1].content, " open");
     }
 
     // --- build_elapsed tests ---

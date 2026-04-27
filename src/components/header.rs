@@ -8,7 +8,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 
 use super::Component;
-use crate::render::helpers::{badge, truncate};
+use crate::render::helpers::truncate;
 use crate::render::theme;
 use crate::state::{App, PaginationStatus, Service, View};
 
@@ -80,16 +80,16 @@ impl Header {
         .split(area);
 
         let refresh_span = if app.loading {
-            badge("⟳ refreshing", theme::CHIP_ACTIVE)
+            Span::styled("⟳ refreshing", theme::TITLE)
         } else if let Some(last) = app.last_refresh {
             let elapsed = Utc::now().signed_duration_since(last);
             if elapsed.num_seconds() < 60 {
-                badge(format!("⟳ {}s ago", elapsed.num_seconds()), theme::CHIP)
+                Span::styled(format!("⟳ {}s ago", elapsed.num_seconds()), theme::SUBTLE)
             } else {
-                badge(format!("⟳ {}m ago", elapsed.num_minutes()), theme::CHIP)
+                Span::styled(format!("⟳ {}m ago", elapsed.num_minutes()), theme::SUBTLE)
             }
         } else {
-            badge("⟳ --", theme::CHIP)
+            Span::styled("⟳ --", theme::SUBTLE)
         };
 
         let error_span = if let Some(notif) = app.notifications.clone_current() {
@@ -109,8 +109,8 @@ impl Header {
         let approvals_span = if app.data.pending_approvals.is_empty() {
             Span::raw("")
         } else {
-            badge(
-                format!("⏸ {} pending", app.data.pending_approvals.len()),
+            Span::styled(
+                format!("  │  ⏸ {} pending", app.data.pending_approvals.len()),
                 theme::APPROVAL,
             )
         };
@@ -121,15 +121,20 @@ impl Header {
         // indicator and doesn't compete with error/success notifications.
         let pagination_span = app.pagination_status.as_ref().map_or_else(
             || Span::raw(""),
-            |status| badge(format_pagination_status(status), theme::CHIP),
+            |status| {
+                Span::styled(
+                    format!("  │  {}", format_pagination_status(status)),
+                    theme::MUTED,
+                )
+            },
         );
 
         let bc = breadcrumb(app);
         let mut title_spans = vec![
             Span::styled(" devops", theme::BRAND),
             Span::styled("  ", theme::MUTED),
-            badge(app.org_project_label.clone(), theme::CHIP),
-            Span::styled(" ", theme::MUTED),
+            Span::styled(app.org_project_label.clone(), theme::SUBTLE),
+            Span::styled("  │  ", theme::MUTED),
             refresh_span,
             Span::styled("  │  ", theme::MUTED),
         ];
@@ -150,11 +155,7 @@ impl Header {
             .position(|service| *service == app.service)
             .unwrap_or(0);
         let service_tabs = Tabs::new(service_titles)
-            .block(
-                Block::new()
-                    .borders(Borders::BOTTOM)
-                    .border_style(theme::PANEL_BORDER),
-            )
+            .block(Block::new().borders(Borders::BOTTOM))
             .select(selected_service)
             .style(theme::MUTED)
             .highlight_style(theme::MODE_ACTIVE);

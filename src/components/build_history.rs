@@ -110,16 +110,8 @@ impl BuildHistory {
                 let retained = app.retention_leases.retained_run_ids.contains(&build.id);
                 let selected = self.selected.contains(&build.id);
                 let check = if selected { "✓ " } else { "  " };
-                let primary_style = if is_focused {
-                    theme::SELECTED_ACCENT
-                } else {
-                    theme::TEXT
-                };
-                let secondary_style = if is_focused {
-                    theme::SELECTED_ACCENT
-                } else {
-                    theme::SUBTLE
-                };
+                let primary_style = theme::TEXT;
+                let secondary_style = theme::SUBTLE;
 
                 ListItem::new(Line::from(vec![
                     Span::styled(

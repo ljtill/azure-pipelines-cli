@@ -68,10 +68,9 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     // Show confirmation prompt if active.
     if let Some(prompt) = &app.confirm_prompt {
         let footer = Paragraph::new(Line::from(vec![
-            Span::styled(" confirm ", theme::CHIP_ACTIVE),
-            Span::styled(format!(" {}", prompt.message), theme::WARNING),
-        ]))
-        .style(theme::CANVAS);
+            Span::styled("confirm: ", theme::WARNING),
+            Span::styled(&prompt.message, theme::TEXT),
+        ]));
         f.render_widget(footer, area);
         return;
     }
@@ -94,9 +93,8 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     };
 
     let footer = Paragraph::new(Line::from(vec![
-        Span::styled(" actions ", theme::CHIP),
+        Span::styled("actions: ", theme::MUTED),
         Span::styled(hints, theme::SUBTLE),
-    ]))
-    .style(theme::CANVAS);
+    ]));
     f.render_widget(footer, area);
 }

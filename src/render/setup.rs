@@ -8,10 +8,9 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
+use ratatui::widgets::{Block, Clear, Paragraph};
 
 use crate::config::Config;
-use crate::render::helpers::key_hint_spans;
 use crate::render::theme;
 
 // --- State ---
@@ -103,10 +102,7 @@ fn draw(f: &mut Frame, state: &SetupState) {
     let block = Block::bordered()
         .title(" Welcome to devops ")
         .title_alignment(Alignment::Center)
-        .border_type(BorderType::Rounded)
-        .title_style(theme::BRAND)
-        .border_style(theme::PANEL_BORDER_FOCUSED)
-        .style(theme::PANEL_ELEVATED);
+        .title_style(theme::BRAND);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -154,7 +150,7 @@ fn draw(f: &mut Frame, state: &SetupState) {
 
 fn draw_field(f: &mut Frame, area: Rect, label: &str, value: &str, active: bool) {
     let label_style = if active {
-        theme::SELECTED_ACCENT.add_modifier(Modifier::BOLD)
+        theme::KEY
     } else {
         theme::MUTED.add_modifier(Modifier::BOLD)
     };
@@ -170,11 +166,7 @@ fn draw_field(f: &mut Frame, area: Rect, label: &str, value: &str, active: bool)
         Span::styled(value.to_string(), value_style),
         Span::styled(cursor, theme::CURSOR),
     ]);
-    let style = if active {
-        theme::SELECTED
-    } else {
-        theme::PANEL_ELEVATED
-    };
+    let style = if active { theme::SELECTED } else { theme::TEXT };
     f.render_widget(Paragraph::new(line).style(style), area);
 }
 
@@ -184,7 +176,8 @@ fn command_hints(commands: &[(&str, &str)]) -> Line<'static> {
         if i > 0 {
             spans.push(Span::raw("  "));
         }
-        spans.extend(key_hint_spans(key, label));
+        spans.push(Span::styled((*key).to_string(), theme::KEY));
+        spans.push(Span::styled(format!(" {label}"), theme::MUTED));
     }
     Line::from(spans)
 }

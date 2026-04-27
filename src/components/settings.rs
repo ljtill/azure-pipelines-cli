@@ -5,10 +5,10 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
+use ratatui::widgets::{Block, Clear, Paragraph};
 
 use super::Component;
-use crate::render::helpers::{centered_rect, key_hint_spans};
+use crate::render::helpers::centered_rect;
 use crate::render::theme;
 use crate::state::settings::{FieldKind, SettingsState};
 
@@ -44,7 +44,7 @@ impl Settings {
             let is_editing = is_selected && settings.editing;
 
             let label_style = if is_selected {
-                theme::SELECTED_ACCENT.add_modifier(Modifier::BOLD)
+                theme::KEY
             } else {
                 theme::MUTED
             };
@@ -100,14 +100,9 @@ impl Settings {
 
         let block = Block::bordered()
             .title(" Settings ")
-            .title_style(theme::BRAND)
-            .border_type(BorderType::Rounded)
-            .border_style(theme::PANEL_BORDER_FOCUSED)
-            .style(theme::PANEL_ELEVATED);
+            .title_style(theme::BRAND);
 
-        let content = Paragraph::new(lines)
-            .style(theme::PANEL_ELEVATED)
-            .block(block);
+        let content = Paragraph::new(lines).block(block);
         f.render_widget(content, area);
     }
 }
@@ -145,7 +140,8 @@ fn command_hints(commands: &[(&str, &str)]) -> Line<'static> {
         if i > 0 {
             spans.push(Span::raw("  "));
         }
-        spans.extend(key_hint_spans(key, label));
+        spans.push(Span::styled((*key).to_string(), theme::KEY));
+        spans.push(Span::styled(format!(" {label}"), theme::MUTED));
     }
     Line::from(spans)
 }

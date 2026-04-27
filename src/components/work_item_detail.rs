@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::Component;
 use crate::client::models::{AssignedToField, WorkItem, WorkItemComment};
-use crate::render::helpers::{card_block, draw_state_message, draw_view_frame};
+use crate::render::helpers::{draw_state_message, draw_view_frame};
 use crate::render::theme;
 use crate::state::{App, ListNav};
 
@@ -306,7 +306,9 @@ fn detail_block<'a, T>(title: T, is_active: bool) -> Block<'a>
 where
     T: Into<Line<'a>>,
 {
-    card_block(title).title_style(section_title_style(is_active))
+    Block::bordered()
+        .title(title)
+        .title_style(section_title_style(is_active))
 }
 
 fn section_title_style(is_active: bool) -> Style {

@@ -193,7 +193,7 @@ impl MyWorkItems {
                 ListItem::new(Line::from(vec![
                     Span::styled(
                         format!("#{:<w$}", row.id, w = w_id.saturating_sub(1)),
-                        id_style(is_selected),
+                        id_style(),
                     ),
                     Span::styled(
                         format!("{:<w_type$}", truncate(&row.work_item_type, w_type)),
@@ -201,7 +201,7 @@ impl MyWorkItems {
                     ),
                     Span::styled(
                         format!("{:<w_title$}", truncate(&row.title, w_title)),
-                        title_style(is_selected),
+                        title_style(),
                     ),
                     Span::styled(
                         format!("{:<w_state$}", truncate(&row.state, w_state)),
@@ -232,20 +232,12 @@ impl MyWorkItems {
     }
 }
 
-fn id_style(is_selected: bool) -> Style {
-    if is_selected {
-        theme::SELECTED_ACCENT
-    } else {
-        theme::MUTED
-    }
+fn id_style() -> Style {
+    theme::MUTED
 }
 
-fn title_style(is_selected: bool) -> Style {
-    if is_selected {
-        theme::SELECTED_ACCENT
-    } else {
-        theme::TEXT
-    }
+fn title_style() -> Style {
+    theme::TEXT
 }
 
 fn work_item_type_style(work_item_type: &str) -> Style {

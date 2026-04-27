@@ -388,16 +388,8 @@ impl Pipelines {
                     let is_focused = i == self.nav.index();
                     let icon = if *expanded { "▾" } else { "▸" };
                     let indent = "  ".repeat(*depth);
-                    let folder_style = if is_focused {
-                        theme::SELECTED_ACCENT
-                    } else {
-                        theme::FOLDER
-                    };
-                    let arrow_style = if is_focused {
-                        theme::SELECTED_ACCENT
-                    } else {
-                        theme::ARROW
-                    };
+                    let folder_style = theme::FOLDER;
+                    let arrow_style = theme::ARROW;
                     ListItem::new(Line::from(vec![
                         Span::raw(indent),
                         Span::styled(format!(" {icon} "), arrow_style),
@@ -412,11 +404,7 @@ impl Pipelines {
                     depth,
                 } => {
                     let is_focused = i == self.nav.index();
-                    let secondary_style = if is_focused {
-                        theme::SELECTED_ACCENT
-                    } else {
-                        theme::SUBTLE
-                    };
+                    let secondary_style = theme::SUBTLE;
                     let (icon, icon_color) =
                         latest_build.as_ref().map_or(("○", theme::PENDING_FG), |b| {
                             let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
@@ -471,9 +459,7 @@ impl Pipelines {
                     } else {
                         "  "
                     };
-                    let name_style = if is_focused {
-                        theme::SELECTED_ACCENT
-                    } else if latest_build.is_some() {
+                    let name_style = if latest_build.is_some() {
                         theme::TEXT
                     } else {
                         theme::SUBTLE

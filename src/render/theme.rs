@@ -3,26 +3,15 @@
 use ratatui::style::{Color, Modifier, Style};
 
 // --- Palette ---
-pub const BORDER_FG: Color = Color::DarkGray;
-pub const BORDER_FOCUSED_FG: Color = Color::LightBlue;
-pub const TEXT_FG: Color = Color::Reset;
 pub const TEXT_SUBTLE_FG: Color = Color::Gray;
 pub const TEXT_MUTED_FG: Color = Color::DarkGray;
 pub const ACCENT_FG: Color = Color::LightBlue;
-pub const ACCENT_ALT_FG: Color = Color::Cyan;
 pub const SUCCESS_FG: Color = Color::Green;
 pub const ERROR_FG: Color = Color::Red;
 pub const WARNING_FG: Color = Color::Yellow;
 pub const APPROVAL_FG: Color = Color::Magenta;
 pub const PENDING_FG: Color = TEXT_MUTED_FG;
 pub const BRANCH_FG: Color = Color::Cyan;
-
-// --- Surfaces ---
-pub const CANVAS: Style = Style::new();
-pub const PANEL: Style = Style::new();
-pub const PANEL_ELEVATED: Style = Style::new();
-pub const PANEL_BORDER: Style = Style::new().fg(BORDER_FG);
-pub const PANEL_BORDER_FOCUSED: Style = Style::new().fg(BORDER_FOCUSED_FG);
 
 // --- Header / branding ---
 pub const BRAND: Style = Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD);
@@ -39,9 +28,6 @@ pub const APPROVAL: Style = Style::new().fg(APPROVAL_FG);
 
 // --- Interactive ---
 pub const SELECTED: Style = Style::new().add_modifier(Modifier::REVERSED);
-pub const SELECTED_ACCENT: Style = Style::new()
-    .fg(ACCENT_FG)
-    .add_modifier(Modifier::BOLD.union(Modifier::REVERSED));
 pub const SEARCH_PROMPT: Style = Style::new().fg(WARNING_FG);
 pub const CURSOR: Style = Style::new().fg(ACCENT_FG);
 pub const KEY: Style = Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD);
@@ -61,8 +47,6 @@ pub const FOLLOW_TITLE: Style = Style::new().fg(SUCCESS_FG);
 pub const SECTION_HEADER: Style = Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD);
 pub const TABLE_HEADER: Style = Style::new().fg(TEXT_SUBTLE_FG).add_modifier(Modifier::BOLD);
 pub const BRANCH: Style = Style::new().fg(BRANCH_FG);
-pub const CHIP: Style = Style::new().fg(TEXT_SUBTLE_FG);
-pub const CHIP_ACTIVE: Style = Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD);
 
 // --- Pull Requests ---
 pub const PR_ACTIVE: Style = Style::new().fg(SUCCESS_FG);
@@ -82,18 +66,16 @@ mod tests {
 
     #[test]
     fn surface_styles_do_not_override_terminal_background() {
-        assert_eq!(CANVAS.bg, None);
-        assert_eq!(PANEL.bg, None);
-        assert_eq!(PANEL_ELEVATED.bg, None);
-        assert_eq!(CHIP.bg, None);
-        assert_eq!(CHIP_ACTIVE.bg, None);
+        assert_eq!(TEXT.bg, None);
+        assert_eq!(MUTED.bg, None);
+        assert_eq!(SUBTLE.bg, None);
+        assert_eq!(BRAND.bg, None);
+        assert_eq!(SECTION_HEADER.bg, None);
     }
 
     #[test]
     fn selected_rows_use_terminal_reverse_video() {
         assert_eq!(SELECTED.bg, None);
         assert!(SELECTED.add_modifier.contains(Modifier::REVERSED));
-        assert_eq!(SELECTED_ACCENT.bg, None);
-        assert!(SELECTED_ACCENT.add_modifier.contains(Modifier::REVERSED));
     }
 }

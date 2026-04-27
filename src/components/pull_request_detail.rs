@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::Component;
 use crate::render::helpers::{
-    card_block, draw_state_message, draw_view_frame, pr_status_icon, reviewer_vote_icon,
+    draw_state_message, draw_view_frame, pr_status_icon, reviewer_vote_icon,
 };
 use crate::render::theme;
 use crate::state::{App, ListNav};
@@ -113,14 +113,10 @@ impl PullRequestDetail {
         if pr.reviewers.is_empty() {
             reviewer_lines.push(Line::from(Span::styled("  No reviewers", theme::SUBTLE)));
         } else {
-            for (idx, r) in pr.reviewers.iter().enumerate() {
+            for r in &pr.reviewers {
                 let (icon, _) = reviewer_vote_icon(r.vote);
                 let vote_style = reviewer_vote_style(r.vote);
-                let name_style = if nav_index == idx + 1 {
-                    theme::SELECTED_ACCENT
-                } else {
-                    theme::TEXT
-                };
+                let name_style = theme::TEXT;
                 let required = if r.is_required { " (required)" } else { "" };
                 reviewer_lines.push(Line::from(vec![
                     Span::styled(format!("  {icon} "), vote_style),
@@ -159,7 +155,9 @@ fn detail_block<'a, T>(title: T, is_active: bool) -> Block<'a>
 where
     T: Into<Line<'a>>,
 {
-    card_block(title).title_style(section_title_style(is_active))
+    Block::bordered()
+        .title(title)
+        .title_style(section_title_style(is_active))
 }
 
 fn section_title_style(is_active: bool) -> Style {

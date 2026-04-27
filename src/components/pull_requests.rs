@@ -42,11 +42,7 @@ fn pr_status_style(status: &str, is_draft: bool) -> Style {
     }
 }
 
-fn pr_title_style(status: &str, is_draft: bool, is_selected: bool) -> Style {
-    if is_selected {
-        return theme::SELECTED_ACCENT;
-    }
-
+fn pr_title_style(status: &str, is_draft: bool) -> Style {
     if is_draft {
         return theme::SUBTLE;
     }
@@ -58,21 +54,13 @@ fn pr_title_style(status: &str, is_draft: bool, is_selected: bool) -> Style {
     }
 }
 
-fn pr_title_spans(
-    pr: &crate::client::models::PullRequest,
-    width: usize,
-    is_selected: bool,
-) -> Vec<Span<'static>> {
+fn pr_title_spans(pr: &crate::client::models::PullRequest, width: usize) -> Vec<Span<'static>> {
     let draft_marker = if pr.is_draft { " [draft]" } else { "" };
     let prefix = format!("#{} ", pr.pull_request_id);
     let title_text = format!("{prefix}{}{}", pr.title, draft_marker);
     let title_cell = format!("{:<width$}", truncate(&title_text, width));
-    let title_style = pr_title_style(&pr.status, pr.is_draft, is_selected);
-    let prefix_style = if is_selected {
-        theme::SELECTED_ACCENT
-    } else {
-        theme::SUBTLE
-    };
+    let title_style = pr_title_style(&pr.status, pr.is_draft);
+    let prefix_style = theme::SUBTLE;
 
     if !title_cell.starts_with(&prefix) {
         return vec![Span::styled(title_cell, title_style)];
@@ -219,7 +207,7 @@ impl PullRequests {
                     format!("{icon:<w_icon$}"),
                     pr_status_style(&pr.status, pr.is_draft),
                 )];
-                spans.extend(pr_title_spans(pr, w_title, is_selected));
+                spans.extend(pr_title_spans(pr, w_title));
                 spans.extend([
                     Span::styled(
                         format!("{:<w_repo$}", truncate(pr.repo_name(), w_repo)),

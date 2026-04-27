@@ -134,16 +134,8 @@ impl ActiveRuns {
                 let (icon, icon_color) =
                     effective_status_icon(build.status, build.result, awaiting);
                 let label = effective_status_label(build.status, build.result, awaiting);
-                let primary_style = if is_focused {
-                    theme::SELECTED_ACCENT
-                } else {
-                    theme::TEXT
-                };
-                let secondary_style = if is_focused {
-                    theme::SELECTED_ACCENT
-                } else {
-                    theme::SUBTLE
-                };
+                let primary_style = theme::TEXT;
+                let secondary_style = theme::SUBTLE;
 
                 ListItem::new(Line::from(vec![
                     Span::styled(
