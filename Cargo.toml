@@ -12,6 +12,11 @@ rust-version = "1.94"
 name = "devops"
 path = "src/main.rs"
 
+[[bench]]
+name = "render"
+harness = false
+required-features = ["internal-test-helpers"]
+
 [features]
 default = []
 # Internal fixture factories for crate tests; not a stable library API.

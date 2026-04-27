@@ -10,6 +10,7 @@
 - Format check: `cargo fmt --all -- --check`
 - Clippy: `cargo clippy --all-targets -- -D warnings`
 - Security checks, when the tools are available: `cargo audit` and `cargo deny --all-features check`.
+- Render/rebuild benchmarks: `cargo bench --bench render --features internal-test-helpers`.
 
 The current baseline is clean — `cargo build`, `cargo test`, `cargo fmt --all -- --check`, and `cargo clippy --all-targets -- -D warnings` all pass without warnings or formatting drift. Keep it that way.
 
@@ -78,8 +79,8 @@ Before publishing a release:
 - Confirm `cargo audit` and `cargo deny --all-features check` are passing, and
   refresh or remove any advisory ignore whose Review-by date has expired.
 - Publish only archives listed in `SHA256SUMS`; verify the release workflow
-  signs that manifest with the expected Sigstore identity and uploads both
-  `SHA256SUMS` and `SHA256SUMS.cosign.bundle`.
+  signs that manifest with the expected Sigstore identity and uploads
+  `SHA256SUMS`, `SHA256SUMS.cosign.bundle`, and `devops-sbom.cdx.json`.
 - Verify the install scripts and `devops update` trust path still fails closed:
   the signed manifest is verified before archive hashes, and archive hashes are
   checked before extraction or replacement.
@@ -111,14 +112,15 @@ ignore them.
 3. Validate the RC artifacts before publishing.
    - Confirm the release run completed every build matrix job and the
      `Verify release artifact trust path` step.
-   - Download `SHA256SUMS`, `SHA256SUMS.cosign.bundle`, and all `devops-*`
-     archives from the draft release with maintainer credentials. Verify the
-     manifest signature with the identity in `SECURITY.md`, then run
-     `sha256sum --check SHA256SUMS` from the asset directory.
+    - Download `SHA256SUMS`, `SHA256SUMS.cosign.bundle`, `devops-sbom.cdx.json`,
+      and all `devops-*` archives from the draft release with maintainer
+      credentials. Verify the manifest signature with the identity in
+      `SECURITY.md`, then run `sha256sum --check SHA256SUMS` from the asset
+      directory.
    - Compare the asset set with the release workflow matrix: Linux x64/ARM
-     tarballs, macOS x64/ARM tarballs, Windows x64/ARM zip files,
-     `SHA256SUMS`, and `SHA256SUMS.cosign.bundle`. Remove any unexpected asset
-     before promotion.
+      tarballs, macOS x64/ARM tarballs, Windows x64/ARM zip files,
+      `devops-sbom.cdx.json`, `SHA256SUMS`, and `SHA256SUMS.cosign.bundle`.
+      Remove any unexpected asset before promotion.
    - On at least one Unix host and one Windows host or CI runner, install from
      the verified RC archive into a disposable directory and run
      `devops version` and `devops --help`. Use the convenience scripts only when
