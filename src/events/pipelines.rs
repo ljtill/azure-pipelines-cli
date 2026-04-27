@@ -4,7 +4,6 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
-use crate::components::pipelines::PipelineRow;
 use crate::state::{App, InputMode};
 
 /// Handles key events specific to the pipelines view.
@@ -72,7 +71,7 @@ fn handle_enter(app: &mut App) -> Action {
 fn handle_drill_in(app: &mut App) -> Action {
     if let Some(def) = app
         .pipelines
-        .definition_at(app.pipelines.nav.index())
+        .definition_at(app.pipelines.nav.index(), &app.core.data.definitions)
         .cloned()
     {
         let def_id = def.id;
@@ -86,8 +85,7 @@ fn handle_drill_in(app: &mut App) -> Action {
 /// Toggles multi-select on the current pipeline row.
 fn handle_space(app: &mut App) -> Action {
     let idx = app.pipelines.nav.index();
-    if let Some(PipelineRow::Pipeline { definition, .. }) = app.pipelines.rows.get(idx) {
-        let id = definition.id;
+    if let Some(id) = app.pipelines.definition_id_at(idx) {
         if app.pipelines.selected.contains(&id) {
             app.pipelines.selected.remove(&id);
         } else {
@@ -103,8 +101,8 @@ fn handle_pin(app: &mut App) -> Action {
     let ids_to_toggle: Vec<u32> = if app.pipelines.selected.is_empty() {
         // Use cursor item.
         app.pipelines
-            .definition_at(app.pipelines.nav.index())
-            .map(|def| vec![def.id])
+            .definition_id_at(app.pipelines.nav.index())
+            .map(|id| vec![id])
             .unwrap_or_default()
     } else {
         app.pipelines.selected.iter().copied().collect()
@@ -117,18 +115,19 @@ fn handle_pin(app: &mut App) -> Action {
     // Toggle: if all are already pinned, unpin them; otherwise pin them.
     let all_pinned = ids_to_toggle
         .iter()
-        .all(|id| app.filters.pinned_definition_ids.contains(id));
+        .all(|id| app.core.filters.pinned_definition_ids.contains(id));
 
     if all_pinned {
-        app.filters
+        app.core
+            .filters
             .pinned_definition_ids
             .retain(|id| !ids_to_toggle.contains(id));
         app.notifications
             .success(format!("Unpinned {} pipeline(s)", ids_to_toggle.len()));
     } else {
         for id in &ids_to_toggle {
-            if !app.filters.pinned_definition_ids.contains(id) {
-                app.filters.pinned_definition_ids.push(*id);
+            if !app.core.filters.pinned_definition_ids.contains(id) {
+                app.core.filters.pinned_definition_ids.push(*id);
             }
         }
         app.notifications

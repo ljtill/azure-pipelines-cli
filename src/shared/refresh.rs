@@ -36,6 +36,11 @@ impl RefreshState {
         self.backoff_until = Some(Instant::now() + backoff);
     }
 
+    /// Records a cancelled refresh without changing failure or backoff state.
+    pub fn cancel(&mut self) {
+        self.in_flight = false;
+    }
+
     /// Checks whether the backoff period has elapsed (or was never set).
     pub fn backoff_elapsed(&self) -> bool {
         self.backoff_until
@@ -72,6 +77,21 @@ mod tests {
         assert_eq!(rs.failures, 0);
         assert!(rs.backoff_until.is_none());
         assert!(!rs.in_flight);
+    }
+
+    #[test]
+    fn refresh_state_cancel_only_clears_in_flight() {
+        let mut rs = RefreshState::default();
+        rs.fail(30, 300);
+        let failures = rs.failures;
+        let backoff = rs.backoff_until;
+        rs.start();
+
+        rs.cancel();
+
+        assert!(!rs.in_flight);
+        assert_eq!(rs.failures, failures);
+        assert_eq!(rs.backoff_until, backoff);
     }
 
     #[test]

@@ -14,6 +14,8 @@ use azure_devops_cli::client::models::{
     AssignedToField, BuildDefinitionRef, BuildResult, BuildStatus, IdentityRef, WorkItem,
     WorkItemFields,
 };
+use azure_devops_cli::shared::availability::Availability;
+use azure_devops_cli::shared::log_buffer::DEFAULT_CAPACITY;
 use azure_devops_cli::state::{App, PinnedWorkItemsState, View};
 use azure_devops_cli::test_helpers::{
     make_app, make_build, make_config, make_definition, make_pull_request, make_simple_timeline,
@@ -89,7 +91,7 @@ fn make_dashboard_app() -> App {
     let def1 = make_definition(1, "CI Pipeline", "\\");
     let def2 = make_definition(2, "Deploy Pipeline", "\\Infra");
     let def3 = make_definition(3, "Infra Lint", "\\Infra");
-    app.data.definitions = vec![def1, def2, def3];
+    app.core.data.definitions = vec![def1, def2, def3];
 
     let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
     b1.definition = BuildDefinitionRef {
@@ -106,12 +108,16 @@ fn make_dashboard_app() -> App {
         id: 3,
         name: "Infra Lint".to_string(),
     };
-    app.data.recent_builds = vec![b1.clone(), b2.clone(), b3.clone()];
-    app.data.latest_builds_by_def.insert(1, b1);
-    app.data.latest_builds_by_def.insert(2, b2);
-    app.data.latest_builds_by_def.insert(3, b3);
+    app.core.data.recent_builds = vec![b1.clone(), b2.clone(), b3.clone()];
+    app.core.data.latest_builds_by_def.insert(1, b1);
+    app.core.data.latest_builds_by_def.insert(2, b2);
+    app.core.data.latest_builds_by_def.insert(3, b3);
+    app.core.availability.definitions = Availability::fresh(app.core.data.definitions.clone());
+    app.core.availability.recent_builds = Availability::fresh(app.core.data.recent_builds.clone());
+    app.core.availability.pending_approvals =
+        Availability::fresh(app.core.data.pending_approvals.clone());
 
-    app.filters.pinned_definition_ids = vec![1, 2];
+    app.core.filters.pinned_definition_ids = vec![1, 2];
     app.pinned_work_items = PinnedWorkItemsState::Ready(vec![
         make_work_item(501, "Investigate flaky test", "Active", Some("Alice")),
         make_work_item(
@@ -244,7 +250,7 @@ fn snapshot_build_history_mixed_statuses() {
 │ CI Pipeline  ·  4 builds  ·  0 selected                                      │
 │      Status      Build           Branch          Requestor            Elapsed│
 │   ✓ Succeeded   #20240101.1     main            Unknown                      │
-│   ✗ Failed      #デ プ ロ イ …          main            Unknown                  │
+│   ✗ Failed      #デ プ ロ イ  🚀     main            Unknown                      │
 │   ● Running     #20240101.3     main            Unknown               queued │
 │   ⊘ Canceled    #20240101.4     main            Unknown                      │
 │                                                                              │
@@ -441,4 +447,124 @@ fn snapshot_log_viewer_follow_mode() {
 └──────────────────────────────────────────────────────────────────────────────┘
 ";
     assert_snapshot("log_viewer_follow", &rendered, expected);
+}
+
+#[test]
+fn log_viewer_large_log_renders_visible_tail() {
+    let mut terminal = Terminal::new(TestBackend::new(80, 18)).unwrap();
+    let mut app = make_app();
+    app.navigate_to_log_viewer(make_build(
+        2002,
+        BuildStatus::Completed,
+        Some(BuildResult::Succeeded),
+    ));
+    let total_lines = DEFAULT_CAPACITY + 123;
+    let log = (0..total_lines)
+        .map(|i| format!("line-{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    app.log_viewer.set_log_content(&log);
+
+    terminal
+        .draw(|f| {
+            azure_devops_cli::components::log_viewer::draw_log_viewer(f, &mut app, f.area());
+        })
+        .unwrap();
+
+    let rendered = buffer_to_string(terminal.backend().buffer());
+    assert_eq!(app.log_viewer.log_content().len(), DEFAULT_CAPACITY);
+    assert_eq!(app.log_viewer.log_content().dropped(), 123);
+    let last_line = format!("line-{}", total_lines - 1);
+    assert!(rendered.contains(&last_line));
+    assert!(!rendered.contains("line-0"));
+    assert!(rendered.matches("line-").count() <= 14);
+}
+
+#[test]
+fn log_viewer_large_log_manual_scroll_renders_visible_window() {
+    let mut terminal = Terminal::new(TestBackend::new(80, 18)).unwrap();
+    let mut app = make_app();
+    app.navigate_to_log_viewer(make_build(
+        2003,
+        BuildStatus::Completed,
+        Some(BuildResult::Succeeded),
+    ));
+    let log = (0..10_000)
+        .map(|i| format!("line-{i:04}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    app.log_viewer.set_log_content(&log);
+    app.log_viewer.set_log_auto_scroll(false);
+    app.log_viewer.set_log_scroll_offset(5_000);
+
+    terminal
+        .draw(|f| {
+            azure_devops_cli::components::log_viewer::draw_log_viewer(f, &mut app, f.area());
+        })
+        .unwrap();
+
+    let rendered = buffer_to_string(terminal.backend().buffer());
+    assert!(rendered.contains("line-5000"));
+    assert!(!rendered.contains("line-0000"));
+    assert!(!rendered.contains("line-9999"));
+    assert!(rendered.matches("line-").count() <= 14);
+}
+
+#[test]
+fn build_history_large_list_renders_visible_tail() {
+    let mut terminal = Terminal::new(TestBackend::new(80, 18)).unwrap();
+    let mut app = make_app();
+    let definition = make_definition(9, "Scale Pipeline", "\\");
+    app.navigate_to_build_history(definition);
+
+    let total_builds = 5_000;
+    app.build_history.builds = (0..total_builds)
+        .map(|i| {
+            let mut build = make_build(
+                3_000 + i as u32,
+                BuildStatus::Completed,
+                Some(BuildResult::Succeeded),
+            );
+            build.build_number = format!("scale-{i:04}");
+            build.definition = BuildDefinitionRef {
+                id: 9,
+                name: "Scale Pipeline".to_string(),
+            };
+            build
+        })
+        .collect();
+    app.build_history.nav.set_len(total_builds);
+    app.build_history.nav.set_index(total_builds - 1);
+
+    terminal
+        .draw(|f| app.build_history.draw_with_app(f, &app, f.area()))
+        .unwrap();
+
+    let rendered = buffer_to_string(terminal.backend().buffer());
+    assert!(rendered.contains("#scale-4999"));
+    assert!(!rendered.contains("#scale-0000"));
+    assert!(rendered.matches("#scale-").count() <= 15);
+}
+
+#[test]
+fn pull_requests_large_list_renders_visible_tail() {
+    let mut terminal = Terminal::new(TestBackend::new(100, 18)).unwrap();
+    let mut app = make_app();
+    app.view = View::PullRequestsAllActive;
+
+    let total_prs = 5_000;
+    let prs = (0..total_prs)
+        .map(|i| make_pull_request(i as u32, &format!("Scale PR {i:04}"), "active", "repo"))
+        .collect();
+    app.pull_requests.set_data(prs, "");
+    app.pull_requests.nav.set_index(total_prs - 1);
+
+    terminal
+        .draw(|f| app.pull_requests.draw_with_app(f, &app, f.area()))
+        .unwrap();
+
+    let rendered = buffer_to_string(terminal.backend().buffer());
+    assert!(rendered.contains("Scale PR 4999"));
+    assert!(!rendered.contains("Scale PR 0000"));
+    assert!(rendered.matches("Scale PR").count() <= 15);
 }

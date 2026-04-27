@@ -16,7 +16,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         // Multi-select toggle.
         KeyCode::Char(' ') => {
-            app.active_runs.toggle_selected_at_cursor();
+            app.shell
+                .views
+                .active_runs
+                .toggle_selected_at_cursor(&app.core.data.active_builds);
             Action::None
         }
         KeyCode::Char('c') => navigation::handle_cancel_request(app),
@@ -28,10 +31,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 
 /// Handles the Enter key on active runs, drilling into the log viewer.
 fn handle_enter_active_runs(app: &mut App) -> Action {
+    let index = app.active_runs.nav.index();
     if let Some(build) = app
+        .shell
+        .views
         .active_runs
-        .filtered
-        .get(app.active_runs.nav.index())
+        .build_at(&app.core.data.active_builds, index)
         .cloned()
     {
         let build_id = build.id;
@@ -65,11 +70,12 @@ mod tests {
         let mut app = make_app();
         app.view = View::ActiveRuns;
         let build = make_build(200, BuildStatus::InProgress, None);
-        app.data.active_builds = vec![build];
-        app.active_runs.rebuild(
-            &app.data.active_builds,
-            &app.filters.definition_ids,
-            &app.search.query,
+        app.core.data.active_builds = vec![build];
+        let query = app.search.query.clone();
+        app.shell.views.active_runs.rebuild(
+            &app.core.data.active_builds,
+            &app.core.filters.definition_ids,
+            &query,
         );
 
         let action = handle_key(&mut app, key(KeyCode::Right));

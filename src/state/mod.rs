@@ -1,6 +1,7 @@
 //! Core application state and the `App` struct.
 
 pub mod actions;
+pub mod effects;
 pub(crate) mod messages;
 pub mod nav;
 pub mod notifications;
@@ -23,40 +24,84 @@ pub struct PaginationStatus {
 #[derive(Debug, Default)]
 pub struct RetentionLeasesState {
     pub leases: Vec<RetentionLease>,
+    pub leases_by_id: BTreeMap<u32, RetentionLease>,
+    pub lease_ids_by_run: BTreeMap<u32, Vec<u32>>,
+    pub lease_ids_by_definition: BTreeMap<u32, Vec<u32>>,
     /// Stores build IDs (run IDs) that have at least one retention lease.
     pub retained_run_ids: HashSet<u32>,
 }
 
 impl RetentionLeasesState {
+    /// Replaces the lease list and rebuilds all stable-ID indexes.
+    pub fn set_leases(&mut self, leases: Vec<RetentionLease>) {
+        self.leases = leases;
+        self.rebuild_index();
+    }
+
     /// Updates the `retained_run_ids` index from the current lease list.
     pub fn rebuild_index(&mut self) {
-        self.retained_run_ids = self.leases.iter().map(|l| l.run_id).collect();
+        let leases = std::mem::take(&mut self.leases);
+        let mut lease_order = Vec::new();
+        let mut leases_by_id = BTreeMap::new();
+
+        for lease in leases {
+            if !leases_by_id.contains_key(&lease.lease_id) {
+                lease_order.push(lease.lease_id);
+            }
+            leases_by_id.insert(lease.lease_id, lease);
+        }
+
+        self.leases = lease_order
+            .iter()
+            .filter_map(|lease_id| leases_by_id.get(lease_id).cloned())
+            .collect();
+
+        self.retained_run_ids = self.leases.iter().map(|lease| lease.run_id).collect();
+        self.lease_ids_by_run.clear();
+        self.lease_ids_by_definition.clear();
+        for lease in &self.leases {
+            self.lease_ids_by_run
+                .entry(lease.run_id)
+                .or_default()
+                .push(lease.lease_id);
+            self.lease_ids_by_definition
+                .entry(lease.definition_id)
+                .or_default()
+                .push(lease.lease_id);
+        }
+        self.leases_by_id = leases_by_id;
     }
 
     /// Returns leases for a specific build/run ID.
     pub fn leases_for_run(&self, run_id: u32) -> Vec<&RetentionLease> {
-        self.leases.iter().filter(|l| l.run_id == run_id).collect()
+        self.lease_ids_by_run
+            .get(&run_id)
+            .into_iter()
+            .flat_map(|lease_ids| lease_ids.iter())
+            .filter_map(|lease_id| self.leases_by_id.get(lease_id))
+            .collect()
     }
 
     /// Returns the lease count for a specific pipeline definition.
     pub fn lease_count_for_definition(&self, definition_id: u32) -> usize {
-        self.leases
-            .iter()
-            .filter(|l| l.definition_id == definition_id)
-            .count()
+        self.lease_ids_by_definition
+            .get(&definition_id)
+            .map_or(0, Vec::len)
     }
 }
 
 use std::collections::{BTreeMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 
-use crate::client::endpoints::Endpoints;
+use crate::client::endpoints::{DEFAULT_API_VERSION, Endpoints};
 use crate::client::models::{
     Approval, Build, BuildResult, BuildStatus, PipelineDefinition, PullRequest, RetentionLease,
     WorkItem,
 };
+use crate::shared::availability::{Availability, AvailabilityStatus};
 
 use notifications::Notifications;
 
@@ -64,12 +109,211 @@ use notifications::Notifications;
 #[derive(Debug, Default)]
 pub struct CoreData {
     pub definitions: Vec<PipelineDefinition>,
+    pub definitions_by_id: BTreeMap<u32, PipelineDefinition>,
     pub recent_builds: Vec<Build>,
+    pub recent_builds_by_id: BTreeMap<u32, Build>,
     pub active_builds: Vec<Build>,
+    pub active_build_ids: HashSet<u32>,
     pub pending_approvals: Vec<Approval>,
+    pub pending_approvals_by_id: BTreeMap<String, Approval>,
     pub latest_builds_by_def: BTreeMap<u32, Build>,
     /// Stores build IDs that have at least one pending approval gate.
     pub pending_approval_build_ids: HashSet<u32>,
+}
+
+impl CoreData {
+    /// Replaces refresh data and rebuilds stable-ID indexes plus derived views.
+    pub fn apply_refresh(
+        &mut self,
+        definitions: Vec<PipelineDefinition>,
+        recent_builds: Vec<Build>,
+        pending_approvals: Vec<Approval>,
+    ) {
+        let (definitions, definitions_by_id) =
+            normalize_by_key(definitions, |definition| definition.id);
+        let (recent_builds, recent_builds_by_id) =
+            normalize_by_key(recent_builds, |build| build.id);
+        let active_builds: Vec<Build> = recent_builds
+            .iter()
+            .filter(|build| build.status.is_in_progress())
+            .cloned()
+            .collect();
+        let active_build_ids = active_builds.iter().map(|build| build.id).collect();
+        let (pending_approvals, pending_approvals_by_id) =
+            normalize_by_key(pending_approvals, |approval| approval.id.clone());
+        let pending_approval_build_ids = pending_approvals
+            .iter()
+            .filter_map(Approval::build_id)
+            .collect();
+        let latest_builds_by_def = Self::latest_builds_by_definition(&definitions, &recent_builds);
+
+        self.definitions = definitions;
+        self.definitions_by_id = definitions_by_id;
+        self.recent_builds = recent_builds;
+        self.recent_builds_by_id = recent_builds_by_id;
+        self.active_builds = active_builds;
+        self.active_build_ids = active_build_ids;
+        self.pending_approvals = pending_approvals;
+        self.pending_approvals_by_id = pending_approvals_by_id;
+        self.latest_builds_by_def = latest_builds_by_def;
+        self.pending_approval_build_ids = pending_approval_build_ids;
+    }
+
+    /// Rebuilds stable-ID indexes for tests and callers that mutate vectors directly.
+    pub fn rebuild_indexes(&mut self) {
+        self.definitions_by_id = self
+            .definitions
+            .iter()
+            .map(|definition| (definition.id, definition.clone()))
+            .collect();
+        self.recent_builds_by_id = self
+            .recent_builds
+            .iter()
+            .map(|build| (build.id, build.clone()))
+            .collect();
+        self.active_build_ids = self.active_builds.iter().map(|build| build.id).collect();
+        self.pending_approvals_by_id = self
+            .pending_approvals
+            .iter()
+            .map(|approval| (approval.id.clone(), approval.clone()))
+            .collect();
+        self.pending_approval_build_ids = self
+            .pending_approvals
+            .iter()
+            .filter_map(Approval::build_id)
+            .collect();
+    }
+
+    /// Returns the pipeline definition with the given stable definition ID.
+    pub fn definition(&self, definition_id: u32) -> Option<&PipelineDefinition> {
+        self.definitions_by_id.get(&definition_id)
+    }
+
+    /// Returns the recent build with the given stable build ID.
+    pub fn recent_build(&self, build_id: u32) -> Option<&Build> {
+        self.recent_builds_by_id.get(&build_id)
+    }
+
+    /// Returns the pending approval with the given stable approval ID.
+    pub fn pending_approval(&self, approval_id: &str) -> Option<&Approval> {
+        self.pending_approvals_by_id.get(approval_id)
+    }
+
+    /// Builds the latest-build map seeded from definitions and overlaid by recent builds.
+    pub fn latest_builds_by_definition(
+        definitions: &[PipelineDefinition],
+        recent_builds: &[Build],
+    ) -> BTreeMap<u32, Build> {
+        let mut map: BTreeMap<u32, Build> = BTreeMap::new();
+        for definition in definitions {
+            if let Some(build) = &definition.latest_build {
+                map.insert(definition.id, *build.clone());
+            }
+        }
+        for build in recent_builds {
+            match map.entry(build.definition.id) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(build.clone());
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    if build.id > entry.get().id {
+                        entry.insert(build.clone());
+                    }
+                }
+            }
+        }
+        map
+    }
+}
+
+/// Stores count metadata for the latest core data refresh snapshot.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CoreDataSnapshot {
+    pub definitions: usize,
+    pub recent_builds: usize,
+    pub active_builds: usize,
+    pub pending_approvals: usize,
+    pub retention_leases: usize,
+}
+
+impl CoreDataSnapshot {
+    /// Returns a snapshot of the currently stored core data counts.
+    pub fn from_data(data: &CoreData, retention_leases: &RetentionLeasesState) -> Self {
+        Self {
+            definitions: data.definitions.len(),
+            recent_builds: data.recent_builds.len(),
+            active_builds: data.active_builds.len(),
+            pending_approvals: data.pending_approvals.len(),
+            retention_leases: retention_leases.leases.len(),
+        }
+    }
+}
+
+/// Stores availability metadata for independently refreshed core data sections.
+#[derive(Debug, Clone)]
+pub struct CoreDataAvailability {
+    pub refresh: Availability<CoreDataSnapshot>,
+    pub definitions: Availability<Vec<PipelineDefinition>>,
+    pub recent_builds: Availability<Vec<Build>>,
+    pub pending_approvals: Availability<Vec<Approval>>,
+    pub retention_leases: Availability<Vec<RetentionLease>>,
+}
+
+impl CoreDataAvailability {
+    /// Returns labels for sections whose data is degraded or unavailable.
+    pub fn degraded_section_labels(&self) -> Vec<&'static str> {
+        let mut labels = Vec::new();
+        if self.definitions.is_degraded() {
+            labels.push("definitions");
+        }
+        if self.recent_builds.is_degraded() {
+            labels.push("builds");
+        }
+        if self.pending_approvals.is_degraded() {
+            labels.push("approvals");
+        }
+        if self.retention_leases.is_degraded() {
+            labels.push("retention");
+        }
+        labels
+    }
+}
+
+impl Default for CoreDataAvailability {
+    fn default() -> Self {
+        Self {
+            refresh: Availability::unavailable("Data refresh has not completed"),
+            definitions: Availability::unavailable("Pipeline definitions not loaded"),
+            recent_builds: Availability::unavailable("Recent builds not loaded"),
+            pending_approvals: Availability::unavailable("Approvals not loaded"),
+            retention_leases: Availability::unavailable("Retention leases not loaded"),
+        }
+    }
+}
+
+fn normalize_by_key<T, K, F>(items: Vec<T>, key: F) -> (Vec<T>, BTreeMap<K, T>)
+where
+    T: Clone,
+    K: Ord + Clone,
+    F: Fn(&T) -> K,
+{
+    let mut order = Vec::new();
+    let mut by_key = BTreeMap::new();
+
+    for item in items {
+        let item_key = key(&item);
+        if !by_key.contains_key(&item_key) {
+            order.push(item_key.clone());
+        }
+        by_key.insert(item_key, item);
+    }
+
+    let values = order
+        .iter()
+        .filter_map(|item_key| by_key.get(item_key).cloned())
+        .collect();
+
+    (values, by_key)
 }
 
 /// Stores filter configuration from config.toml.
@@ -79,6 +323,104 @@ pub struct FilterConfig {
     pub definition_ids: Vec<u32>,
     pub pinned_definition_ids: Vec<u32>,
     pub pinned_work_item_ids: Vec<u32>,
+}
+
+/// Stores shared data, filters, and service indexes owned by the app.
+#[derive(Debug, Default)]
+pub struct CoreDataStore {
+    pub data: CoreData,
+    pub availability: CoreDataAvailability,
+    pub filters: FilterConfig,
+    pub current_user: ExactUserIdentity,
+    pub retention_leases: RetentionLeasesState,
+}
+
+impl CoreDataStore {
+    /// Creates the core data store from the loaded configuration.
+    pub fn from_config(config: &crate::config::Config) -> Self {
+        Self {
+            data: CoreData::default(),
+            availability: CoreDataAvailability::default(),
+            filters: FilterConfig {
+                folders: config.devops.filters.folders.clone(),
+                definition_ids: config.devops.filters.definition_ids.clone(),
+                pinned_definition_ids: config.devops.filters.pinned_definition_ids.clone(),
+                pinned_work_item_ids: config.devops.filters.pinned_work_item_ids.clone(),
+            },
+            current_user: ExactUserIdentity::default(),
+            retention_leases: RetentionLeasesState::default(),
+        }
+    }
+}
+
+/// Stores the active Azure DevOps connection metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectionMetadata {
+    pub organization: String,
+    pub project: String,
+    pub api_version: String,
+}
+
+impl ConnectionMetadata {
+    /// Creates connection metadata from the configured connection and API version.
+    pub fn new(organization: &str, project: &str, api_version: &str) -> Self {
+        Self {
+            organization: organization.to_string(),
+            project: project.to_string(),
+            api_version: api_version.to_string(),
+        }
+    }
+
+    /// Returns the organization/project label shown in the header.
+    pub fn display_label(&self) -> String {
+        format!("{} / {}", self.organization, self.project)
+    }
+
+    /// Returns `true` when the metadata matches a config connection.
+    pub fn matches_config(&self, connection: &crate::config::ConnectionConfig) -> bool {
+        self.organization == connection.organization && self.project == connection.project
+    }
+
+    /// Updates the active API version metadata.
+    pub fn set_api_version(&mut self, api_version: &str) {
+        self.api_version = api_version.to_string();
+    }
+}
+
+/// Stores connection metadata and endpoint builders for Azure DevOps.
+pub struct ConnectionState {
+    pub metadata: ConnectionMetadata,
+    endpoints: Endpoints,
+}
+
+impl ConnectionState {
+    /// Creates the connection state for an organization/project pair.
+    pub fn new(organization: &str, project: &str, api_version: &str) -> Self {
+        Self {
+            metadata: ConnectionMetadata::new(organization, project, api_version),
+            endpoints: Endpoints::new(organization, project),
+        }
+    }
+
+    /// Updates the active API version on metadata and endpoint builders.
+    pub fn set_api_version(&mut self, api_version: &str) {
+        self.metadata.set_api_version(api_version);
+        self.endpoints.set_api_version(api_version);
+    }
+}
+
+impl Deref for ConnectionState {
+    type Target = ConnectionMetadata;
+
+    fn deref(&self) -> &Self::Target {
+        &self.metadata
+    }
+}
+
+impl DerefMut for ConnectionState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.metadata
+    }
 }
 
 /// Represents the active top-level area in the shell.
@@ -300,8 +642,71 @@ pub enum DashboardPullRequestsState {
     #[default]
     Loading,
     Ready(Vec<PullRequest>),
+    Partial {
+        pull_requests: Vec<PullRequest>,
+        errors: Vec<String>,
+    },
+    Stale {
+        pull_requests: Vec<PullRequest>,
+        message: String,
+    },
     EmptyVerified,
     Unavailable(String),
+}
+
+impl DashboardPullRequestsState {
+    /// Returns the availability status represented by this section state.
+    pub fn status(&self) -> AvailabilityStatus {
+        match self {
+            Self::Loading | Self::Unavailable(_) => AvailabilityStatus::Unavailable,
+            Self::Ready(_) | Self::EmptyVerified => AvailabilityStatus::Fresh,
+            Self::Partial { .. } => AvailabilityStatus::Partial,
+            Self::Stale { .. } => AvailabilityStatus::Stale,
+        }
+    }
+
+    /// Returns pull request data when the section has a usable last-known result.
+    pub fn pull_requests(&self) -> Option<&[PullRequest]> {
+        match self {
+            Self::Ready(pull_requests)
+            | Self::Partial { pull_requests, .. }
+            | Self::Stale { pull_requests, .. } => Some(pull_requests),
+            Self::EmptyVerified => Some(&[]),
+            Self::Loading | Self::Unavailable(_) => None,
+        }
+    }
+
+    /// Returns a degraded-state message, if one should be surfaced.
+    pub fn degraded_message(&self) -> Option<&str> {
+        match self {
+            Self::Partial { errors, .. } => errors.first().map(String::as_str),
+            Self::Stale { message, .. } | Self::Unavailable(message) => Some(message),
+            Self::Loading | Self::Ready(_) | Self::EmptyVerified => None,
+        }
+    }
+
+    /// Returns `true` when refreshing should replace the section with a loading row.
+    pub fn should_show_loading(&self) -> bool {
+        self.pull_requests().is_none_or(<[PullRequest]>::is_empty)
+    }
+
+    /// Returns stale data when a last-known result exists, or unavailable otherwise.
+    #[must_use]
+    pub fn stale_or_unavailable(&self, message: String) -> Self {
+        match self {
+            Self::Ready(pull_requests)
+            | Self::Partial { pull_requests, .. }
+            | Self::Stale { pull_requests, .. } => Self::Stale {
+                pull_requests: pull_requests.clone(),
+                message,
+            },
+            Self::EmptyVerified => Self::Stale {
+                pull_requests: Vec::new(),
+                message,
+            },
+            Self::Loading | Self::Unavailable(_) => Self::Unavailable(message),
+        }
+    }
 }
 
 /// Represents the dashboard work items section state.
@@ -310,8 +715,71 @@ pub enum DashboardWorkItemsState {
     #[default]
     Loading,
     Ready(Vec<WorkItem>),
+    Partial {
+        work_items: Vec<WorkItem>,
+        errors: Vec<String>,
+    },
+    Stale {
+        work_items: Vec<WorkItem>,
+        message: String,
+    },
     EmptyVerified,
     Unavailable(String),
+}
+
+impl DashboardWorkItemsState {
+    /// Returns the availability status represented by this section state.
+    pub fn status(&self) -> AvailabilityStatus {
+        match self {
+            Self::Loading | Self::Unavailable(_) => AvailabilityStatus::Unavailable,
+            Self::Ready(_) | Self::EmptyVerified => AvailabilityStatus::Fresh,
+            Self::Partial { .. } => AvailabilityStatus::Partial,
+            Self::Stale { .. } => AvailabilityStatus::Stale,
+        }
+    }
+
+    /// Returns work item data when the section has a usable last-known result.
+    pub fn work_items(&self) -> Option<&[WorkItem]> {
+        match self {
+            Self::Ready(work_items)
+            | Self::Partial { work_items, .. }
+            | Self::Stale { work_items, .. } => Some(work_items),
+            Self::EmptyVerified => Some(&[]),
+            Self::Loading | Self::Unavailable(_) => None,
+        }
+    }
+
+    /// Returns a degraded-state message, if one should be surfaced.
+    pub fn degraded_message(&self) -> Option<&str> {
+        match self {
+            Self::Partial { errors, .. } => errors.first().map(String::as_str),
+            Self::Stale { message, .. } | Self::Unavailable(message) => Some(message),
+            Self::Loading | Self::Ready(_) | Self::EmptyVerified => None,
+        }
+    }
+
+    /// Returns `true` when refreshing should replace the section with a loading row.
+    pub fn should_show_loading(&self) -> bool {
+        self.work_items().is_none_or(<[WorkItem]>::is_empty)
+    }
+
+    /// Returns stale data when a last-known result exists, or unavailable otherwise.
+    #[must_use]
+    pub fn stale_or_unavailable(&self, message: String) -> Self {
+        match self {
+            Self::Ready(work_items)
+            | Self::Partial { work_items, .. }
+            | Self::Stale { work_items, .. } => Self::Stale {
+                work_items: work_items.clone(),
+                message,
+            },
+            Self::EmptyVerified => Self::Stale {
+                work_items: Vec::new(),
+                message,
+            },
+            Self::Loading | Self::Unavailable(_) => Self::Unavailable(message),
+        }
+    }
 }
 
 /// Represents the dashboard pinned-work-items section state.
@@ -320,94 +788,206 @@ pub enum PinnedWorkItemsState {
     #[default]
     Loading,
     Ready(Vec<WorkItem>),
+    Partial {
+        work_items: Vec<WorkItem>,
+        errors: Vec<String>,
+    },
+    Stale {
+        work_items: Vec<WorkItem>,
+        message: String,
+    },
     Unavailable(String),
 }
 
-/// Holds the central application state, including views, data, and configuration.
-pub struct App {
+impl PinnedWorkItemsState {
+    /// Returns the availability status represented by this section state.
+    pub fn status(&self) -> AvailabilityStatus {
+        match self {
+            Self::Loading | Self::Unavailable(_) => AvailabilityStatus::Unavailable,
+            Self::Ready(_) => AvailabilityStatus::Fresh,
+            Self::Partial { .. } => AvailabilityStatus::Partial,
+            Self::Stale { .. } => AvailabilityStatus::Stale,
+        }
+    }
+
+    /// Returns work item data when the section has a usable last-known result.
+    pub fn work_items(&self) -> Option<&[WorkItem]> {
+        match self {
+            Self::Ready(work_items)
+            | Self::Partial { work_items, .. }
+            | Self::Stale { work_items, .. } => Some(work_items),
+            Self::Loading | Self::Unavailable(_) => None,
+        }
+    }
+
+    /// Returns a degraded-state message, if one should be surfaced.
+    pub fn degraded_message(&self) -> Option<&str> {
+        match self {
+            Self::Partial { errors, .. } => errors.first().map(String::as_str),
+            Self::Stale { message, .. } | Self::Unavailable(message) => Some(message),
+            Self::Loading | Self::Ready(_) => None,
+        }
+    }
+
+    /// Returns `true` when refreshing should replace the section with a loading row.
+    pub fn should_show_loading(&self) -> bool {
+        self.work_items().is_none_or(<[WorkItem]>::is_empty)
+    }
+
+    /// Returns stale data when a last-known result exists, or unavailable otherwise.
+    #[must_use]
+    pub fn stale_or_unavailable(&self, message: String) -> Self {
+        match self {
+            Self::Ready(work_items)
+            | Self::Partial { work_items, .. }
+            | Self::Stale { work_items, .. } => Self::Stale {
+                work_items: work_items.clone(),
+                message,
+            },
+            Self::Loading | Self::Unavailable(_) => Self::Unavailable(message),
+        }
+    }
+}
+
+/// Groups all per-view component states.
+#[derive(Default)]
+pub struct ViewStates {
+    pub dashboard: crate::components::dashboard::Dashboard,
+    pub build_history: crate::components::build_history::BuildHistory,
+    pub log_viewer: LogViewer,
+    pub active_runs: crate::components::active_runs::ActiveRuns,
+    pub pipelines: crate::components::pipelines::Pipelines,
+    pub pull_requests: crate::components::pull_requests::PullRequests,
+    pub pull_request_detail: crate::components::pull_request_detail::PullRequestDetail,
+    pub dashboard_pull_requests: DashboardPullRequestsState,
+    pub dashboard_work_items: DashboardWorkItemsState,
+    pub pinned_work_items: PinnedWorkItemsState,
+    pub boards: crate::components::boards::Boards,
+    pub my_work_items: crate::components::my_work_items::MyWorkItems,
+    pub work_item_detail: crate::components::work_item_detail::WorkItemDetail,
+}
+
+/// Stores refresh, effect, and notification-diff state.
+pub struct RefreshEffectState {
+    pub last_refresh: Option<DateTime<Utc>>,
+    pub loading: bool,
+    pub data_refresh: crate::shared::refresh::RefreshState,
+    pub log_refresh: crate::shared::refresh::RefreshState,
+    pub effects: effects::EffectManager,
+    /// Tracks the most recent pagination progress from long-running list
+    /// operations. Cleared when the operation completes.
+    pub pagination_status: Option<PaginationStatus>,
+    pub refresh_interval: Duration,
+    pub log_refresh_interval: Duration,
+    pub max_log_lines: usize,
+    pub notifications_enabled: bool,
+    /// Stores the previous snapshot of (build_id, status, result) per definition,
+    /// used to detect state changes between data refreshes.
+    pub prev_latest_builds: BTreeMap<u32, (u32, BuildStatus, Option<BuildResult>)>,
+}
+
+impl RefreshEffectState {
+    /// Creates refresh and effect state from display and notification settings.
+    pub fn from_config(config: &crate::config::Config) -> Self {
+        Self {
+            last_refresh: None,
+            loading: false,
+            data_refresh: crate::shared::refresh::RefreshState::default(),
+            log_refresh: crate::shared::refresh::RefreshState::default(),
+            effects: effects::EffectManager::default(),
+            pagination_status: None,
+            refresh_interval: Duration::from_secs(config.devops.display.refresh_interval_secs),
+            log_refresh_interval: Duration::from_secs(
+                config.devops.display.log_refresh_interval_secs,
+            ),
+            max_log_lines: config.devops.display.max_log_lines,
+            notifications_enabled: config.devops.notifications.enabled,
+            prev_latest_builds: BTreeMap::new(),
+        }
+    }
+}
+
+/// Stores shell selection, overlays, notifications, and view state.
+pub struct ShellUiState {
     pub service: Service,
     pub view: View,
     pub search: SearchState,
     pub running: bool,
     pub show_help: bool,
     pub show_settings: bool,
-    pub org_project_label: String,
-    endpoints: Endpoints,
-    pub config_path: std::path::PathBuf,
-
-    // --- Filters ---
-    pub filters: FilterConfig,
-
-    // --- Data ---
-    pub data: CoreData,
-
-    // --- Dashboard ---
-    pub dashboard: crate::components::dashboard::Dashboard,
-
-    // --- Build History ---
-    pub build_history: crate::components::build_history::BuildHistory,
-
-    // --- Log Viewer ---
-    pub log_viewer: LogViewer,
-
-    // --- Confirmation ---
     pub confirm_prompt: Option<ConfirmPrompt>,
-
-    // --- Active Runs ---
-    pub active_runs: crate::components::active_runs::ActiveRuns,
-
-    // --- Pipelines ---
-    pub pipelines: crate::components::pipelines::Pipelines,
-
-    // --- Pull Requests ---
-    pub pull_requests: crate::components::pull_requests::PullRequests,
-    pub pull_request_detail: crate::components::pull_request_detail::PullRequestDetail,
-    pub current_user: ExactUserIdentity,
-    pub dashboard_pull_requests: DashboardPullRequestsState,
-    pub dashboard_work_items: DashboardWorkItemsState,
-    pub pinned_work_items: PinnedWorkItemsState,
-
-    // --- Boards ---
-    pub boards: crate::components::boards::Boards,
-    pub my_work_items: crate::components::my_work_items::MyWorkItems,
-    pub work_item_detail: crate::components::work_item_detail::WorkItemDetail,
-
-    // --- Retention Leases ---
-    pub retention_leases: RetentionLeasesState,
-
-    // --- Settings ---
     pub settings: Option<settings::SettingsState>,
-
-    // --- Components ---
     pub header: crate::components::header::Header,
     pub help: crate::components::help::Help,
     pub settings_component: crate::components::settings::Settings,
-
-    // --- Status ---
-    pub last_refresh: Option<DateTime<Utc>>,
     pub notifications: Notifications,
-    pub loading: bool,
-    pub data_refresh: crate::shared::refresh::RefreshState,
-    pub log_refresh: crate::shared::refresh::RefreshState,
-    /// Tracks the most recent pagination progress from long-running list
-    /// operations. Cleared when the operation completes.
-    pub pagination_status: Option<PaginationStatus>,
-
-    // --- Refresh Timing ---
-    pub refresh_interval: Duration,
-    pub log_refresh_interval: Duration,
-
-    // --- Log Viewer ---
-    pub max_log_lines: usize,
-
-    // --- Reload ---
     pub reload_requested: bool,
+    pub views: ViewStates,
+}
 
-    // --- State-Change Notifications ---
-    pub notifications_enabled: bool,
-    /// Stores the previous snapshot of (build_id, status, result) per definition,
-    /// used to detect state changes between data refreshes.
-    pub prev_latest_builds: BTreeMap<u32, (u32, BuildStatus, Option<BuildResult>)>,
+impl ShellUiState {
+    /// Creates the default shell state for a newly-started app.
+    pub fn new() -> Self {
+        Self {
+            service: Service::Dashboard,
+            view: View::Dashboard,
+            search: SearchState::default(),
+            running: true,
+            show_help: false,
+            show_settings: false,
+            confirm_prompt: None,
+            settings: None,
+            header: crate::components::header::Header,
+            help: crate::components::help::Help,
+            settings_component: crate::components::settings::Settings,
+            notifications: Notifications::new(10),
+            reload_requested: false,
+            views: ViewStates::default(),
+        }
+    }
+}
+
+impl Default for ShellUiState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for ShellUiState {
+    type Target = ViewStates;
+
+    fn deref(&self) -> &Self::Target {
+        &self.views
+    }
+}
+
+impl DerefMut for ShellUiState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.views
+    }
+}
+
+/// Holds the central application state, including views, data, and configuration.
+pub struct App {
+    pub connection: ConnectionState,
+    pub config_path: std::path::PathBuf,
+    pub core: CoreDataStore,
+    pub refresh: RefreshEffectState,
+    pub shell: ShellUiState,
+}
+
+impl Deref for App {
+    type Target = ShellUiState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.shell
+    }
+}
+
+impl DerefMut for App {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.shell
+    }
 }
 
 impl App {
@@ -418,108 +998,46 @@ impl App {
         config_path: std::path::PathBuf,
     ) -> Self {
         Self {
-            service: Service::Dashboard,
-            view: View::Dashboard,
-            search: SearchState::default(),
-            running: true,
-            show_help: false,
-            show_settings: false,
-            org_project_label: format!("{organization} / {project}"),
-            endpoints: Endpoints::new(organization, project),
+            connection: ConnectionState::new(organization, project, DEFAULT_API_VERSION),
             config_path,
-            filters: FilterConfig {
-                folders: config.devops.filters.folders.clone(),
-                definition_ids: config.devops.filters.definition_ids.clone(),
-                pinned_definition_ids: config.devops.filters.pinned_definition_ids.clone(),
-                pinned_work_item_ids: config.devops.filters.pinned_work_item_ids.clone(),
-            },
-
-            data: CoreData::default(),
-
-            dashboard: crate::components::dashboard::Dashboard::default(),
-
-            build_history: crate::components::build_history::BuildHistory::default(),
-
-            log_viewer: LogViewer::default(),
-
-            confirm_prompt: None,
-
-            active_runs: crate::components::active_runs::ActiveRuns::default(),
-
-            pipelines: crate::components::pipelines::Pipelines::default(),
-
-            pull_requests: crate::components::pull_requests::PullRequests::default(),
-            pull_request_detail: crate::components::pull_request_detail::PullRequestDetail::default(
-            ),
-            current_user: ExactUserIdentity::default(),
-            dashboard_pull_requests: DashboardPullRequestsState::Loading,
-            dashboard_work_items: DashboardWorkItemsState::Loading,
-            pinned_work_items: PinnedWorkItemsState::Loading,
-            boards: crate::components::boards::Boards::default(),
-            my_work_items: crate::components::my_work_items::MyWorkItems::default(),
-            work_item_detail: crate::components::work_item_detail::WorkItemDetail::default(),
-
-            retention_leases: RetentionLeasesState::default(),
-
-            settings: None,
-
-            header: crate::components::header::Header,
-            help: crate::components::help::Help,
-            settings_component: crate::components::settings::Settings,
-
-            last_refresh: None,
-            notifications: Notifications::new(10),
-            loading: false,
-            data_refresh: crate::shared::refresh::RefreshState::default(),
-            log_refresh: crate::shared::refresh::RefreshState::default(),
-            pagination_status: None,
-
-            refresh_interval: Duration::from_secs(config.devops.display.refresh_interval_secs),
-            log_refresh_interval: Duration::from_secs(
-                config.devops.display.log_refresh_interval_secs,
-            ),
-
-            max_log_lines: config.devops.display.max_log_lines,
-
-            reload_requested: false,
-
-            notifications_enabled: config.devops.notifications.enabled,
-            prev_latest_builds: BTreeMap::new(),
+            core: CoreDataStore::from_config(config),
+            refresh: RefreshEffectState::from_config(config),
+            shell: ShellUiState::new(),
         }
     }
 
     /// Overrides the REST API version used by this app's endpoint URL builders.
     pub fn set_api_version(&mut self, api_version: &str) {
-        self.endpoints.set_api_version(api_version);
+        self.connection.set_api_version(api_version);
     }
 
     /// Rebuilds the Pipelines view from current state.
     pub fn rebuild_pipelines(&mut self) {
-        self.pipelines.rebuild(
-            &self.data.definitions,
-            &self.data.latest_builds_by_def,
-            &self.filters.folders,
-            &self.filters.definition_ids,
-            &self.filters.pinned_definition_ids,
-            &self.search.query,
+        self.shell.views.pipelines.rebuild(
+            &self.core.data.definitions,
+            &self.core.data.latest_builds_by_def,
+            &self.core.filters.folders,
+            &self.core.filters.definition_ids,
+            &self.core.filters.pinned_definition_ids,
+            &self.shell.search.query,
         );
     }
 
     /// Rebuilds the Dashboard view from current state.
     pub fn rebuild_dashboard(&mut self) {
-        self.dashboard.rebuild(
-            &self.data.definitions,
-            &self.data.latest_builds_by_def,
-            &self.filters.pinned_definition_ids,
-            &self.dashboard_pull_requests,
-            &self.dashboard_work_items,
-            &self.pinned_work_items,
+        self.shell.views.dashboard.rebuild_with_availability(
+            &self.core.data.definitions,
+            &self.core.filters.pinned_definition_ids,
+            &self.shell.views.dashboard_pull_requests,
+            &self.shell.views.dashboard_work_items,
+            &self.shell.views.pinned_work_items,
+            &self.core.availability,
         );
     }
 
     /// Rebuilds the Boards view from current state.
     pub fn rebuild_boards(&mut self) {
-        self.boards.rebuild(&self.search.query);
+        self.shell.views.boards.rebuild(&self.shell.search.query);
     }
 
     fn build_history_root_view(&self) -> View {
@@ -592,6 +1110,7 @@ impl App {
         self.reset_build_history();
         self.reset_pull_request_detail();
         self.reset_work_item_detail();
+        self.cancel_inactive_effects(view);
 
         self.service = view.service();
         self.view = view;
@@ -599,18 +1118,22 @@ impl App {
         match view {
             View::Dashboard => self.rebuild_dashboard(),
             View::Pipelines => self.rebuild_pipelines(),
-            View::ActiveRuns => self.active_runs.rebuild(
-                &self.data.active_builds,
-                &self.filters.definition_ids,
-                &self.search.query,
+            View::ActiveRuns => self.shell.views.active_runs.rebuild(
+                &self.core.data.active_builds,
+                &self.core.filters.definition_ids,
+                &self.shell.search.query,
             ),
             View::PullRequestsCreatedByMe
             | View::PullRequestsAssignedToMe
-            | View::PullRequestsAllActive => self.pull_requests.rebuild(&self.search.query),
+            | View::PullRequestsAllActive => self
+                .shell
+                .views
+                .pull_requests
+                .rebuild(&self.shell.search.query),
             View::Boards => self.rebuild_boards(),
             View::BoardsAssignedToMe | View::BoardsCreatedByMe => {
-                if let Some(list) = self.my_work_items.list_for_mut(view) {
-                    list.rebuild(&self.search.query);
+                if let Some(list) = self.shell.views.my_work_items.list_for_mut(view) {
+                    list.rebuild(&self.shell.search.query);
                 }
             }
             View::BuildHistory
@@ -638,6 +1161,7 @@ impl App {
     }
 
     fn reset_build_history(&mut self) {
+        self.cancel_effect(effects::EffectKind::BuildHistoryRefresh);
         self.build_history.selected_definition = None;
         self.build_history.builds.clear();
         self.build_history.selected.clear();
@@ -650,17 +1174,45 @@ impl App {
     }
 
     fn reset_log_viewer(&mut self) {
+        self.cancel_effect(effects::EffectKind::TimelineFetch);
+        self.cancel_effect(effects::EffectKind::LogFetch);
+        self.cancel_effect(effects::EffectKind::LogRefresh);
         let next_gen = self.log_viewer.generation() + 1;
         self.log_viewer = LogViewer::default();
         self.log_viewer.set_generation(next_gen);
     }
 
+    fn cancel_inactive_effects(&mut self, view: View) {
+        for kind in effects::EffectKind::VIEW_SCOPED {
+            if !kind.is_active_for_view(view) {
+                self.cancel_effect(kind);
+            }
+        }
+    }
+
+    fn cancel_effect(&mut self, kind: effects::EffectKind) {
+        let cancelled = self.refresh.effects.cancel(kind);
+        if kind == effects::EffectKind::LogRefresh && self.refresh.log_refresh.in_flight {
+            self.refresh.log_refresh.cancel();
+        }
+
+        if let Some(metadata) = cancelled {
+            tracing::debug!(
+                ?kind,
+                generation = ?metadata.generation,
+                "cancelled view-scoped background effect"
+            );
+        }
+    }
+
     fn reset_pull_request_detail(&mut self) {
+        self.cancel_effect(effects::EffectKind::PullRequestDetail);
         self.pull_request_detail =
             crate::components::pull_request_detail::PullRequestDetail::default();
     }
 
     fn reset_work_item_detail(&mut self) {
+        self.cancel_effect(effects::EffectKind::WorkItemDetail);
         self.work_item_detail = crate::components::work_item_detail::WorkItemDetail::default();
     }
 
@@ -697,6 +1249,7 @@ impl App {
                     self.view = return_to;
                     self.reset_build_history();
                 }
+                self.cancel_inactive_effects(self.view);
             }
             View::BuildHistory => {
                 let return_to = self.build_history.return_to.unwrap_or(View::Dashboard);
@@ -704,6 +1257,7 @@ impl App {
                 self.service = return_to.service();
                 self.view = return_to;
                 self.reset_build_history();
+                self.cancel_inactive_effects(self.view);
             }
             View::PullRequestDetail => {
                 let return_to = self.pull_request_detail_root_view();
@@ -711,6 +1265,7 @@ impl App {
                 self.service = Service::Repos;
                 self.view = return_to;
                 self.reset_pull_request_detail();
+                self.cancel_inactive_effects(self.view);
             }
             View::WorkItemDetail => {
                 let return_to = self.work_item_detail_root_view();
@@ -718,6 +1273,7 @@ impl App {
                 self.service = Service::Boards;
                 self.view = return_to;
                 self.reset_work_item_detail();
+                self.cancel_inactive_effects(self.view);
             }
             _ => {}
         }
@@ -729,6 +1285,7 @@ impl App {
             definition_name = &*def.name,
             "navigating to build history"
         );
+        self.cancel_inactive_effects(View::BuildHistory);
         self.service = Service::Pipelines;
         self.build_history.return_to = Some(self.view);
         self.build_history.selected_definition = Some(def);
@@ -742,17 +1299,26 @@ impl App {
 
     pub fn navigate_to_log_viewer(&mut self, build: Build) {
         tracing::info!(build_id = build.id, "navigating to log viewer");
+        self.cancel_effect(effects::EffectKind::TimelineFetch);
+        self.cancel_effect(effects::EffectKind::LogFetch);
+        self.cancel_effect(effects::EffectKind::LogRefresh);
+        self.cancel_inactive_effects(View::LogViewer);
         let return_to = self.view;
         self.service = return_to.service();
         let next_gen = self.log_viewer.generation() + 1;
-        self.log_viewer =
-            LogViewer::new_for_build_with_cap(build, return_to, next_gen, self.max_log_lines);
+        self.log_viewer = LogViewer::new_for_build_with_cap(
+            build,
+            return_to,
+            next_gen,
+            self.refresh.max_log_lines,
+        );
         self.view = View::LogViewer;
     }
 
     /// Navigates to the pull request detail view for the given PR.
     pub fn navigate_to_pr_detail(&mut self, pr: &crate::client::models::PullRequest) {
         tracing::info!(pr_id = pr.pull_request_id, "navigating to PR detail");
+        self.cancel_inactive_effects(View::PullRequestDetail);
         let return_to = if self.view.is_pull_requests() {
             Some(self.view)
         } else {
@@ -774,6 +1340,7 @@ impl App {
     /// back navigation returns the user where they came from.
     pub fn navigate_to_work_item_detail(&mut self, work_item_id: u32) {
         tracing::info!(work_item_id, "navigating to work item detail");
+        self.cancel_inactive_effects(View::WorkItemDetail);
         let return_to = match self.view {
             View::Boards | View::BoardsAssignedToMe | View::BoardsCreatedByMe => Some(self.view),
             _ => Some(View::Boards),
@@ -809,21 +1376,21 @@ impl App {
     }
 
     pub fn endpoints_web_build(&self, build_id: u32) -> String {
-        self.endpoints.web_build(build_id)
+        self.connection.endpoints.web_build(build_id)
     }
 
     pub fn endpoints_web_definition(&self, definition_id: u32) -> String {
-        self.endpoints.web_definition(definition_id)
+        self.connection.endpoints.web_definition(definition_id)
     }
 
     /// Constructs the web portal URL for viewing a pull request.
     pub fn endpoints_web_pull_request(&self, repo_name: &str, pr_id: u32) -> String {
-        self.endpoints.web_pull_request(repo_name, pr_id)
+        self.connection.endpoints.web_pull_request(repo_name, pr_id)
     }
 
     /// Constructs the web portal URL for viewing a work item.
     pub fn endpoints_web_work_item(&self, work_item_id: u32) -> String {
-        self.endpoints.web_work_item(work_item_id)
+        self.connection.endpoints.web_work_item(work_item_id)
     }
 
     /// Builds a snapshot `Config` reflecting the current runtime state.
@@ -833,29 +1400,20 @@ impl App {
             schema_version: Some(crate::config::CURRENT_SCHEMA_VERSION),
             devops: crate::config::DevOpsConfig {
                 connection: crate::config::ConnectionConfig {
-                    organization: self
-                        .org_project_label
-                        .split(" / ")
-                        .next()
-                        .unwrap_or("")
-                        .to_string(),
-                    project: self
-                        .org_project_label
-                        .split(" / ")
-                        .nth(1)
-                        .unwrap_or("")
-                        .to_string(),
+                    organization: self.connection.organization.clone(),
+                    project: self.connection.project.clone(),
+                    timeouts: crate::config::ConnectionTimeoutConfig::default(),
                 },
                 filters: crate::config::FiltersConfig {
-                    folders: self.filters.folders.clone(),
-                    definition_ids: self.filters.definition_ids.clone(),
-                    pinned_definition_ids: self.filters.pinned_definition_ids.clone(),
-                    pinned_work_item_ids: self.filters.pinned_work_item_ids.clone(),
+                    folders: self.core.filters.folders.clone(),
+                    definition_ids: self.core.filters.definition_ids.clone(),
+                    pinned_definition_ids: self.core.filters.pinned_definition_ids.clone(),
+                    pinned_work_item_ids: self.core.filters.pinned_work_item_ids.clone(),
                 },
                 update: crate::config::UpdateConfig::default(),
                 logging: crate::config::LoggingConfig::default(),
                 notifications: crate::config::NotificationsConfig {
-                    enabled: self.notifications_enabled,
+                    enabled: self.refresh.notifications_enabled,
                 },
                 display: crate::config::DisplayConfig::default(),
             },
@@ -879,11 +1437,32 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use std::future;
     use std::path::PathBuf;
+    use std::time::Duration;
 
     use super::*;
     use crate::client::models::*;
     use crate::test_helpers::*;
+    use tokio::sync::oneshot;
+
+    struct DropSignal(Option<oneshot::Sender<()>>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            if let Some(tx) = self.0.take() {
+                let _ = tx.send(());
+            }
+        }
+    }
+
+    fn pending_effect(tx: oneshot::Sender<()>) -> tokio::task::JoinHandle<()> {
+        let signal = DropSignal(Some(tx));
+        tokio::spawn(async move {
+            let _signal = signal;
+            future::pending::<()>().await;
+        })
+    }
 
     #[test]
     fn new_app_starts_on_dashboard() {
@@ -897,7 +1476,61 @@ mod tests {
         assert_eq!(app.view, View::Dashboard);
         assert!(app.running);
         assert!(!app.show_help);
-        assert_eq!(app.org_project_label, "org / proj");
+        assert_eq!(app.connection.organization, "org");
+        assert_eq!(app.connection.project, "proj");
+        assert_eq!(app.connection.api_version, DEFAULT_API_VERSION);
+        assert_eq!(app.connection.display_label(), "org / proj");
+    }
+
+    #[test]
+    fn set_api_version_updates_connection_metadata() {
+        let mut app = App::new(
+            "org",
+            "proj",
+            &make_config(),
+            PathBuf::from("target/test.toml"),
+        );
+
+        app.set_api_version("8.0-preview.2");
+
+        assert_eq!(app.connection.api_version, "8.0-preview.2");
+    }
+
+    #[test]
+    fn new_app_initializes_nested_state_groups() {
+        let config = make_config();
+        let app = App::new("org", "proj", &config, PathBuf::from("target/test.toml"));
+
+        assert_eq!(app.shell.view, View::Dashboard);
+        assert_eq!(app.core.filters.folders, config.devops.filters.folders);
+        assert_eq!(
+            app.refresh.max_log_lines,
+            config.devops.display.max_log_lines
+        );
+        assert_eq!(app.connection.metadata.organization, "org");
+        assert!(matches!(
+            &app.views.dashboard_pull_requests,
+            DashboardPullRequestsState::Loading
+        ));
+    }
+
+    #[test]
+    fn current_config_uses_structured_connection_metadata() {
+        let app = App::new(
+            "org / division",
+            "proj / area",
+            &make_config(),
+            PathBuf::from("target/test.toml"),
+        );
+
+        let config = app.current_config();
+
+        assert_eq!(config.devops.connection.organization, "org / division");
+        assert_eq!(config.devops.connection.project, "proj / area");
+        assert_eq!(
+            app.connection.display_label(),
+            "org / division / proj / area"
+        );
     }
 
     #[test]
@@ -1094,7 +1727,8 @@ mod tests {
         ]);
         app.boards.root_ids = vec![1, 3];
         app.search.query = "needle".to_string();
-        app.boards.rebuild(&app.search.query);
+        let query = app.search.query.clone();
+        app.boards.rebuild(&query);
 
         assert_eq!(app.boards.rows.len(), 2);
 
@@ -1142,6 +1776,73 @@ mod tests {
         assert_eq!(
             app.endpoints_web_definition(10),
             "https://dev.azure.com/myorg/myproj/_build?definitionId=10"
+        );
+    }
+
+    #[tokio::test]
+    async fn activate_root_view_cancels_inactive_effects() {
+        let mut app = make_app();
+        let (tx, rx) = oneshot::channel();
+        let _ = app.refresh.effects.track(
+            effects::EffectKind::PullRequestsRefresh,
+            Some(1),
+            pending_effect(tx),
+        );
+
+        app.activate_root_view(View::Dashboard);
+
+        tokio::time::timeout(Duration::from_secs(1), rx)
+            .await
+            .expect("inactive effect was not aborted")
+            .expect("drop signal was not delivered");
+        assert!(
+            !app.refresh
+                .effects
+                .is_running(effects::EffectKind::PullRequestsRefresh)
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_log_refresh_effect_clears_in_flight_state() {
+        let mut app = make_app();
+        assert!(app.refresh.log_refresh.start());
+        let (tx, rx) = oneshot::channel();
+        let _ =
+            app.refresh
+                .effects
+                .track(effects::EffectKind::LogRefresh, Some(1), pending_effect(tx));
+
+        app.activate_root_view(View::Dashboard);
+
+        tokio::time::timeout(Duration::from_secs(1), rx)
+            .await
+            .expect("log refresh effect was not aborted")
+            .expect("drop signal was not delivered");
+        assert!(!app.refresh.log_refresh.in_flight);
+        assert_eq!(app.refresh.log_refresh.failures, 0);
+    }
+
+    #[tokio::test]
+    async fn go_back_cancels_detail_effects() {
+        let mut app = make_app();
+        app.view = View::PullRequestDetail;
+        let (tx, rx) = oneshot::channel();
+        let _ = app.refresh.effects.track(
+            effects::EffectKind::PullRequestDetail,
+            None,
+            pending_effect(tx),
+        );
+
+        app.go_back();
+
+        tokio::time::timeout(Duration::from_secs(1), rx)
+            .await
+            .expect("detail effect was not aborted")
+            .expect("drop signal was not delivered");
+        assert!(
+            !app.refresh
+                .effects
+                .is_running(effects::EffectKind::PullRequestDetail)
         );
     }
 }

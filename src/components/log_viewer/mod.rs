@@ -21,7 +21,17 @@ use crate::render::helpers::{
     checkpoint_status_icon, draw_view_frame, row_style, timeline_status_icon, view_block,
 };
 use crate::render::theme;
+use crate::shared::log_buffer::LogBuffer;
 use crate::state::App;
+
+const LOG_OVERSCAN_LINES: usize = 8;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VisibleLogWindow {
+    start: usize,
+    end: usize,
+    scroll: u16,
+}
 
 /// Draws the log viewer. This is a free function rather than a method on `LogViewer`
 /// because it needs `&mut App` (for `set_layout_areas` mouse hit-testing state)
@@ -197,40 +207,82 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             .block(log_block(title, app.log_viewer.is_following()));
         f.render_widget(hint, area);
     } else {
-        let dropped = app.log_viewer.log_content().dropped();
-        let mut lines: Vec<Line> =
-            Vec::with_capacity(app.log_viewer.log_content().len() + usize::from(dropped > 0));
-        if dropped > 0 {
-            lines.push(Line::styled(
-                format!("… {dropped} earlier line(s) dropped (buffer limit)"),
-                theme::MUTED,
-            ));
-        }
-        lines.extend(
-            app.log_viewer
-                .log_content()
-                .iter()
-                .map(|l| Line::styled(l.as_str(), theme::TEXT)),
+        let log_content = app.log_viewer.log_content();
+        let dropped = log_content.dropped();
+        let total_lines = log_content.len() + usize::from(dropped > 0);
+        let visible_height = area.height.saturating_sub(2);
+        let window = visible_log_window(
+            total_lines,
+            visible_height,
+            app.log_viewer.log_scroll_offset(),
+            app.log_viewer.log_auto_scroll(),
         );
-
-        let total_lines = lines.len() as u32;
-        let visible_height = u32::from(area.height.saturating_sub(2));
-        let max_scroll = total_lines.saturating_sub(visible_height);
-
-        let scroll_offset_u32 = if app.log_viewer.log_auto_scroll() {
-            max_scroll
-        } else {
-            app.log_viewer.log_scroll_offset().min(max_scroll)
-        };
-        let scroll_offset = scroll_offset_u32.min(u32::from(u16::MAX)) as u16;
+        let lines = visible_log_lines(log_content, dropped, window);
 
         let log = Paragraph::new(Text::from(lines))
             .style(theme::TEXT)
             .block(log_block(title, app.log_viewer.is_following()))
             .wrap(Wrap { trim: false })
-            .scroll((scroll_offset, 0));
+            .scroll((window.scroll, 0));
         f.render_widget(log, area);
     }
+}
+
+fn visible_log_window(
+    total_lines: usize,
+    visible_height: u16,
+    requested_scroll: u32,
+    auto_scroll: bool,
+) -> VisibleLogWindow {
+    let visible_height = usize::from(visible_height);
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let requested_scroll = usize::try_from(requested_scroll).unwrap_or(usize::MAX);
+    let scroll = if auto_scroll {
+        max_scroll
+    } else {
+        requested_scroll.min(max_scroll)
+    };
+    let start = scroll.saturating_sub(LOG_OVERSCAN_LINES);
+    let local_scroll = scroll - start;
+    let len = local_scroll
+        .saturating_add(visible_height)
+        .saturating_add(LOG_OVERSCAN_LINES);
+    let end = start.saturating_add(len).min(total_lines);
+
+    VisibleLogWindow {
+        start,
+        end,
+        scroll: local_scroll.min(usize::from(u16::MAX)) as u16,
+    }
+}
+
+fn visible_log_lines(
+    log_content: &LogBuffer,
+    dropped: u64,
+    window: VisibleLogWindow,
+) -> Vec<Line<'_>> {
+    let has_drop_banner = dropped > 0;
+    let banner_lines = usize::from(has_drop_banner);
+    let mut lines = Vec::with_capacity(window.end.saturating_sub(window.start));
+
+    if has_drop_banner && window.start == 0 && window.end > 0 {
+        lines.push(Line::styled(
+            format!("… {dropped} earlier line(s) dropped (buffer limit)"),
+            theme::MUTED,
+        ));
+    }
+
+    let content_start = window.start.saturating_sub(banner_lines);
+    let content_end = window.end.saturating_sub(banner_lines);
+    if content_end > content_start {
+        lines.extend(
+            log_content
+                .window(content_start, content_end - content_start)
+                .map(|line| Line::styled(line, theme::TEXT)),
+        );
+    }
+
+    lines
 }
 
 fn log_block<'a>(title: String, is_following: bool) -> ratatui::widgets::Block<'a> {
@@ -486,6 +538,91 @@ mod tests {
         // Scroll offset is reset on replace regardless of truncation.
         assert_eq!(state.log_scroll_offset(), 0);
         assert!(state.log_auto_scroll());
+    }
+
+    #[test]
+    fn visible_log_window_auto_scrolls_to_tail_with_overscan() {
+        let window = visible_log_window(1_000, 20, 0, true);
+
+        assert_eq!(window.start, 972);
+        assert_eq!(window.end, 1_000);
+        assert_eq!(window.scroll, LOG_OVERSCAN_LINES as u16);
+        assert!(window.end - window.start <= 20 + (LOG_OVERSCAN_LINES * 2));
+    }
+
+    #[test]
+    fn visible_log_window_uses_manual_scroll_with_overscan() {
+        let window = visible_log_window(1_000, 20, 500, false);
+
+        assert_eq!(window.start, 492);
+        assert_eq!(window.end, 528);
+        assert_eq!(window.scroll, LOG_OVERSCAN_LINES as u16);
+        assert_eq!(window.end - window.start, 20 + (LOG_OVERSCAN_LINES * 2));
+    }
+
+    #[test]
+    fn visible_log_window_clamps_manual_scroll_to_tail() {
+        let window = visible_log_window(25, 20, 999, false);
+
+        assert_eq!(window.start, 0);
+        assert_eq!(window.end, 25);
+        assert_eq!(window.scroll, 5);
+    }
+
+    #[test]
+    fn visible_log_window_bounds_work_for_very_large_logs() {
+        let visible_height = 20;
+        let windows = [
+            visible_log_window(1_000_000, visible_height, 0, true),
+            visible_log_window(1_000_000, visible_height, 500_000, false),
+            visible_log_window(usize::MAX, visible_height, u32::MAX, false),
+        ];
+
+        for window in windows {
+            assert!(window.end >= window.start);
+            assert!(
+                window.end - window.start <= usize::from(visible_height) + (LOG_OVERSCAN_LINES * 2)
+            );
+        }
+    }
+
+    #[test]
+    fn visible_log_lines_maps_drop_banner_and_content_window() {
+        use crate::shared::log_buffer::{LogBuffer, MIN_CAPACITY};
+
+        let mut buffer = LogBuffer::new(MIN_CAPACITY);
+        buffer.replace_from_str("line-a\nline-b\nline-c");
+
+        let first_window = VisibleLogWindow {
+            start: 0,
+            end: 2,
+            scroll: 0,
+        };
+        let first_lines: Vec<String> = visible_log_lines(&buffer, 7, first_window)
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            first_lines,
+            vec![
+                "… 7 earlier line(s) dropped (buffer limit)".to_string(),
+                "line-a".to_string()
+            ]
+        );
+
+        let content_window = VisibleLogWindow {
+            start: 2,
+            end: 4,
+            scroll: 0,
+        };
+        let content_lines: Vec<String> = visible_log_lines(&buffer, 7, content_window)
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            content_lines,
+            vec!["line-b".to_string(), "line-c".to_string()]
+        );
     }
 
     // --- Group 2: Timeline tree building tests ---

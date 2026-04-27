@@ -1,22 +1,71 @@
 //! Dispatches user actions to state mutations and async tasks.
 
+use std::future::Future;
 use std::time::Instant;
 
 use tokio::sync::mpsc;
 
 use crate::client::http::AdoClient;
 use crate::events::Action;
+use crate::shared::concurrency::{API_FAN_OUT_LIMIT, for_each_bounded};
 
 use super::super::App;
 use super::super::TimelineRow;
 use super::super::View;
-use super::super::messages::AppMessage;
+use super::super::messages::{AppMessage, RefreshSource};
 use super::spawn::{
-    open_url, spawn_api, spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_boards,
-    spawn_fetch_dashboard_pull_requests, spawn_fetch_dashboard_work_items,
+    open_url, send_app_message, spawn_api, spawn_api_with_error, spawn_build_history_fetch,
+    spawn_build_history_more_fetch, spawn_build_history_refresh, spawn_data_refresh,
+    spawn_fetch_boards, spawn_fetch_dashboard_pull_requests, spawn_fetch_dashboard_work_items,
     spawn_fetch_my_work_items, spawn_fetch_pinned_work_items, spawn_fetch_pr_detail,
-    spawn_fetch_pull_requests, spawn_fetch_work_item_detail, spawn_log_fetch, spawn_timeline_fetch,
+    spawn_fetch_pull_requests, spawn_fetch_work_item_detail, spawn_log_fetch, spawn_named,
+    spawn_timeline_fetch,
 };
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct BatchMutationReport {
+    succeeded: u32,
+    failed: u32,
+}
+
+async fn run_batch_mutation_bounded<F, Fut>(
+    ids: Vec<u32>,
+    limit: usize,
+    operation: &'static str,
+    mut task: F,
+) -> BatchMutationReport
+where
+    F: FnMut(u32) -> Fut + Send,
+    Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
+{
+    let mut report = BatchMutationReport::default();
+
+    for_each_bounded(
+        ids,
+        limit,
+        move |id| {
+            let fut = task(id);
+            async move { (id, fut.await) }
+        },
+        |result| match result {
+            Ok((id, Ok(()))) => {
+                report.succeeded += 1;
+                tracing::trace!(operation, item_id = id, "batch mutation succeeded");
+            }
+            Ok((id, Err(error))) => {
+                report.failed += 1;
+                tracing::warn!(operation, item_id = id, %error, "batch mutation failed");
+            }
+            Err(error) => {
+                report.failed += 1;
+                tracing::warn!(operation, %error, "batch mutation task failed");
+            }
+        },
+    )
+    .await;
+
+    report
+}
 
 pub fn handle_action(
     app: &mut App,
@@ -29,7 +78,10 @@ pub fn handle_action(
         tracing::debug!(?action, "handle_action");
     }
     match action {
-        Action::Quit | Action::Reload => app.running = false,
+        Action::Quit | Action::Reload => {
+            app.refresh.effects.cancel_all();
+            app.running = false;
+        }
         Action::ForceRefresh => {
             if spawn_data_refresh(app, client, tx) {
                 *last_data_fetch = Instant::now();
@@ -53,17 +105,7 @@ pub fn handle_action(
         }
         Action::FetchBuildHistory(def_id) => {
             let generation = app.build_history.generation;
-            spawn_api(
-                client,
-                tx,
-                "Fetch builds",
-                move |c| async move { c.list_builds_for_definition(def_id).await },
-                move |(builds, continuation_token)| AppMessage::BuildHistory {
-                    builds,
-                    continuation_token,
-                    generation,
-                },
-            );
+            spawn_build_history_fetch(app, client, tx, def_id, None, generation);
         }
         Action::FetchMoreBuilds {
             definition_id,
@@ -71,26 +113,22 @@ pub fn handle_action(
         } => {
             app.build_history.loading_more = true;
             let generation = app.build_history.generation;
-            spawn_api(
+            spawn_build_history_more_fetch(
+                app,
                 client,
                 tx,
-                "Fetch more builds",
-                move |c| async move {
-                    c.list_builds_for_definition_continued(definition_id, &continuation_token)
-                        .await
-                },
-                move |(builds, continuation_token)| AppMessage::BuildHistoryMore {
-                    builds,
-                    continuation_token,
-                    generation,
-                },
+                definition_id,
+                continuation_token,
+                generation,
             );
         }
         Action::FetchTimeline(build_id) => {
-            spawn_timeline_fetch(client, tx, build_id, app.log_viewer.generation(), false);
+            let generation = app.log_viewer.generation();
+            spawn_timeline_fetch(app, client, tx, build_id, generation, false);
         }
         Action::FetchBuildLog { build_id, log_id } => {
-            spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
+            let generation = app.log_viewer.generation();
+            spawn_log_fetch(app, client, tx, build_id, log_id, generation);
         }
         Action::FollowLatest => {
             // Switch to follow mode: jump cursor to active task and fetch its log.
@@ -108,7 +146,9 @@ pub fn handle_action(
                 if let Some(log_id) = maybe_log_id {
                     app.log_viewer.set_followed(task_name, log_id);
                     if let Some(build) = app.log_viewer.selected_build() {
-                        spawn_log_fetch(client, tx, build.id, log_id, app.log_viewer.generation());
+                        let build_id = build.id;
+                        let generation = app.log_viewer.generation();
+                        spawn_log_fetch(app, client, tx, build_id, log_id, generation);
                     }
                 } else {
                     // In-progress task with no log yet — position cursor and wait.
@@ -120,7 +160,9 @@ pub fn handle_action(
             // Kick off a fresh timeline refresh so follow mode gets the latest data
             // instead of relying on the cached timeline (up to 5 seconds stale).
             if let Some(build) = app.log_viewer.selected_build() {
-                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
+                let build_id = build.id;
+                let generation = app.log_viewer.generation();
+                spawn_timeline_fetch(app, client, tx, build_id, generation, true);
             }
         }
         Action::OpenInBrowser(url) => {
@@ -139,24 +181,26 @@ pub fn handle_action(
         Action::CancelBuilds(build_ids) => {
             tracing::info!(count = build_ids.len(), "cancelling builds");
             let client = client.clone();
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                let mut set = tokio::task::JoinSet::new();
-                for &id in &build_ids {
-                    let client = client.clone();
-                    set.spawn(async move { client.cancel_build(id).await });
-                }
-                let mut cancelled = 0u32;
-                let mut failed = 0u32;
-                while let Some(result) = set.join_next().await {
-                    match result {
-                        Ok(Ok(())) => cancelled += 1,
-                        _ => failed += 1,
-                    }
-                }
-                let _ = tx
-                    .send(AppMessage::BuildsCancelled { cancelled, failed })
+            let task_tx = tx.clone();
+            spawn_named("cancel_builds", tx.clone(), async move {
+                let report =
+                    run_batch_mutation_bounded(build_ids, API_FAN_OUT_LIMIT, "cancel_build", {
+                        let client = client.clone();
+                        move |id| {
+                            let client = client.clone();
+                            async move { client.cancel_build(id).await }
+                        }
+                    })
                     .await;
+                send_app_message(
+                    &task_tx,
+                    "cancel_builds",
+                    AppMessage::BuildsCancelled {
+                        cancelled: report.succeeded,
+                        failed: report.failed,
+                    },
+                )
+                .await;
             });
         }
         Action::RetryStage {
@@ -192,7 +236,7 @@ pub fn handle_action(
         }
         Action::ApproveCheck(approval_id) => {
             tracing::info!("approving check");
-            spawn_api(
+            spawn_api_with_error(
                 client,
                 tx,
                 "Approve check",
@@ -201,11 +245,15 @@ pub fn handle_action(
                         .await
                 },
                 |()| AppMessage::CheckUpdated,
+                |e| AppMessage::RefreshError {
+                    message: format!("Approve check: {e}"),
+                    source: RefreshSource::Approvals,
+                },
             );
         }
         Action::RejectCheck(approval_id) => {
             tracing::info!("rejecting check");
-            spawn_api(
+            spawn_api_with_error(
                 client,
                 tx,
                 "Reject check",
@@ -214,30 +262,46 @@ pub fn handle_action(
                         .await
                 },
                 |()| AppMessage::CheckUpdated,
+                |e| AppMessage::RefreshError {
+                    message: format!("Reject check: {e}"),
+                    source: RefreshSource::Approvals,
+                },
             );
         }
         Action::DeleteRetentionLeases(ids) => {
             tracing::info!(count = ids.len(), "deleting retention leases");
-            spawn_api(
-                client,
-                tx,
-                "Delete leases",
-                move |c| async move {
-                    let count = ids.len() as u32;
-                    c.delete_retention_leases(&ids).await.map(|()| count)
-                },
-                |deleted| AppMessage::RetentionLeasesDeleted { deleted, failed: 0 },
-            );
+            let client = client.clone();
+            let task_tx = tx.clone();
+            spawn_named("delete_retention_leases", tx.clone(), async move {
+                let report =
+                    run_batch_mutation_bounded(ids, API_FAN_OUT_LIMIT, "delete_retention_lease", {
+                        let client = client.clone();
+                        move |id| {
+                            let client = client.clone();
+                            async move { client.delete_retention_leases(&[id]).await }
+                        }
+                    })
+                    .await;
+                send_app_message(
+                    &task_tx,
+                    "delete_retention_leases",
+                    AppMessage::RetentionLeasesDeleted {
+                        deleted: report.succeeded,
+                        failed: report.failed,
+                    },
+                )
+                .await;
+            });
         }
         Action::FetchPullRequests => {
             let generation = app.pull_requests.next_generation();
             spawn_fetch_pull_requests(app, client, tx, generation);
         }
         Action::FetchPullRequestDetail { repo_id, pr_id } => {
-            spawn_fetch_pr_detail(client, tx, repo_id, pr_id);
+            spawn_fetch_pr_detail(app, client, tx, repo_id, pr_id);
         }
         Action::FetchWorkItemDetail { work_item_id } => {
-            spawn_fetch_work_item_detail(client, tx, work_item_id);
+            spawn_fetch_work_item_detail(app, client, tx, work_item_id);
         }
         Action::FetchDashboardPullRequests => {
             spawn_fetch_dashboard_pull_requests(app, client, tx);
@@ -258,5 +322,116 @@ pub fn handle_action(
             spawn_fetch_my_work_items(app, client, tx, app.view);
         }
         Action::None => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use anyhow::anyhow;
+    use tokio::sync::{Notify, mpsc};
+
+    use super::*;
+
+    async fn wait_for_started(rx: &mut mpsc::UnboundedReceiver<()>, expected: usize) {
+        for _ in 0..expected {
+            tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .expect("batch task should start before timeout")
+                .expect("started sender should remain open");
+        }
+    }
+
+    async fn wait_until_released(released: Arc<AtomicBool>, release: Arc<Notify>) {
+        loop {
+            let notified = release.notified();
+            if released.load(Ordering::SeqCst) {
+                break;
+            }
+            notified.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn batch_mutation_fan_out_never_exceeds_configured_concurrency() {
+        let item_count = API_FAN_OUT_LIMIT + 3;
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+        let completed = Arc::new(AtomicUsize::new(0));
+        let released = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(Notify::new());
+        let (started_tx, mut started_rx) = mpsc::unbounded_channel();
+
+        let task = {
+            let active = Arc::clone(&active);
+            let max_seen = Arc::clone(&max_seen);
+            let completed = Arc::clone(&completed);
+            let released = Arc::clone(&released);
+            let release = Arc::clone(&release);
+            move |_id| {
+                let active = Arc::clone(&active);
+                let max_seen = Arc::clone(&max_seen);
+                let completed = Arc::clone(&completed);
+                let released = Arc::clone(&released);
+                let release = Arc::clone(&release);
+                let started_tx = started_tx.clone();
+                async move {
+                    let active_now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_seen.fetch_max(active_now, Ordering::SeqCst);
+                    let _ = started_tx.send(());
+                    wait_until_released(released, release).await;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    completed.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            }
+        };
+
+        let run = tokio::spawn(run_batch_mutation_bounded(
+            (1..=item_count as u32).collect(),
+            API_FAN_OUT_LIMIT,
+            "test_batch",
+            task,
+        ));
+
+        wait_for_started(&mut started_rx, API_FAN_OUT_LIMIT).await;
+        assert_eq!(completed.load(Ordering::SeqCst), 0);
+        assert_eq!(max_seen.load(Ordering::SeqCst), API_FAN_OUT_LIMIT);
+        assert!(started_rx.try_recv().is_err());
+
+        released.store(true, Ordering::SeqCst);
+        release.notify_waiters();
+
+        let report = tokio::time::timeout(Duration::from_secs(2), run)
+            .await
+            .expect("batch mutation fan-out should finish")
+            .expect("batch mutation task should not panic");
+
+        assert_eq!(report.succeeded, item_count as u32);
+        assert_eq!(report.failed, 0);
+        assert!(max_seen.load(Ordering::SeqCst) <= API_FAN_OUT_LIMIT);
+    }
+
+    #[tokio::test]
+    async fn batch_mutation_reports_partial_failures() {
+        let report = run_batch_mutation_bounded(
+            vec![1, 2, 3],
+            API_FAN_OUT_LIMIT,
+            "test_batch",
+            |id| async move {
+                if id == 2 {
+                    Err(anyhow!("item {id} failed"))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(report.succeeded, 2);
+        assert_eq!(report.failed, 1);
     }
 }

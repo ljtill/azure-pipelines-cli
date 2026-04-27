@@ -4,7 +4,6 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::Action;
 use super::navigation;
-use crate::components::dashboard::DashboardRow;
 use crate::state::App;
 
 /// Handles key events specific to the dashboard view.
@@ -20,26 +19,38 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 /// Handles the Enter key on the dashboard, drilling into pipelines or PR detail.
 fn handle_enter_dashboard(app: &mut App) -> Action {
     let idx = app.dashboard.nav.index();
-    match app.dashboard.rows.get(idx).cloned() {
-        Some(DashboardRow::PinnedPipeline { definition, .. }) => {
-            let def_id = definition.id;
-            app.navigate_to_build_history(definition);
-            Action::FetchBuildHistory(def_id)
-        }
-        Some(DashboardRow::DashboardPullRequest { pull_request }) => {
-            let repo_id = pull_request
-                .repository
-                .as_ref()
-                .map_or(String::new(), |r| r.id.clone());
-            let pr_id = pull_request.pull_request_id;
-            app.navigate_to_pr_detail(&pull_request);
-            Action::FetchPullRequestDetail { repo_id, pr_id }
-        }
-        Some(DashboardRow::DashboardWorkItem { work_item }) => {
-            let work_item_id = work_item.id;
-            app.navigate_to_work_item_detail(work_item_id);
-            Action::FetchWorkItemDetail { work_item_id }
-        }
-        _ => Action::None,
+    if let Some(definition) = app
+        .dashboard
+        .pinned_definition_at(idx, &app.core.data.definitions)
+        .cloned()
+    {
+        let def_id = definition.id;
+        app.navigate_to_build_history(definition);
+        return Action::FetchBuildHistory(def_id);
     }
+
+    if let Some(pull_request) = app
+        .dashboard
+        .pull_request_at(idx, &app.dashboard_pull_requests)
+        .cloned()
+    {
+        let repo_id = pull_request
+            .repository
+            .as_ref()
+            .map_or(String::new(), |r| r.id.clone());
+        let pr_id = pull_request.pull_request_id;
+        app.navigate_to_pr_detail(&pull_request);
+        return Action::FetchPullRequestDetail { repo_id, pr_id };
+    }
+
+    if let Some(work_item_id) = app
+        .dashboard
+        .work_item_at(idx, &app.dashboard_work_items, &app.pinned_work_items)
+        .map(|work_item| work_item.id)
+    {
+        app.navigate_to_work_item_detail(work_item_id);
+        return Action::FetchWorkItemDetail { work_item_id };
+    }
+
+    Action::None
 }

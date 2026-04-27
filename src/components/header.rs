@@ -10,6 +10,8 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use super::Component;
 use crate::render::helpers::truncate;
 use crate::render::theme;
+use crate::shared::availability::AvailabilityStatus;
+use crate::shared::refresh::RefreshState;
 use crate::state::{App, PaginationStatus, Service, View};
 
 fn breadcrumb(app: &App) -> Line<'_> {
@@ -65,6 +67,86 @@ pub(crate) fn format_pagination_status(status: &PaginationStatus) -> String {
     )
 }
 
+fn format_availability_status(app: &App) -> Option<String> {
+    app.refresh.last_refresh?;
+
+    let labels = app.core.availability.degraded_section_labels();
+    let sections = if labels.is_empty() {
+        "data".to_string()
+    } else {
+        labels.join(", ")
+    };
+
+    match app.core.availability.refresh.status() {
+        AvailabilityStatus::Fresh => None,
+        AvailabilityStatus::Partial => Some(format!("partial: {sections}")),
+        AvailabilityStatus::Stale => Some(format!("stale: {sections}")),
+        AvailabilityStatus::Unavailable => Some("data unavailable".to_string()),
+    }
+}
+
+fn format_duration_short(duration: std::time::Duration) -> String {
+    let seconds = duration.as_secs().max(1);
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else {
+        format!("{}m", seconds.div_ceil(60))
+    }
+}
+
+fn message_indicates_throttle(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("rate limit") || lower.contains("rate limited") || lower.contains("429")
+}
+
+fn data_refresh_is_throttled(app: &App) -> bool {
+    app.core
+        .availability
+        .refresh
+        .primary_error()
+        .is_some_and(message_indicates_throttle)
+        || app
+            .notifications
+            .clone_current()
+            .is_some_and(|notification| message_indicates_throttle(&notification.message))
+}
+
+fn format_retry_part(label: &str, state: &RefreshState, throttled: bool) -> Option<String> {
+    if state.in_flight {
+        return None;
+    }
+    let until = state.backoff_until?;
+    let remaining = until.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return None;
+    }
+    let remaining = format_duration_short(remaining);
+    if throttled {
+        Some(format!("throttled {label}; retry in {remaining}"))
+    } else {
+        Some(format!("retry {label} in {remaining}"))
+    }
+}
+
+fn format_retry_status(app: &App) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(part) = format_retry_part(
+        "data",
+        &app.refresh.data_refresh,
+        data_refresh_is_throttled(app),
+    ) {
+        parts.push(part);
+    }
+    if let Some(part) = format_retry_part("logs", &app.refresh.log_refresh, false) {
+        parts.push(part);
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" │ "))
+    }
+}
+
 /// Renders the title, refresh status, notifications, and top-level shell.
 /// Always visible at the top of the screen. Not interactive.
 #[derive(Default)]
@@ -79,9 +161,9 @@ impl Header {
         ])
         .split(area);
 
-        let refresh_span = if app.loading {
+        let refresh_span = if app.refresh.loading {
             Span::styled("⟳ refreshing", theme::TITLE)
-        } else if let Some(last) = app.last_refresh {
+        } else if let Some(last) = app.refresh.last_refresh {
             let elapsed = Utc::now().signed_duration_since(last);
             if elapsed.num_seconds() < 60 {
                 Span::styled(format!("⟳ {}s ago", elapsed.num_seconds()), theme::SUBTLE)
@@ -106,11 +188,11 @@ impl Header {
             Span::raw("")
         };
 
-        let approvals_span = if app.data.pending_approvals.is_empty() {
+        let approvals_span = if app.core.data.pending_approvals.is_empty() {
             Span::raw("")
         } else {
             Span::styled(
-                format!("  │  ⏸ {} pending", app.data.pending_approvals.len()),
+                format!("  │  ⏸ {} pending", app.core.data.pending_approvals.len()),
                 theme::APPROVAL,
             )
         };
@@ -119,7 +201,7 @@ impl Header {
         // flight. Cleared by the dispatcher when the terminal result message
         // lands. Rendered in the muted style so it blends with the refresh
         // indicator and doesn't compete with error/success notifications.
-        let pagination_span = app.pagination_status.as_ref().map_or_else(
+        let pagination_span = app.refresh.pagination_status.as_ref().map_or_else(
             || Span::raw(""),
             |status| {
                 Span::styled(
@@ -128,18 +210,28 @@ impl Header {
                 )
             },
         );
+        let availability_span = format_availability_status(app).map_or_else(
+            || Span::raw(""),
+            |status| Span::styled(format!("  │  ⚠ {status}"), theme::WARNING),
+        );
+        let retry_span = format_retry_status(app).map_or_else(
+            || Span::raw(""),
+            |status| Span::styled(format!("  │  {status}"), theme::WARNING),
+        );
 
         let bc = breadcrumb(app);
         let mut title_spans = vec![
             Span::styled(" devops", theme::BRAND),
             Span::styled("  ", theme::MUTED),
-            Span::styled(app.org_project_label.clone(), theme::SUBTLE),
+            Span::styled(app.connection.display_label(), theme::SUBTLE),
             Span::styled("  │  ", theme::MUTED),
             refresh_span,
             Span::styled("  │  ", theme::MUTED),
         ];
         title_spans.extend(bc.spans);
         title_spans.push(approvals_span);
+        title_spans.push(availability_span);
+        title_spans.push(retry_span);
         title_spans.push(pagination_span);
         title_spans.push(error_span);
 
@@ -207,5 +299,29 @@ mod tests {
             format_pagination_status(&status),
             "[loading page 1 — 7 items]"
         );
+    }
+
+    #[test]
+    fn format_retry_status_renders_data_backoff() {
+        let mut app = crate::test_helpers::make_app();
+        app.refresh.data_refresh.fail(30, 300);
+
+        let status = format_retry_status(&app).expect("backoff should render");
+
+        assert!(status.contains("retry data in"));
+    }
+
+    #[test]
+    fn format_retry_status_marks_rate_limit_backoff_as_throttled() {
+        let mut app = crate::test_helpers::make_app();
+        app.core.availability.refresh = crate::shared::availability::Availability::stale(
+            crate::state::CoreDataSnapshot::from_data(&app.core.data, &app.core.retention_leases),
+            "Azure DevOps rate limit (429): retry after 30s",
+        );
+        app.refresh.data_refresh.fail(30, 300);
+
+        let status = format_retry_status(&app).expect("backoff should render");
+
+        assert!(status.contains("throttled data; retry in"));
     }
 }

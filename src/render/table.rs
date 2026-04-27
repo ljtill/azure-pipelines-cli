@@ -5,13 +5,79 @@
 //! (respecting per-column `min`/`max` clamps). `render_header` draws a
 //! muted header row above the list body and returns the remaining rect.
 
+use std::ops::Range;
+
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use super::helpers::{display_width, truncate};
 use super::theme;
+
+/// Defines the default number of rows preserved around the selected list item.
+pub const DEFAULT_SCROLL_PADDING: usize = 3;
+
+/// Represents the visible slice of a virtualized list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisibleRows {
+    /// Stores the first absolute row index to render.
+    pub start: usize,
+    /// Stores the exclusive absolute row index after the last row to render.
+    pub end: usize,
+    /// Stores the selected row index relative to this window.
+    pub selected: Option<usize>,
+}
+
+impl VisibleRows {
+    /// Returns the absolute row range to render.
+    pub fn range(self) -> Range<usize> {
+        self.start..self.end
+    }
+
+    /// Converts an absolute row index into the visible window's local index.
+    pub fn local_index(self, absolute_index: usize) -> Option<usize> {
+        (self.start..self.end)
+            .contains(&absolute_index)
+            .then(|| absolute_index - self.start)
+    }
+}
+
+/// Returns the visible row window for a list viewport.
+pub fn visible_rows(
+    total_len: usize,
+    selected_index: usize,
+    viewport_height: u16,
+    scroll_padding: usize,
+) -> VisibleRows {
+    if total_len == 0 || viewport_height == 0 {
+        return VisibleRows {
+            start: 0,
+            end: 0,
+            selected: None,
+        };
+    }
+
+    let height = usize::from(viewport_height).min(total_len);
+    let selected = selected_index.min(total_len - 1);
+    let padding = scroll_padding.min(height.saturating_sub(1));
+    let mut start = selected.saturating_sub(height.saturating_sub(1).saturating_sub(padding));
+
+    if selected < start.saturating_add(padding) {
+        start = selected.saturating_sub(padding);
+    }
+
+    let max_start = total_len - height;
+    start = start.min(max_start);
+    let end = start + height;
+
+    VisibleRows {
+        start,
+        end,
+        selected: Some(selected - start),
+    }
+}
 
 /// Horizontal alignment for a column's cell contents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,26 +276,22 @@ pub fn render_header(f: &mut Frame, area: Rect, cols: &[Column]) -> Rect {
 
 /// Formats a header label into a padded cell of exactly `width` cells.
 fn header_cell(label: &str, width: u16, align: Align) -> Span<'static> {
-    let w = width as usize;
-    let truncated: String = label.chars().take(w).collect();
-    let content = match align {
-        Align::Left => format!("{truncated:<w$}"),
-        Align::Right => format!("{truncated:>w$}"),
-    };
-    Span::raw(content)
+    Span::raw(format_cell(label, usize::from(width), align))
+}
+
+/// Formats text into a padded cell of exactly `width` terminal cells.
+pub fn format_cell(text: &str, width: usize, align: Align) -> String {
+    let truncated = truncate(text, width);
+    let padding = " ".repeat(width.saturating_sub(display_width(&truncated)));
+    match align {
+        Align::Left => format!("{truncated}{padding}"),
+        Align::Right => format!("{padding}{truncated}"),
+    }
 }
 
 /// Formats a data cell of exactly `width` cells, truncating and padding.
-/// Character-boundary safe; grapheme width is not accounted for (we render
-/// ASCII + a small set of single-width icons in practice).
 pub fn row_cell(text: &str, width: u16, align: Align, style: Style) -> Span<'static> {
-    let w = width as usize;
-    let truncated: String = text.chars().take(w).collect();
-    let content = match align {
-        Align::Left => format!("{truncated:<w$}"),
-        Align::Right => format!("{truncated:>w$}"),
-    };
-    Span::styled(content, style)
+    Span::styled(format_cell(text, usize::from(width), align), style)
 }
 
 #[cfg(test)]
@@ -324,12 +386,83 @@ mod tests {
     #[test]
     fn row_cell_truncates_long_text() {
         let span = row_cell("abcdef", 3, Align::Left, Style::default());
-        assert_eq!(&*span.content, "abc");
+        assert_eq!(&*span.content, "ab…");
+    }
+
+    #[test]
+    fn row_cell_pads_wide_text_by_display_width() {
+        let span = row_cell("デ", 4, Align::Left, Style::default());
+        assert_eq!(&*span.content, "デ  ");
+        assert_eq!(display_width(&span.content), 4);
+    }
+
+    #[test]
+    fn row_cell_right_pads_wide_text_by_display_width() {
+        let span = row_cell("デ", 4, Align::Right, Style::default());
+        assert_eq!(&*span.content, "  デ");
+        assert_eq!(display_width(&span.content), 4);
+    }
+
+    #[test]
+    fn row_cell_truncates_wide_text_by_display_width() {
+        let span = row_cell("デプロイ", 5, Align::Left, Style::default());
+        assert_eq!(&*span.content, "デプ…");
+        assert_eq!(display_width(&span.content), 5);
+    }
+
+    #[test]
+    fn header_cell_uses_display_width() {
+        let span = header_cell("デプロイ", 5, Align::Left);
+        assert_eq!(&*span.content, "デプ…");
+        assert_eq!(display_width(&span.content), 5);
     }
 
     #[test]
     fn row_cell_empty_width_produces_empty_span() {
         let span = row_cell("hi", 0, Align::Left, Style::default());
         assert_eq!(&*span.content, "");
+    }
+
+    #[test]
+    fn visible_rows_empty_when_no_rows_or_height() {
+        assert_eq!(
+            visible_rows(0, 0, 10, DEFAULT_SCROLL_PADDING),
+            VisibleRows {
+                start: 0,
+                end: 0,
+                selected: None
+            }
+        );
+        assert_eq!(
+            visible_rows(10, 0, 0, DEFAULT_SCROLL_PADDING),
+            VisibleRows {
+                start: 0,
+                end: 0,
+                selected: None
+            }
+        );
+    }
+
+    #[test]
+    fn visible_rows_keeps_selection_near_tail_visible() {
+        let rows = visible_rows(5_000, 4_999, 12, DEFAULT_SCROLL_PADDING);
+        assert_eq!(rows.end, 5_000);
+        assert_eq!(rows.selected, Some(11));
+        assert_eq!(rows.range().count(), 12);
+    }
+
+    #[test]
+    fn visible_rows_keeps_selection_with_scroll_padding() {
+        let rows = visible_rows(100, 20, 10, DEFAULT_SCROLL_PADDING);
+        assert_eq!(
+            rows,
+            VisibleRows {
+                start: 14,
+                end: 24,
+                selected: Some(6),
+            }
+        );
+        assert_eq!(rows.local_index(20), Some(6));
+        assert_eq!(rows.local_index(13), None);
     }
 }

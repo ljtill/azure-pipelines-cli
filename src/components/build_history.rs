@@ -14,9 +14,11 @@ use crate::client::models::{Build, PipelineDefinition};
 use crate::render::columns::{BuildRowOpts, build_row};
 use crate::render::helpers::{
     build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
-    effective_status_label, row_style, truncate,
+    effective_status_label, row_style,
 };
-use crate::render::table::{render_header, resolve_widths};
+use crate::render::table::{
+    Align, DEFAULT_SCROLL_PADDING, format_cell, render_header, resolve_widths, visible_rows,
+};
 use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, View};
@@ -95,88 +97,90 @@ impl BuildHistory {
         let resolved = resolve_widths(&schema.columns, content_area.width);
         let widths: Vec<usize> = resolved.iter().map(|&w| w as usize).collect();
 
-        let mut items: Vec<ListItem> = self
-            .builds
-            .iter()
-            .enumerate()
-            .map(|(i, build)| {
-                let is_focused = i == self.nav.index();
-                let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
+        let has_status_row = self.loading_more || self.has_more;
+        let total_rows = self.builds.len() + usize::from(has_status_row);
+        let window = visible_rows(
+            total_rows,
+            self.nav.index(),
+            content_area.height,
+            DEFAULT_SCROLL_PADDING,
+        );
+        let items: Vec<ListItem> = window
+            .range()
+            .filter_map(|i| {
+                if i >= self.builds.len() {
+                    let text = if self.loading_more {
+                        "   ⟳ Loading more..."
+                    } else {
+                        "   ▾ ↓ for more"
+                    };
+                    return Some(ListItem::new(Line::from(vec![Span::styled(
+                        text,
+                        theme::SUBTLE,
+                    )])));
+                }
+
+                let build = self.builds.get(i)?;
+                let is_focused = window.selected == Some(i - window.start);
+                let awaiting = app.core.data.pending_approval_build_ids.contains(&build.id);
                 let (icon, icon_color) =
                     effective_status_icon(build.status, build.result, awaiting);
                 let label = effective_status_label(build.status, build.result, awaiting);
                 let time_info = build_elapsed(build);
                 let branch = build.branch_display();
-                let retained = app.retention_leases.retained_run_ids.contains(&build.id);
+                let retained = app
+                    .core
+                    .retention_leases
+                    .retained_run_ids
+                    .contains(&build.id);
                 let selected = self.selected.contains(&build.id);
                 let check = if selected { "✓ " } else { "  " };
                 let primary_style = theme::TEXT;
                 let secondary_style = theme::SUBTLE;
 
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        check,
-                        if selected {
-                            theme::SUCCESS
-                        } else {
-                            Style::new()
-                        },
-                    ),
-                    Span::styled(format!(" {icon} "), theme::foreground(icon_color)),
-                    Span::styled(
-                        format!("{:<width$}", label, width = widths[2]),
-                        theme::foreground(icon_color),
-                    ),
-                    Span::styled(
-                        format!(
-                            "#{:<width$}",
-                            truncate(&build.build_number, widths[3] - 1),
-                            width = widths[3] - 1
+                Some(
+                    ListItem::new(Line::from(vec![
+                        Span::styled(
+                            check,
+                            if selected {
+                                theme::SUCCESS
+                            } else {
+                                Style::new()
+                            },
                         ),
-                        primary_style,
-                    ),
-                    Span::styled(if retained { "◈ " } else { "  " }, theme::WARNING),
-                    Span::styled(
-                        format!(
-                            "{:<width$} ",
-                            truncate(&branch, widths[5].saturating_sub(1)),
-                            width = widths[5].saturating_sub(1)
+                        Span::styled(format!(" {icon} "), theme::foreground(icon_color)),
+                        Span::styled(
+                            format_cell(label, widths[2], Align::Left),
+                            theme::foreground(icon_color),
                         ),
-                        theme::BRANCH,
-                    ),
-                    Span::styled(
-                        format!(
-                            "{:<width$} ",
-                            truncate(build.requestor(), widths[6].saturating_sub(1)),
-                            width = widths[6].saturating_sub(1)
+                        Span::styled(
+                            format_cell(
+                                &format!("#{}", build.build_number),
+                                widths[3],
+                                Align::Left,
+                            ),
+                            primary_style,
                         ),
-                        secondary_style,
-                    ),
-                    Span::styled(
-                        format!("{:>width$}", time_info, width = widths[7]),
-                        secondary_style,
-                    ),
-                ]))
-                .style(row_style(is_focused))
+                        Span::styled(if retained { "◈ " } else { "  " }, theme::WARNING),
+                        Span::styled(format_cell(&branch, widths[5], Align::Left), theme::BRANCH),
+                        Span::styled(
+                            format_cell(build.requestor(), widths[6], Align::Left),
+                            secondary_style,
+                        ),
+                        Span::styled(
+                            format_cell(&time_info, widths[7], Align::Right),
+                            secondary_style,
+                        ),
+                    ]))
+                    .style(row_style(is_focused)),
+                )
             })
             .collect();
 
-        if self.loading_more {
-            items.push(ListItem::new(Line::from(vec![Span::styled(
-                "   ⟳ Loading more...",
-                theme::SUBTLE,
-            )])));
-        } else if self.has_more {
-            items.push(ListItem::new(Line::from(vec![Span::styled(
-                "   ▾ ↓ for more",
-                theme::SUBTLE,
-            )])));
-        }
-
-        let list = List::new(items).scroll_padding(3);
+        let list = List::new(items).scroll_padding(DEFAULT_SCROLL_PADDING);
 
         let mut state = ListState::default();
-        state.select(Some(self.nav.index()));
+        state.select(window.selected);
         f.render_stateful_widget(list, content_area, &mut state);
     }
 }

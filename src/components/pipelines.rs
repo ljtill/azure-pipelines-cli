@@ -13,9 +13,11 @@ use crate::client::models::{Build, PipelineDefinition};
 use crate::render::columns::{BuildRowOpts, build_row};
 use crate::render::helpers::{
     build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
-    effective_status_label, row_style, split_with_search_bar, truncate,
+    effective_status_label, row_style, split_with_search_bar,
 };
-use crate::render::table::{render_header, resolve_widths};
+use crate::render::table::{
+    Align, DEFAULT_SCROLL_PADDING, format_cell, render_header, resolve_widths, visible_rows,
+};
 use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, InputMode};
@@ -30,8 +32,7 @@ pub enum PipelineRow {
         expanded: bool,
     },
     Pipeline {
-        definition: PipelineDefinition,
-        latest_build: Option<Box<Build>>,
+        definition_id: u32,
         pinned: bool,
         depth: usize,
     },
@@ -103,7 +104,14 @@ struct FolderNode {
     /// Child folder full keys, keyed by leaf segment for deterministic ordering.
     children: BTreeMap<String, String>,
     /// Pipelines directly contained in this folder.
-    pipelines: Vec<(PipelineDefinition, Option<Build>)>,
+    pipelines: Vec<u32>,
+}
+
+struct PipelineRowsContext<'a> {
+    tree: &'a BTreeMap<String, FolderNode>,
+    definitions_by_id: &'a BTreeMap<u32, &'a PipelineDefinition>,
+    auto_expanded: &'a HashSet<String>,
+    pinned_ids: &'a [u32],
 }
 
 /// Renders pipelines grouped by folder with collapse/expand, search, and pinning.
@@ -121,7 +129,7 @@ impl Pipelines {
     pub fn rebuild(
         &mut self,
         definitions: &[PipelineDefinition],
-        latest_builds_by_def: &BTreeMap<u32, Build>,
+        _latest_builds_by_def: &BTreeMap<u32, Build>,
         filter_folders: &[String],
         filter_definition_ids: &[u32],
         pinned_definition_ids: &[u32],
@@ -133,6 +141,8 @@ impl Pipelines {
         let mut tree: BTreeMap<String, FolderNode> = BTreeMap::new();
         tree.entry("\\".to_string()).or_default();
         let mut auto_expanded: HashSet<String> = HashSet::new();
+        let definitions_by_id: BTreeMap<u32, &PipelineDefinition> =
+            definitions.iter().map(|def| (def.id, def)).collect();
 
         for def in definitions {
             if !matches_filter(def, filter_definition_ids, filter_folders) {
@@ -163,11 +173,7 @@ impl Pipelines {
                 parent = child_key;
             }
 
-            let latest = latest_builds_by_def.get(&def.id).cloned();
-            tree.entry(key.clone())
-                .or_default()
-                .pipelines
-                .push((def.clone(), latest));
+            tree.entry(key.clone()).or_default().pipelines.push(def.id);
 
             // When a query is active, auto-expand ancestors of every match so
             // results are visible without requiring manual drill-in.
@@ -180,7 +186,13 @@ impl Pipelines {
         }
 
         let mut rows = Vec::new();
-        self.emit_root(&tree, &auto_expanded, pinned_definition_ids, &mut rows);
+        let context = PipelineRowsContext {
+            tree: &tree,
+            definitions_by_id: &definitions_by_id,
+            auto_expanded: &auto_expanded,
+            pinned_ids: pinned_definition_ids,
+        };
+        self.emit_root(&context, &mut rows);
 
         self.rows = rows;
         self.nav.set_len(self.rows.len());
@@ -188,26 +200,25 @@ impl Pipelines {
 
     /// Emits rows for the root folder's contents. Root has no header — its
     /// children render at depth 0 directly, alongside any root-level pipelines.
-    fn emit_root(
-        &self,
-        tree: &BTreeMap<String, FolderNode>,
-        auto_expanded: &HashSet<String>,
-        pinned_ids: &[u32],
-        rows: &mut Vec<PipelineRow>,
-    ) {
-        let Some(root) = tree.get("\\") else {
+    fn emit_root(&self, context: &PipelineRowsContext<'_>, rows: &mut Vec<PipelineRow>) {
+        let Some(root) = context.tree.get("\\") else {
             return;
         };
         for child_key in root.children.values() {
-            self.emit_folder(child_key, 0, tree, auto_expanded, pinned_ids, rows);
+            self.emit_folder(child_key, 0, context, rows);
         }
         let mut root_pipelines = root.pipelines.clone();
-        root_pipelines.sort_by_key(|(a, _)| a.name.to_lowercase());
-        for (def, build) in root_pipelines {
-            let pinned = pinned_ids.contains(&def.id);
+        root_pipelines.sort_by_cached_key(|id| {
+            context
+                .definitions_by_id
+                .get(id)
+                .map(|definition| definition.name.to_lowercase())
+                .unwrap_or_default()
+        });
+        for definition_id in root_pipelines {
+            let pinned = context.pinned_ids.contains(&definition_id);
             rows.push(PipelineRow::Pipeline {
-                definition: def,
-                latest_build: build.map(Box::new),
+                definition_id,
                 pinned,
                 depth: 0,
             });
@@ -219,15 +230,13 @@ impl Pipelines {
         &self,
         key: &str,
         depth: usize,
-        tree: &BTreeMap<String, FolderNode>,
-        auto_expanded: &HashSet<String>,
-        pinned_ids: &[u32],
+        context: &PipelineRowsContext<'_>,
         rows: &mut Vec<PipelineRow>,
     ) {
-        let Some(node) = tree.get(key) else {
+        let Some(node) = context.tree.get(key) else {
             return;
         };
-        let expanded = auto_expanded.contains(key) || !self.collapsed_folders.contains(key);
+        let expanded = context.auto_expanded.contains(key) || !self.collapsed_folders.contains(key);
         rows.push(PipelineRow::FolderHeader {
             key: key.to_string(),
             label: folder_leaf_label(key),
@@ -238,15 +247,20 @@ impl Pipelines {
             return;
         }
         for child_key in node.children.values() {
-            self.emit_folder(child_key, depth + 1, tree, auto_expanded, pinned_ids, rows);
+            self.emit_folder(child_key, depth + 1, context, rows);
         }
         let mut pipelines = node.pipelines.clone();
-        pipelines.sort_by_key(|(a, _)| a.name.to_lowercase());
-        for (def, build) in pipelines {
-            let pinned = pinned_ids.contains(&def.id);
+        pipelines.sort_by_cached_key(|id| {
+            context
+                .definitions_by_id
+                .get(id)
+                .map(|definition| definition.name.to_lowercase())
+                .unwrap_or_default()
+        });
+        for definition_id in pipelines {
+            let pinned = context.pinned_ids.contains(&definition_id);
             rows.push(PipelineRow::Pipeline {
-                definition: def,
-                latest_build: build.map(Box::new),
+                definition_id,
                 pinned,
                 depth: depth + 1,
             });
@@ -316,12 +330,24 @@ impl Pipelines {
         matches!(self.rows.get(index), Some(PipelineRow::FolderHeader { .. }))
     }
 
-    /// Returns the definition at the given row index, if it is a pipeline row.
-    pub fn definition_at(&self, index: usize) -> Option<&PipelineDefinition> {
+    /// Returns the definition ID at the given row index, if it is a pipeline row.
+    pub fn definition_id_at(&self, index: usize) -> Option<u32> {
         match self.rows.get(index) {
-            Some(PipelineRow::Pipeline { definition, .. }) => Some(definition),
+            Some(PipelineRow::Pipeline { definition_id, .. }) => Some(*definition_id),
             _ => None,
         }
+    }
+
+    /// Returns the definition at the given row index, if it is a pipeline row.
+    pub fn definition_at<'a>(
+        &self,
+        index: usize,
+        definitions: &'a [PipelineDefinition],
+    ) -> Option<&'a PipelineDefinition> {
+        let definition_id = self.definition_id_at(index)?;
+        definitions
+            .iter()
+            .find(|definition| definition.id == definition_id)
     }
 
     /// Renders the folder-grouped pipeline list.
@@ -373,18 +399,22 @@ impl Pipelines {
         let resolved = resolve_widths(&schema.columns, list_area.width);
         let widths: Vec<usize> = resolved.iter().map(|&w| w as usize).collect();
 
-        let items: Vec<ListItem> = self
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(i, row)| match row {
+        let window = visible_rows(
+            self.rows.len(),
+            self.nav.index(),
+            list_area.height,
+            DEFAULT_SCROLL_PADDING,
+        );
+        let items: Vec<ListItem> = window
+            .range()
+            .map(|i| match &self.rows[i] {
                 PipelineRow::FolderHeader {
                     label,
                     depth,
                     expanded,
                     ..
                 } => {
-                    let is_focused = i == self.nav.index();
+                    let is_focused = window.selected == Some(i - window.start);
                     let icon = if *expanded { "▾" } else { "▸" };
                     let indent = "  ".repeat(*depth);
                     let folder_style = theme::FOLDER;
@@ -397,55 +427,52 @@ impl Pipelines {
                     .style(row_style(is_focused))
                 }
                 PipelineRow::Pipeline {
-                    definition,
-                    latest_build,
+                    definition_id,
                     pinned,
                     depth,
                 } => {
-                    let is_focused = i == self.nav.index();
+                    let is_focused = window.selected == Some(i - window.start);
+                    let definition = app
+                        .core
+                        .data
+                        .definitions
+                        .iter()
+                        .find(|definition| definition.id == *definition_id);
+                    let latest_build = app.core.data.latest_builds_by_def.get(definition_id);
                     let secondary_style = theme::SUBTLE;
-                    let (icon, icon_color) =
-                        latest_build.as_ref().map_or(("○", theme::PENDING_FG), |b| {
-                            let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
-                            effective_status_icon(b.status, b.result, awaiting)
-                        });
-                    let label = latest_build.as_ref().map_or("", |b| {
-                        let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
+                    let (icon, icon_color) = latest_build.map_or(("○", theme::PENDING_FG), |b| {
+                        let awaiting = app.core.data.pending_approval_build_ids.contains(&b.id);
+                        effective_status_icon(b.status, b.result, awaiting)
+                    });
+                    let label = latest_build.map_or("", |b| {
+                        let awaiting = app.core.data.pending_approval_build_ids.contains(&b.id);
                         effective_status_label(b.status, b.result, awaiting)
                     });
 
-                    let build_spans = latest_build.as_ref().map_or_else(
+                    let build_spans = latest_build.map_or_else(
                         || vec![Span::styled("no builds", secondary_style)],
                         |b| {
                             let branch = b.branch_display();
                             let elapsed = build_elapsed(b);
                             vec![
                                 Span::styled(
-                                    format!(
-                                        "#{:<width$}",
-                                        truncate(&b.build_number, widths[4] - 1),
-                                        width = widths[4] - 1
+                                    format_cell(
+                                        &format!("#{}", b.build_number),
+                                        widths[4],
+                                        Align::Left,
                                     ),
                                     secondary_style,
                                 ),
                                 Span::styled(
-                                    format!(
-                                        "{:<width$} ",
-                                        truncate(&branch, widths[5].saturating_sub(1)),
-                                        width = widths[5].saturating_sub(1)
-                                    ),
+                                    format_cell(&branch, widths[5], Align::Left),
                                     theme::BRANCH,
                                 ),
                                 Span::styled(
-                                    format!(
-                                        "{:<width$} ",
-                                        truncate(b.requestor(), widths[6].saturating_sub(1)),
-                                        width = widths[6].saturating_sub(1)
-                                    ),
+                                    format_cell(b.requestor(), widths[6], Align::Left),
                                     secondary_style,
                                 ),
                                 Span::styled(
-                                    format!("{:>width$}", elapsed, width = widths[7]),
+                                    format_cell(&elapsed, widths[7], Align::Right),
                                     secondary_style,
                                 ),
                             ]
@@ -453,12 +480,12 @@ impl Pipelines {
                     );
 
                     let pin_indicator = if *pinned { "★ " } else { "" };
-                    let selected_indicator = if self.selected.contains(&definition.id) {
+                    let selected_indicator = if self.selected.contains(definition_id) {
                         "✓ "
                     } else {
                         "  "
                     };
-                    let name_style = if latest_build.is_some() {
+                    let name_style = if latest_build.is_some() && definition.is_some() {
                         theme::TEXT
                     } else {
                         theme::SUBTLE
@@ -471,22 +498,19 @@ impl Pipelines {
                         Span::styled(selected_indicator, theme::SUCCESS),
                         Span::styled(format!("{icon} "), theme::foreground(icon_color)),
                         Span::styled(
-                            format!("{:<width$}", label, width = widths[2]),
+                            format_cell(label, widths[2], Align::Left),
                             theme::foreground(icon_color),
                         ),
                         Span::styled(pin_indicator, pin_style),
                         Span::styled(
-                            format!(
-                                "{:<width$} ",
-                                truncate(
-                                    &definition.name,
-                                    widths[3]
-                                        .saturating_sub(1)
-                                        .saturating_sub(pin_indicator.len()),
-                                ),
-                                width = widths[3]
-                                    .saturating_sub(1)
-                                    .saturating_sub(pin_indicator.len())
+                            format_cell(
+                                definition.map_or("Unknown pipeline", |definition| {
+                                    definition.name.as_str()
+                                }),
+                                widths[3].saturating_sub(crate::render::helpers::display_width(
+                                    pin_indicator,
+                                )),
+                                Align::Left,
                             ),
                             name_style,
                         ),
@@ -498,10 +522,10 @@ impl Pipelines {
                 }
             })
             .collect();
-        let list = List::new(items).scroll_padding(3);
+        let list = List::new(items).scroll_padding(DEFAULT_SCROLL_PADDING);
 
         let mut state = ListState::default();
-        state.select(Some(self.nav.index()));
+        state.select(window.selected);
         f.render_stateful_widget(list, list_area, &mut state);
     }
 

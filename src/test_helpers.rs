@@ -7,16 +7,17 @@ use crate::client::models::{
     PipelineDefinition, PullRequest, PullRequestThread, Reviewer, TaskState, TimelineRecord,
 };
 use crate::config::{
-    Config, ConnectionConfig, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
-    UpdateConfig,
+    Config, ConnectionConfig, ConnectionTimeoutConfig, DisplayConfig, FiltersConfig, LoggingConfig,
+    NotificationsConfig, UpdateConfig,
 };
+use crate::shared::availability::Availability;
 use crate::state::App;
 
 /// Re-exports `AppMessage` for use from integration tests. The underlying
 /// `state::messages` module is crate-private; this indirection keeps the
 /// visibility change isolated to `test_helpers`.
 #[doc(hidden)]
-pub use crate::state::messages::{AppMessage, RefreshSource};
+pub use crate::state::messages::{AppMessage, RefreshOutcome, RefreshSource};
 
 /// Creates a [`Build`] with the given id, status, and optional result.
 pub fn make_build(id: u32, status: BuildStatus, result: Option<BuildResult>) -> Build {
@@ -245,6 +246,7 @@ pub fn make_config() -> Config {
             connection: ConnectionConfig {
                 organization: "testorg".to_string(),
                 project: "testproj".to_string(),
+                timeouts: ConnectionTimeoutConfig::default(),
             },
             filters: FiltersConfig::default(),
             update: UpdateConfig::default(),
@@ -269,7 +271,6 @@ pub fn make_app() -> App {
     let def1 = make_definition(1, "CI Pipeline", "\\");
     let def2 = make_definition(2, "Deploy Pipeline", "\\Infra");
     let def3 = make_definition(3, "Infra Lint", "\\Infra");
-    app.data.definitions = vec![def1, def2, def3];
 
     // Creates 3 recent builds, one per definition.
     let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
@@ -290,10 +291,19 @@ pub fn make_app() -> App {
         name: "Infra Lint".to_string(),
     };
 
-    app.data.recent_builds = vec![b1.clone(), b2.clone(), b3.clone()];
-    app.data.latest_builds_by_def.insert(1, b1);
-    app.data.latest_builds_by_def.insert(2, b2);
-    app.data.latest_builds_by_def.insert(3, b3);
+    app.core
+        .data
+        .apply_refresh(vec![def1, def2, def3], vec![b1, b2, b3], Vec::new());
+    app.core.availability.definitions = Availability::fresh(app.core.data.definitions.clone());
+    app.core.availability.recent_builds = Availability::fresh(app.core.data.recent_builds.clone());
+    app.core.availability.pending_approvals =
+        Availability::fresh(app.core.data.pending_approvals.clone());
+    app.core.availability.retention_leases =
+        Availability::fresh(app.core.retention_leases.leases.clone());
+    app.core.availability.refresh = Availability::fresh(crate::state::CoreDataSnapshot::from_data(
+        &app.core.data,
+        &app.core.retention_leases,
+    ));
 
     app.rebuild_dashboard();
     app.rebuild_pipelines();
@@ -362,8 +372,8 @@ mod tests {
     #[test]
     fn make_app_populates_state() {
         let app = make_app();
-        assert_eq!(app.data.definitions.len(), 3);
-        assert_eq!(app.data.recent_builds.len(), 3);
+        assert_eq!(app.core.data.definitions.len(), 3);
+        assert_eq!(app.core.data.recent_builds.len(), 3);
         assert!(!app.dashboard.rows.is_empty());
         assert!(!app.pipelines.rows.is_empty());
     }

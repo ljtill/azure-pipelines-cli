@@ -12,6 +12,11 @@ rust-version = "1.94"
 name = "devops"
 path = "src/main.rs"
 
+[features]
+default = []
+# Internal fixture factories for crate tests; not a stable library API.
+internal-test-helpers = []
+
 [dependencies]
 # TUI
 ratatui = "0.30"

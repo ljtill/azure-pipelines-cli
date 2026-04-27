@@ -5,20 +5,22 @@ use std::collections::{BTreeMap, HashSet};
 
 use anyhow::Result;
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
 use super::Component;
 use crate::client::models::{BacklogLevelConfiguration, WorkItem};
 use crate::render::columns::board_row;
 use crate::render::helpers::{
     draw_state_message, draw_view_frame, row_style, split_with_search_bar, sub_view_tab_spans,
-    truncate,
 };
-use crate::render::table::{render_header, resolve_widths};
+use crate::render::table::{
+    Align, DEFAULT_SCROLL_PADDING, format_cell, render_header, resolve_widths, visible_rows,
+};
 use crate::render::theme;
+use crate::shared::availability::AvailabilityStatus;
 use crate::state::{App, InputMode, ListNav};
 
 /// Represents a single work item in the Boards backlog tree.
@@ -67,7 +69,7 @@ pub struct BoardRow {
 }
 
 /// Stores state for the Boards backlog tree view.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Boards {
     pub nav: ListNav,
     pub items: BTreeMap<u32, BoardItem>,
@@ -76,10 +78,30 @@ pub struct Boards {
     pub collapsed: HashSet<u32>,
     pub loading: bool,
     pub error: Option<String>,
+    pub availability: AvailabilityStatus,
     pub generation: u64,
     pub team_name: Option<String>,
     pub backlog_names: Vec<String>,
     initialized: bool,
+}
+
+impl Default for Boards {
+    fn default() -> Self {
+        Self {
+            nav: ListNav::default(),
+            items: BTreeMap::new(),
+            root_ids: Vec::new(),
+            rows: Vec::new(),
+            collapsed: HashSet::new(),
+            loading: false,
+            error: None,
+            availability: AvailabilityStatus::Unavailable,
+            generation: 0,
+            team_name: None,
+            backlog_names: Vec::new(),
+            initialized: false,
+        }
+    }
 }
 
 impl Boards {
@@ -92,12 +114,20 @@ impl Boards {
     /// Marks the Boards view as loading fresh data.
     pub fn start_loading(&mut self) {
         self.loading = true;
-        self.error = None;
+        if self.rows.is_empty() {
+            self.error = None;
+            self.availability = AvailabilityStatus::Unavailable;
+        }
     }
 
     /// Stores an error message for the Boards view.
     pub fn set_error(&mut self, message: String) {
         self.loading = false;
+        self.availability = if self.rows.is_empty() {
+            AvailabilityStatus::Unavailable
+        } else {
+            AvailabilityStatus::Stale
+        };
         self.error = Some(message);
     }
 
@@ -108,6 +138,18 @@ impl Boards {
         backlogs: Vec<BacklogLevelConfiguration>,
         work_items: Vec<WorkItem>,
         search_query: &str,
+    ) {
+        self.set_data_with_errors(team_name, backlogs, work_items, search_query, &[]);
+    }
+
+    /// Replaces the Boards data, records partial errors, and rebuilds visible rows.
+    pub fn set_data_with_errors(
+        &mut self,
+        team_name: String,
+        backlogs: Vec<BacklogLevelConfiguration>,
+        work_items: Vec<WorkItem>,
+        search_query: &str,
+        partial_errors: &[String],
     ) {
         let backlog_names: Vec<String> = backlogs
             .into_iter()
@@ -151,7 +193,16 @@ impl Boards {
         sort_ids_by_rank_and_id(&items, &mut root_ids);
 
         self.loading = false;
-        self.error = None;
+        self.availability = if partial_errors.is_empty() {
+            AvailabilityStatus::Fresh
+        } else {
+            AvailabilityStatus::Partial
+        };
+        self.error = if partial_errors.is_empty() {
+            None
+        } else {
+            Some(partial_errors.join("; "))
+        };
         self.team_name = Some(team_name);
         self.backlog_names = backlog_names;
         self.items = items;
@@ -268,8 +319,15 @@ impl Boards {
             format!("  ·  {} items", self.rows.len()),
             theme::MUTED,
         ));
+        if self.loading && !self.rows.is_empty() {
+            subtitle_spans.push(Span::styled("  ·  refreshing", theme::TITLE));
+        }
+        if let Some(label) = self.availability_label() {
+            subtitle_spans.push(Span::styled("  ·  ", theme::MUTED));
+            subtitle_spans.push(Span::styled(label, theme::WARNING));
+        }
         let frame_area = draw_view_frame(f, area, " Boards ", Some(Line::from(subtitle_spans)));
-        let list_area = split_with_search_bar(
+        let mut list_area = split_with_search_bar(
             f,
             frame_area,
             &app.search.query,
@@ -299,6 +357,15 @@ impl Boards {
             return;
         }
 
+        if let Some(line) = self.degraded_line()
+            && list_area.height > 0
+        {
+            let chunks =
+                Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(list_area);
+            f.render_widget(Paragraph::new(line), chunks[0]);
+            list_area = chunks[1];
+        }
+
         let schema = board_row();
         let list_area = render_header(f, list_area, &schema.columns);
         let widths: Vec<usize> = resolve_widths(&schema.columns, list_area.width)
@@ -306,13 +373,18 @@ impl Boards {
             .map(|&w| w as usize)
             .collect();
 
-        let items: Vec<ListItem> = self
-            .rows
-            .iter()
-            .enumerate()
-            .filter_map(|(index, row)| {
+        let window = visible_rows(
+            self.rows.len(),
+            self.nav.index(),
+            list_area.height,
+            DEFAULT_SCROLL_PADDING,
+        );
+        let items: Vec<ListItem> = window
+            .range()
+            .filter_map(|index| {
+                let row = self.rows.get(index)?;
                 let item = self.items.get(&row.work_item_id)?;
-                let is_selected = index == self.nav.index();
+                let is_selected = window.selected == Some(index - window.start);
                 let arrow = if row.has_children {
                     if row.collapsed { "▸" } else { "▾" }
                 } else {
@@ -330,27 +402,32 @@ impl Boards {
                 Some(
                     ListItem::new(Line::from(vec![
                         Span::styled(
-                            format!("{:<w_type$}", truncate(&item.work_item_type, w_type)),
+                            format_cell(&item.work_item_type, w_type, Align::Left),
                             theme::work_item_type_style(&item.work_item_type),
                         ),
-                        Span::styled(format!("{:<w_id$}", format!("#{}", item.id)), id_style()),
                         Span::styled(
-                            format!("{:<w_title$}", truncate(&title, w_title)),
-                            title_style(),
+                            format_cell(&format!("#{}", item.id), w_id, Align::Left),
+                            id_style(),
                         ),
+                        Span::styled(format_cell(&title, w_title, Align::Left), title_style()),
                         Span::styled(
-                            format!("{:<w_state$}", truncate(&item.state, w_state)),
+                            format_cell(&item.state, w_state, Align::Left),
                             theme::work_item_state_style(&item.state),
                         ),
                         Span::styled(
-                            format!(
-                                "{:<w_assigned$}",
-                                truncate(item.assigned_to.as_deref().unwrap_or(""), w_assigned)
+                            format_cell(
+                                item.assigned_to.as_deref().unwrap_or(""),
+                                w_assigned,
+                                Align::Left,
                             ),
                             theme::SUBTLE,
                         ),
                         Span::styled(
-                            truncate(item.iteration_path.as_deref().unwrap_or(""), w_iter),
+                            format_cell(
+                                item.iteration_path.as_deref().unwrap_or(""),
+                                w_iter,
+                                Align::Left,
+                            ),
                             theme::SUBTLE,
                         ),
                     ]))
@@ -359,9 +436,9 @@ impl Boards {
             })
             .collect();
 
-        let list = List::new(items).scroll_padding(3);
+        let list = List::new(items).scroll_padding(DEFAULT_SCROLL_PADDING);
         let mut state = ListState::default();
-        state.select(Some(self.nav.index()));
+        state.select(window.selected);
         f.render_stateful_widget(list, list_area, &mut state);
     }
 
@@ -387,6 +464,29 @@ impl Boards {
         }
 
         Some(visible)
+    }
+
+    fn availability_label(&self) -> Option<&'static str> {
+        match self.availability {
+            AvailabilityStatus::Fresh => None,
+            AvailabilityStatus::Partial => Some("partial"),
+            AvailabilityStatus::Stale => Some("stale"),
+            AvailabilityStatus::Unavailable => self.error.as_ref().map(|_| "unavailable"),
+        }
+    }
+
+    fn degraded_line(&self) -> Option<Line<'static>> {
+        let message = self.error.as_ref()?;
+        let (prefix, style) = match self.availability {
+            AvailabilityStatus::Fresh => return None,
+            AvailabilityStatus::Partial => ("⚠ Partial backlog data: ", theme::WARNING),
+            AvailabilityStatus::Stale => ("⚠ Showing stale backlog data: ", theme::WARNING),
+            AvailabilityStatus::Unavailable => ("⚠ Backlog unavailable: ", theme::ERROR),
+        };
+        Some(Line::from(vec![
+            Span::styled(prefix.to_string(), style),
+            Span::styled(message.clone(), style),
+        ]))
     }
 
     fn append_rows(
@@ -746,6 +846,47 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1, 2]
         );
+    }
+
+    #[test]
+    fn set_error_marks_existing_backlog_stale_without_dropping_rows() {
+        let mut boards = Boards::default();
+        boards.set_data(
+            "Project Team".to_string(),
+            vec![backlog("Epics", 1, false)],
+            vec![work_item(10, None, vec![], "Root", 10.0)],
+            "",
+        );
+
+        boards.set_error("Failed to load backlog: timeout".to_string());
+
+        assert_eq!(boards.availability, AvailabilityStatus::Stale);
+        assert_eq!(
+            boards.error.as_deref(),
+            Some("Failed to load backlog: timeout")
+        );
+        assert_eq!(boards.rows.len(), 1);
+        assert_eq!(boards.rows[0].work_item_id, 10);
+    }
+
+    #[test]
+    fn set_data_with_errors_marks_backlog_partial() {
+        let mut boards = Boards::default();
+
+        boards.set_data_with_errors(
+            "Project Team".to_string(),
+            vec![backlog("Epics", 1, false)],
+            vec![work_item(10, None, vec![], "Root", 10.0)],
+            "",
+            &["Descendant hierarchy unavailable".to_string()],
+        );
+
+        assert_eq!(boards.availability, AvailabilityStatus::Partial);
+        assert_eq!(
+            boards.error.as_deref(),
+            Some("Descendant hierarchy unavailable")
+        );
+        assert_eq!(boards.rows.len(), 1);
     }
 
     #[test]

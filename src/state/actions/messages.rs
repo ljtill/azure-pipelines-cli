@@ -1,33 +1,23 @@
 //! Handles incoming async messages and applies them to application state.
 
-use std::collections::BTreeMap;
-
 use tokio::sync::mpsc;
 
 use crate::client::http::AdoClient;
-use crate::client::models;
-use crate::client::models::{IdentityRef, PullRequest, WorkItem};
-use crate::components::log_viewer::ActiveTaskResult;
+#[cfg(test)]
+use crate::client::models::{IdentityRef, PullRequest};
 
-use super::super::messages::{AppMessage, RefreshSource};
-use super::super::notifications::NotificationLevel;
-use super::super::{
-    App, DashboardPullRequestsState, DashboardWorkItemsState, ExactUserIdentity,
-    PinnedWorkItemsState, TimelineRow, View,
-};
-use super::spawn::{
-    spawn_build_history_refresh, spawn_data_refresh, spawn_fetch_boards,
-    spawn_fetch_dashboard_pull_requests, spawn_fetch_dashboard_work_items,
-    spawn_fetch_pinned_work_items, spawn_fetch_pull_requests, spawn_log_fetch,
-    spawn_timeline_fetch,
-};
+use super::super::App;
+use super::super::messages::AppMessage;
+#[cfg(test)]
+use super::super::messages::{RefreshOutcome, RefreshSource};
+#[cfg(test)]
+use super::super::{DashboardPullRequestsState, ExactUserIdentity};
 
+#[cfg(test)]
 const DASHBOARD_IDENTITY_UNAVAILABLE_MESSAGE: &str =
     "Unable to verify your Azure DevOps identity — My Pull Requests unavailable";
 
-const DASHBOARD_WORK_ITEMS_IDENTITY_UNAVAILABLE_MESSAGE: &str =
-    "Unable to verify your Azure DevOps identity — My Work Items unavailable";
-
+#[cfg(test)]
 fn exact_identity_matches(author: &IdentityRef, user: &ExactUserIdentity) -> bool {
     for (author_value, user_value) in [
         (author.id.as_deref(), user.id.as_deref()),
@@ -42,6 +32,7 @@ fn exact_identity_matches(author: &IdentityRef, user: &ExactUserIdentity) -> boo
     false
 }
 
+#[cfg(test)]
 fn dashboard_pull_request_state(
     pull_requests: Vec<PullRequest>,
     current_user: &ExactUserIdentity,
@@ -85,44 +76,6 @@ fn dashboard_pull_request_state(
     }
 }
 
-fn dashboard_work_item_state(
-    work_items: Vec<WorkItem>,
-    current_user: &ExactUserIdentity,
-    assigned_scoped_by_id: bool,
-) -> DashboardWorkItemsState {
-    if !current_user.is_known() {
-        return DashboardWorkItemsState::Unavailable(
-            DASHBOARD_WORK_ITEMS_IDENTITY_UNAVAILABLE_MESSAGE.to_string(),
-        );
-    }
-
-    let filtered: Vec<WorkItem> = work_items
-        .into_iter()
-        .filter(|wi| match wi.fields.assigned_to.as_ref() {
-            Some(crate::client::models::AssignedToField::Identity(identity)) => {
-                if assigned_scoped_by_id {
-                    identity.id.as_deref().is_none_or(|assigned_id| {
-                        current_user
-                            .id
-                            .as_deref()
-                            .is_some_and(|user_id| assigned_id.eq_ignore_ascii_case(user_id))
-                    })
-                } else {
-                    exact_identity_matches(identity, current_user)
-                }
-            }
-            // Non-identity AssignedTo (e.g. bare display-name string) cannot be verified.
-            _ => false,
-        })
-        .collect();
-
-    if filtered.is_empty() {
-        DashboardWorkItemsState::EmptyVerified
-    } else {
-        DashboardWorkItemsState::Ready(filtered)
-    }
-}
-
 pub fn handle_message(
     app: &mut App,
     client: &AdoClient,
@@ -135,690 +88,176 @@ pub fn handle_message(
             recent_builds,
             pending_approvals,
             retention_leases,
-        } => {
-            // Derive active builds from recent builds instead of a separate API call.
-            let active_builds: Vec<models::Build> = recent_builds
-                .iter()
-                .filter(|b| b.status.is_in_progress())
-                .cloned()
-                .collect();
-
-            tracing::info!(
-                definitions = definitions.len(),
-                active = active_builds.len(),
-                recent = recent_builds.len(),
-                approvals = pending_approvals.len(),
-                "data refresh received"
-            );
-            app.data_refresh.succeed();
-            app.data.definitions = definitions;
-
-            // Seed the map from each definition's latestBuild (full coverage),
-            // then overlay with recent_builds — only if the recent build is newer.
-            let mut map: BTreeMap<u32, models::Build> = BTreeMap::new();
-            for def in &app.data.definitions {
-                if let Some(build) = &def.latest_build {
-                    map.insert(def.id, *build.clone());
-                }
-            }
-            for build in &recent_builds {
-                match map.entry(build.definition.id) {
-                    std::collections::btree_map::Entry::Vacant(e) => {
-                        e.insert(build.clone());
-                    }
-                    std::collections::btree_map::Entry::Occupied(mut e) => {
-                        if build.id > e.get().id {
-                            e.insert(build.clone());
-                        }
-                    }
-                }
-            }
-
-            // Detect build state changes and emit in-app notifications.
-            // Fires when:
-            //   - A build transitions to InProgress (started).
-            //   - A build transitions to Completed (succeeded/failed/canceled).
-            // Skipped on first load (prev is empty) to avoid a startup storm.
-            if app.notifications_enabled && !app.prev_latest_builds.is_empty() {
-                for (def_id, build) in &map {
-                    let prev = app.prev_latest_builds.get(def_id);
-                    let (prev_id, prev_status) = match prev {
-                        Some(&(id, status, _)) => (Some(id), Some(status)),
-                        None => (None, None),
-                    };
-
-                    let id_changed = prev_id != Some(build.id);
-                    let status_changed = prev_status != Some(build.status);
-
-                    // Only notify on meaningful transitions.
-                    if !id_changed && !status_changed {
-                        continue;
-                    }
-
-                    if build.status == models::BuildStatus::InProgress {
-                        let msg =
-                            format!("{} #{} started", build.definition.name, build.build_number);
-                        tracing::info!(
-                            definition = build.definition.name,
-                            build_id = build.id,
-                            "pipeline started"
-                        );
-                        app.notifications.push(NotificationLevel::Info, msg);
-                    } else if build.status == models::BuildStatus::Completed {
-                        let result_label = match build.result {
-                            Some(models::BuildResult::Succeeded) => "succeeded",
-                            Some(models::BuildResult::PartiallySucceeded) => "partially succeeded",
-                            Some(models::BuildResult::Failed) => "failed",
-                            Some(models::BuildResult::Canceled) => "canceled",
-                            _ => "completed",
-                        };
-                        let msg = format!(
-                            "{} #{} {}",
-                            build.definition.name, build.build_number, result_label
-                        );
-                        let level = match build.result {
-                            Some(models::BuildResult::Succeeded) => NotificationLevel::Success,
-                            Some(models::BuildResult::Failed | models::BuildResult::Canceled) => {
-                                NotificationLevel::Error
-                            }
-                            _ => NotificationLevel::Info,
-                        };
-                        tracing::info!(
-                            definition = build.definition.name,
-                            build_id = build.id,
-                            result = result_label,
-                            "pipeline completed"
-                        );
-                        app.notifications.push(level, msg);
-                    }
-                }
-            }
-
-            // Update the previous snapshot for the next diff cycle.
-            app.prev_latest_builds = map
-                .iter()
-                .map(|(&def_id, b)| (def_id, (b.id, b.status, b.result)))
-                .collect();
-
-            app.data.latest_builds_by_def = map;
-            app.data.recent_builds = recent_builds;
-            app.data.active_builds = active_builds;
-            app.data.pending_approval_build_ids = pending_approvals
-                .iter()
-                .filter_map(crate::client::models::approvals::Approval::build_id)
-                .collect();
-            app.data.pending_approvals = pending_approvals;
-
-            app.rebuild_dashboard();
-            app.rebuild_pipelines();
-            app.active_runs.rebuild(
-                &app.data.active_builds,
-                &app.filters.definition_ids,
-                &app.search.query,
-            );
-            app.last_refresh = Some(chrono::Utc::now());
-            app.loading = false;
-
-            // Update retention leases.
-            app.retention_leases.leases = retention_leases;
-            app.retention_leases.rebuild_index();
-
-            // Terminal message for the data refresh — clear any in-flight
-            // pagination progress so the header doesn't linger stale state.
-            app.pagination_status = None;
-        }
+        } => super::reducers::pipelines::data_refresh(
+            app,
+            definitions,
+            recent_builds,
+            pending_approvals,
+            retention_leases,
+        ),
         AppMessage::BuildHistory {
             builds,
             continuation_token,
             generation,
-        } => {
-            if generation < app.build_history.generation {
-                tracing::debug!(
-                    generation,
-                    current = app.build_history.generation,
-                    "dropping stale build history response"
-                );
-                return;
-            }
-            tracing::info!(
-                count = builds.len(),
-                has_more = continuation_token.is_some(),
-                "build history loaded"
-            );
-            app.build_history.has_more = continuation_token.is_some();
-            app.build_history.continuation_token = continuation_token;
-            app.build_history.builds = builds;
-            app.build_history
-                .nav
-                .set_len(app.build_history.builds.len());
-            // Restore stashed scroll position (e.g. after lease deletion refresh).
-            if let Some(idx) = app.build_history.pending_nav_index.take() {
-                app.build_history.nav.set_index(idx);
-            }
-            app.pagination_status = None;
-        }
+        } => super::reducers::pipelines::build_history(app, builds, continuation_token, generation),
         AppMessage::BuildHistoryMore {
             builds,
             continuation_token,
             generation,
-        } => {
-            if generation < app.build_history.generation {
-                tracing::debug!(
-                    generation,
-                    current = app.build_history.generation,
-                    "dropping stale build history pagination response"
-                );
-                return;
-            }
-            tracing::info!(
-                count = builds.len(),
-                has_more = continuation_token.is_some(),
-                "more build history loaded"
-            );
-            app.build_history.loading_more = false;
-            app.build_history.has_more = continuation_token.is_some();
-            app.build_history.continuation_token = continuation_token;
-            app.build_history.builds.extend(builds);
-            app.build_history
-                .nav
-                .set_len(app.build_history.builds.len());
-            app.pagination_status = None;
-        }
+        } => super::reducers::pipelines::build_history_more(
+            app,
+            builds,
+            continuation_token,
+            generation,
+        ),
         AppMessage::Timeline {
             build_id,
             timeline,
             generation,
             is_refresh,
-        } => {
-            // Discard stale timeline results.
-            if generation != app.log_viewer.generation() {
-                tracing::debug!(
-                    build_id,
-                    generation,
-                    expected = app.log_viewer.generation(),
-                    "discarding stale timeline"
-                );
-                return;
-            }
-
-            if is_refresh {
-                tracing::debug!(
-                    build_id,
-                    records = timeline.records.len(),
-                    "timeline refreshed"
-                );
-            } else {
-                tracing::info!(
-                    build_id,
-                    records = timeline.records.len(),
-                    "timeline loaded"
-                );
-            }
-
-            app.log_viewer.set_build_timeline(timeline);
-
-            // Update selected_build status from timeline data so the header stays current.
-            app.log_viewer.refresh_build_status_from_timeline();
-
-            if !is_refresh {
-                // Initial load: full setup with auto-select.
-                app.log_viewer.clear_log();
-                app.log_viewer.nav_mut().set_index(0);
-                app.log_viewer.enter_follow_mode();
-                app.log_viewer.rebuild_timeline_rows();
-
-                if let Some((_idx, maybe_log_id)) = app.log_viewer.auto_select_log_entry() {
-                    let task_name = if let Some(TimelineRow::Task { name, .. }) = app
-                        .log_viewer
-                        .timeline_rows()
-                        .get(app.log_viewer.nav().index())
-                    {
-                        name.clone()
-                    } else {
-                        String::new()
-                    };
-
-                    if let Some(log_id) = maybe_log_id {
-                        app.log_viewer.set_followed(task_name, log_id);
-                        spawn_log_fetch(client, tx, build_id, log_id, app.log_viewer.generation());
-                    } else {
-                        // In-progress task has no log yet — show it but wait for log.
-                        app.log_viewer.set_followed_pending(task_name);
-                    }
-                }
-            } else if app.log_viewer.is_following() {
-                // Refresh in follow mode: update tree, track latest active task.
-                app.log_viewer.rebuild_timeline_rows();
-
-                match app.log_viewer.find_active_task() {
-                    ActiveTaskResult::Found { name, log_id } => {
-                        let task_changed = app.log_viewer.followed_log_id() != Some(log_id);
-                        app.log_viewer.set_followed(name, log_id);
-
-                        if task_changed {
-                            tracing::debug!(build_id, log_id, "follow mode: task changed");
-                            app.log_viewer.jump_to_followed_task();
-                            app.log_viewer.clear_log();
-                            spawn_log_fetch(
-                                client,
-                                tx,
-                                build_id,
-                                log_id,
-                                app.log_viewer.generation(),
-                            );
-                        }
-                    }
-                    ActiveTaskResult::Pending { name } => {
-                        // The next step is starting — jump cursor to it, clear the
-                        // log pane, and keep follow mode active until the log appears.
-                        tracing::debug!(
-                            build_id,
-                            task = %name,
-                            "follow mode: task pending log"
-                        );
-                        app.log_viewer.set_followed_pending(name);
-                        app.log_viewer.jump_to_followed_task();
-                        app.log_viewer.clear_log();
-                    }
-                    ActiveTaskResult::None => {
-                        // Build completed or no active task — exit follow mode.
-                        tracing::debug!(
-                            build_id,
-                            "follow mode: no active task, switching to inspect"
-                        );
-                        app.log_viewer.enter_inspect_mode();
-                    }
-                }
-            } else {
-                // Refresh in inspect mode: only update tree status, preserve cursor + log.
-                app.log_viewer.rebuild_timeline_rows();
-            }
-        }
+        } => super::reducers::logs::timeline(
+            app, client, tx, build_id, timeline, generation, is_refresh,
+        ),
         AppMessage::LogContent {
             content,
             generation,
             log_id,
-        } => {
-            // Discard stale log results.
-            if generation != app.log_viewer.generation() {
-                tracing::debug!(
-                    generation,
-                    expected = app.log_viewer.generation(),
-                    "discarding stale log content"
-                );
-                return;
-            }
-            // Discard log content for a different task when in follow mode.
-            if app.log_viewer.is_following()
-                && app
-                    .log_viewer
-                    .followed_log_id()
-                    .is_some_and(|fid| fid != log_id)
-            {
-                tracing::debug!(
-                    log_id,
-                    followed = ?app.log_viewer.followed_log_id(),
-                    "discarding log content for non-followed task"
-                );
-                return;
-            }
-            tracing::debug!(bytes = content.len(), log_id, "log content received");
-            app.log_viewer.set_log_content(&content);
-        }
+        } => super::reducers::logs::log_content(app, &content, generation, log_id),
         AppMessage::LogRefreshFinished { had_failure } => {
-            tracing::debug!(had_failure, "log refresh finished");
-            if had_failure {
-                app.log_refresh.fail(5, 60);
-            } else {
-                app.log_refresh.succeed();
-            }
+            super::reducers::logs::log_refresh_finished(app, had_failure);
         }
-        AppMessage::Error(msg) => {
-            tracing::warn!(error = %msg, "app error");
-            app.notifications.error(msg);
-        }
+        AppMessage::Error(msg) => super::reducers::updates::error(app, msg),
         AppMessage::RefreshError { message, source } => {
-            tracing::warn!(error = %message, ?source, "refresh error");
-            if source == RefreshSource::Data {
-                app.data_refresh.fail(30, 300);
-            }
-            app.notifications.error_dedup(message);
-            // A refresh failure ends any in-flight paginated fetch too.
-            app.pagination_status = None;
+            super::reducers::updates::refresh_error(app, message, source);
+        }
+        AppMessage::RefreshCancelled { source } => {
+            super::reducers::updates::refresh_cancelled(app, source);
         }
         AppMessage::BuildCancelled => {
-            tracing::info!("build cancelled successfully");
-            app.notifications.success("Build cancelled");
-            spawn_data_refresh(app, client, tx);
-            if app.view == View::BuildHistory {
-                spawn_build_history_refresh(app, client, tx, None);
-            }
-            if let Some(build) = app.log_viewer.selected_build() {
-                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
-            }
+            super::reducers::pipelines::build_cancelled(app, client, tx);
         }
         AppMessage::BuildsCancelled { cancelled, failed } => {
-            tracing::info!(cancelled, failed, "builds cancelled");
-            app.active_runs.selected.clear();
-            spawn_data_refresh(app, client, tx);
-            if app.view == View::BuildHistory {
-                spawn_build_history_refresh(app, client, tx, None);
-            }
-            if failed > 0 {
-                app.notifications
-                    .error(format!("Cancelled {cancelled}, {failed} failed"));
-            } else {
-                app.notifications
-                    .success(format!("Cancelled {cancelled} build(s)"));
-            }
+            super::reducers::pipelines::builds_cancelled(app, client, tx, cancelled, failed);
         }
         AppMessage::StageRetried => {
-            tracing::info!("stage retried successfully");
-            app.notifications.success("Stage retried");
-            if let Some(build) = app.log_viewer.selected_build() {
-                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
-            }
-            spawn_data_refresh(app, client, tx);
+            super::reducers::pipelines::stage_retried(app, client, tx);
         }
         AppMessage::CheckUpdated => {
-            tracing::info!("check updated successfully");
-            app.notifications.success("Check updated");
-            spawn_data_refresh(app, client, tx);
-            if let Some(build) = app.log_viewer.selected_build() {
-                spawn_timeline_fetch(client, tx, build.id, app.log_viewer.generation(), true);
-            }
+            super::reducers::pipelines::check_updated(app, client, tx);
         }
         AppMessage::PipelineQueued {
             build,
             definition_id: _,
-        } => {
-            tracing::info!(build_id = build.id, "pipeline queued");
-            let build_id = build.id;
-            app.navigate_to_log_viewer(build);
-            spawn_timeline_fetch(client, tx, build_id, app.log_viewer.generation(), false);
-        }
+        } => super::reducers::pipelines::pipeline_queued(app, client, tx, build),
         AppMessage::UpdateAvailable { version } => {
-            tracing::info!(version = &*version, "update available");
-            app.notifications.push_persistent(
-                crate::state::notifications::NotificationLevel::Info,
-                format!("Update available: v{version} — run 'devops update' to upgrade"),
-            );
+            super::reducers::updates::update_available(app, &version);
         }
         AppMessage::RetentionLeasesDeleted { deleted, failed } => {
-            tracing::info!(deleted, failed, "retention leases deleted");
-            if failed > 0 {
-                app.notifications
-                    .error(format!("Deleted {deleted} lease(s), {failed} failed"));
-            } else {
-                app.notifications
-                    .success(format!("Deleted {deleted} retention lease(s)"));
-            }
-            // Clear stale multi-select state and preserve scroll position.
-            app.build_history.selected.clear();
-            app.build_history.pending_nav_index = Some(app.build_history.nav.index());
-            // Trigger a full data refresh to re-fetch leases.
-            spawn_data_refresh(app, client, tx);
-            if app.view == View::BuildHistory {
-                // Request enough builds to cover everything already loaded so
-                // the scroll position can be restored after the refresh.
-                let top = (app.build_history.builds.len() as u32)
-                    .max(crate::client::endpoints::TOP_DEFINITION_BUILDS);
-                spawn_build_history_refresh(app, client, tx, Some(top));
-            }
+            super::reducers::pipelines::retention_leases_deleted(app, client, tx, deleted, failed);
         }
         AppMessage::PullRequestsLoaded {
             pull_requests,
             generation,
-        } => {
-            if generation < app.pull_requests.generation {
-                tracing::debug!(
-                    generation,
-                    current = app.pull_requests.generation,
-                    "dropping stale pull requests response"
-                );
-                return;
-            }
-            tracing::info!(count = pull_requests.len(), "pull requests loaded");
-            app.pull_requests.set_data(pull_requests, &app.search.query);
-        }
+        } => super::reducers::repos::pull_requests_loaded(app, pull_requests, generation),
         AppMessage::BoardsLoaded {
             team_name,
             backlogs,
             work_items,
+            partial_errors,
             generation,
         } => {
-            if generation < app.boards.generation {
-                tracing::debug!(
-                    generation,
-                    current = app.boards.generation,
-                    "dropping stale boards response"
-                );
-                return;
-            }
-            tracing::info!(
-                team = %team_name,
-                backlogs = backlogs.len(),
-                work_items = work_items.len(),
-                "boards loaded"
+            super::reducers::boards::boards_loaded(
+                app,
+                team_name,
+                backlogs,
+                work_items,
+                &partial_errors,
+                generation,
             );
-            app.boards
-                .set_data(team_name, backlogs, work_items, &app.search.query);
         }
         AppMessage::BoardsFailed {
             message,
             generation,
-        } => {
-            if generation < app.boards.generation {
-                tracing::debug!(
-                    generation,
-                    current = app.boards.generation,
-                    "dropping stale boards failure"
-                );
-                return;
-            }
-            tracing::warn!(%message, "boards fetch failed");
-            app.boards.set_error(message.clone());
-            app.notifications.error_dedup(message);
-        }
+        } => super::reducers::boards::boards_failed(app, message, generation),
         AppMessage::MyWorkItemsLoaded {
             view,
             work_items,
             generation,
-        } => {
-            let Some(list) = app.my_work_items.list_for_mut(view) else {
-                return;
-            };
-            if generation < list.generation {
-                tracing::debug!(
-                    ?view,
-                    generation,
-                    current = list.generation,
-                    "dropping stale my work items response"
-                );
-                return;
-            }
-            tracing::info!(?view, count = work_items.len(), "my work items loaded");
-            list.set_data(&work_items, &app.search.query);
-        }
+        } => super::reducers::boards::my_work_items_loaded(app, view, &work_items, generation),
         AppMessage::MyWorkItemsFailed {
             view,
             message,
             generation,
-        } => {
-            let Some(list) = app.my_work_items.list_for_mut(view) else {
-                return;
-            };
-            if generation < list.generation {
-                tracing::debug!(
-                    ?view,
-                    generation,
-                    current = list.generation,
-                    "dropping stale my work items failure"
-                );
-                return;
-            }
-            tracing::warn!(?view, %message, "my work items fetch failed");
-            app.notifications.error_dedup(message);
-        }
+        } => super::reducers::boards::my_work_items_failed(app, view, message, generation),
         AppMessage::TaskPanicked { task_name, message } => {
-            tracing::error!(task_name, %message, "background task panicked");
-            app.notifications.push_persistent(
-                NotificationLevel::Error,
-                format!(
-                    "Background task '{task_name}' panicked: {message}. \
-                     Attach logs from ~/.local/state/devops/ when reporting."
-                ),
-            );
+            super::reducers::updates::task_panicked(app, task_name, &message);
         }
         AppMessage::AdoApiVersionUnsupported {
             requested,
             server_message,
         } => {
-            tracing::error!(
-                requested_api_version = %requested,
-                server_message = %server_message,
-                "Azure DevOps rejected requested api-version"
-            );
-            app.notifications.push_persistent(
-                NotificationLevel::Error,
-                format!(
-                    "Azure DevOps rejected api-version={requested}: {server_message}. \
-                     Pass --api-version or set DEVOPS_API_VERSION."
-                ),
-            );
+            super::reducers::updates::ado_api_version_unsupported(app, &requested, &server_message);
         }
         AppMessage::PaginationProgress {
             endpoint,
             page,
             items,
-        } => {
-            tracing::debug!(endpoint, page, items, "pagination progress");
-            app.pagination_status = Some(crate::state::PaginationStatus {
-                endpoint,
-                page,
-                items,
-            });
-        }
+        } => super::reducers::updates::pagination_progress(app, endpoint, page, items),
         AppMessage::UserIdentity { identity } => {
-            tracing::info!("user identity resolved");
-            app.current_user = identity;
-            // Re-fetch dashboard PRs now that we can filter by creator.
-            spawn_fetch_dashboard_pull_requests(app, client, tx);
-            // Re-fetch dashboard work items now that we can filter by assignee.
-            spawn_fetch_dashboard_work_items(app, client, tx);
-            // Resolve pinned work items state (short-circuits to empty when no IDs configured).
-            spawn_fetch_pinned_work_items(app, client, tx);
-            // Re-fetch PR view data so filtered modes use the resolved identity.
-            if app.view.is_pull_requests() {
-                let generation = app.pull_requests.next_generation();
-                spawn_fetch_pull_requests(app, client, tx, generation);
-            }
-            if app.view == View::Boards {
-                let generation = app.boards.next_generation();
-                spawn_fetch_boards(app, client, tx, generation);
-            }
+            super::reducers::dashboard::user_identity(app, client, tx, identity);
         }
         AppMessage::PullRequestDetailLoaded {
             pull_request,
             threads,
-        } => {
-            tracing::info!(
-                pr_id = pull_request.pull_request_id,
-                threads = threads.len(),
-                "pull request detail loaded"
-            );
-            app.pull_request_detail.pull_request = Some(pull_request);
-            app.pull_request_detail.threads = threads;
-            app.pull_request_detail.loading = false;
-            // Set nav length to number of display sections.
-            let section_count = app.pull_request_detail.section_count();
-            app.pull_request_detail.nav.set_len(section_count);
-        }
+        } => super::reducers::repos::pull_request_detail_loaded(app, pull_request, threads),
         AppMessage::WorkItemDetailLoaded {
             work_item_id,
             work_item,
             comments,
         } => {
-            if app.work_item_detail.work_item_id == Some(work_item_id) {
-                tracing::info!(
-                    work_item_id,
-                    comments = comments.len(),
-                    "work item detail loaded"
-                );
-                app.work_item_detail.work_item = Some(*work_item);
-                app.work_item_detail.comments = comments;
-                app.work_item_detail.loading = false;
-                let section_count = app.work_item_detail.section_count();
-                app.work_item_detail.nav.set_len(section_count);
-            } else {
-                tracing::debug!(
-                    work_item_id,
-                    pending = ?app.work_item_detail.work_item_id,
-                    "ignoring stale work item detail response"
-                );
-            }
+            super::reducers::boards::work_item_detail_loaded(
+                app,
+                work_item_id,
+                work_item,
+                comments,
+            );
         }
         AppMessage::WorkItemDetailFailed {
             work_item_id,
             message,
-        } => {
-            if app.work_item_detail.work_item_id == Some(work_item_id) {
-                tracing::warn!(work_item_id, %message, "work item detail fetch failed");
-                app.work_item_detail.loading = false;
-            }
-            app.notifications.error(message);
-        }
+        } => super::reducers::boards::work_item_detail_failed(app, work_item_id, message),
         AppMessage::DashboardPullRequests {
             pull_requests,
             creator_scoped_by_id,
-        } => {
-            tracing::info!(count = pull_requests.len(), "dashboard PRs loaded");
-            app.dashboard_pull_requests = dashboard_pull_request_state(
-                pull_requests,
-                &app.current_user,
-                creator_scoped_by_id,
-            );
-            app.rebuild_dashboard();
-        }
+        } => super::reducers::dashboard::dashboard_pull_requests(
+            app,
+            pull_requests,
+            creator_scoped_by_id,
+        ),
         AppMessage::DashboardPullRequestsFailed { message } => {
-            tracing::warn!(%message, "dashboard pull request fetch failed");
-            app.notifications.error_dedup(message.clone());
-            app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message);
-            app.rebuild_dashboard();
+            super::reducers::dashboard::dashboard_pull_requests_failed(app, message);
         }
         AppMessage::DashboardWorkItems {
             work_items,
             assigned_scoped_by_id,
         } => {
-            tracing::info!(count = work_items.len(), "dashboard work items loaded");
-            app.dashboard_work_items =
-                dashboard_work_item_state(work_items, &app.current_user, assigned_scoped_by_id);
-            app.rebuild_dashboard();
+            super::reducers::dashboard::dashboard_work_items(
+                app,
+                work_items,
+                assigned_scoped_by_id,
+            );
         }
         AppMessage::DashboardWorkItemsFailed { message } => {
-            tracing::warn!(%message, "dashboard work items fetch failed");
-            app.notifications.error_dedup(message.clone());
-            app.dashboard_work_items = DashboardWorkItemsState::Unavailable(message);
-            app.rebuild_dashboard();
+            super::reducers::dashboard::dashboard_work_items_failed(app, message);
         }
         AppMessage::PinnedWorkItems { work_items } => {
-            tracing::info!(count = work_items.len(), "pinned work items loaded");
-            app.pinned_work_items = PinnedWorkItemsState::Ready(work_items);
-            app.rebuild_dashboard();
+            super::reducers::dashboard::pinned_work_items(app, work_items);
         }
         AppMessage::PinnedWorkItemsFailed { message } => {
-            tracing::warn!(%message, "pinned work items fetch failed");
-            app.notifications.error_dedup(message.clone());
-            app.pinned_work_items = PinnedWorkItemsState::Unavailable(message);
-            app.rebuild_dashboard();
+            super::reducers::dashboard::pinned_work_items_failed(app, message);
         }
         AppMessage::UserIdentityFailed { message } => {
-            tracing::warn!(%message, "user identity resolution failed");
-            app.notifications.error_dedup(message.clone());
-            app.current_user = ExactUserIdentity::default();
-            app.dashboard_pull_requests = DashboardPullRequestsState::Unavailable(message.clone());
-            app.dashboard_work_items = DashboardWorkItemsState::Unavailable(message);
-            app.rebuild_dashboard();
+            super::reducers::dashboard::user_identity_failed(app, message);
         }
     }
 }
@@ -826,9 +265,11 @@ pub fn handle_message(
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::path::PathBuf;
 
     use super::*;
     use crate::client::models::*;
+    use crate::shared::availability::AvailabilityStatus;
     use crate::state::{DashboardPullRequestsState, ExactUserIdentity, View};
     use crate::test_helpers::*;
 
@@ -884,6 +325,31 @@ mod tests {
                 })
                 .collect(),
             url: None,
+        }
+    }
+
+    fn approval(id: &str, build_id: u32) -> Approval {
+        Approval {
+            id: id.to_string(),
+            status: "pending".to_string(),
+            instructions: None,
+            created_on: None,
+            steps: Vec::new(),
+            pipeline: Some(ApprovalPipelineRef {
+                owner: Some(ApprovalOwnerRef { id: build_id }),
+            }),
+        }
+    }
+
+    fn retention_lease(lease_id: u32, definition_id: u32, run_id: u32) -> RetentionLease {
+        RetentionLease {
+            lease_id,
+            definition_id,
+            run_id,
+            owner_id: "test".to_string(),
+            created_on: None,
+            valid_until: None,
+            protect_pipeline: false,
         }
     }
 
@@ -1067,6 +533,37 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_pull_requests_failed_preserves_ready_data_as_stale() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        app.dashboard_pull_requests = DashboardPullRequestsState::Ready(vec![make_pull_request(
+            7, "Keep me", "active", "repo",
+        )]);
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DashboardPullRequestsFailed {
+                message: "Failed to load My Pull Requests: timeout".to_string(),
+            },
+        );
+
+        match &app.dashboard_pull_requests {
+            DashboardPullRequestsState::Stale {
+                pull_requests,
+                message,
+            } => {
+                assert_eq!(pull_requests.len(), 1);
+                assert_eq!(pull_requests[0].pull_request_id, 7);
+                assert_eq!(message, "Failed to load My Pull Requests: timeout");
+            }
+            other => panic!("expected stale dashboard PRs, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn user_identity_failed_sets_unavailable_and_notifies() {
         let mut app = make_app();
         let client = crate::client::http::AdoClient::new("org", "project").unwrap();
@@ -1095,6 +592,78 @@ mod tests {
     // --- DataRefresh ---
 
     #[test]
+    fn refresh_cancelled_clears_data_in_flight_without_backoff() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        assert!(app.refresh.data_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::RefreshCancelled {
+                source: RefreshSource::Data,
+            },
+        );
+
+        assert!(!app.refresh.data_refresh.in_flight);
+        assert_eq!(app.refresh.data_refresh.failures, 0);
+        assert!(app.refresh.data_refresh.backoff_until.is_none());
+    }
+
+    #[test]
+    fn task_panicked_clears_data_refresh_when_fallback_is_missing() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        assert!(app.refresh.data_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::TaskPanicked {
+                task_name: "data_refresh",
+                message: "boom".to_string(),
+            },
+        );
+
+        assert!(!app.refresh.data_refresh.in_flight);
+        assert_eq!(app.refresh.data_refresh.failures, 1);
+        assert!(app.refresh.data_refresh.backoff_until.is_some());
+    }
+
+    #[test]
+    fn duplicate_data_refresh_error_after_panic_does_not_double_backoff() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        assert!(app.refresh.data_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::TaskPanicked {
+                task_name: "data_refresh",
+                message: "boom".to_string(),
+            },
+        );
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::RefreshError {
+                message: "panic fallback".to_string(),
+                source: RefreshSource::Data,
+            },
+        );
+
+        assert_eq!(app.refresh.data_refresh.failures, 1);
+    }
+
+    #[test]
     fn data_refresh_updates_definitions_and_builds() {
         let mut app = make_app();
         let defs = vec![
@@ -1109,9 +678,9 @@ mod tests {
         let recent = vec![b1];
 
         // Apply the same mutations handle_message(DataRefresh) would.
-        app.data.definitions = defs;
+        app.core.data.definitions = defs;
         let mut map: BTreeMap<u32, Build> = BTreeMap::new();
-        for def in &app.data.definitions {
+        for def in &app.core.data.definitions {
             if let Some(build) = &def.latest_build {
                 map.insert(def.id, *build.clone());
             }
@@ -1119,25 +688,26 @@ mod tests {
         for b in &recent {
             map.insert(b.definition.id, b.clone());
         }
-        app.data.latest_builds_by_def = map;
-        app.data.recent_builds = recent;
-        app.data.active_builds = vec![];
-        app.data.pending_approvals = vec![];
+        app.core.data.latest_builds_by_def = map;
+        app.core.data.recent_builds = recent;
+        app.core.data.active_builds = vec![];
+        app.core.data.pending_approvals = vec![];
         app.rebuild_dashboard();
         app.rebuild_pipelines();
-        app.active_runs.rebuild(
-            &app.data.active_builds,
-            &app.filters.definition_ids,
-            &app.search.query,
+        let query = app.search.query.clone();
+        app.shell.views.active_runs.rebuild(
+            &app.core.data.active_builds,
+            &app.core.filters.definition_ids,
+            &query,
         );
-        app.last_refresh = Some(chrono::Utc::now());
-        app.loading = false;
+        app.refresh.last_refresh = Some(chrono::Utc::now());
+        app.refresh.loading = false;
 
-        assert_eq!(app.data.definitions.len(), 2);
+        assert_eq!(app.core.data.definitions.len(), 2);
         assert!(!app.pipelines.rows.is_empty());
         assert!(!app.dashboard.rows.is_empty());
-        assert!(app.last_refresh.is_some());
-        assert!(!app.loading);
+        assert!(app.refresh.last_refresh.is_some());
+        assert!(!app.refresh.loading);
     }
 
     #[test]
@@ -1148,34 +718,427 @@ mod tests {
 
         // DataRefresh no longer clears notifications — they expire via TTL.
         // Simulate what handle_message(DataRefresh) does (no clear call).
-        app.loading = false;
+        app.refresh.loading = false;
         assert!(app.notifications.clone_current().is_some());
     }
 
     #[test]
     fn data_refresh_replaces_previous_data() {
         let mut app = make_app();
-        assert_eq!(app.data.definitions.len(), 3); // make_app seeds 3
+        assert_eq!(app.core.data.definitions.len(), 3); // make_app seeds 3
 
         // Simulate a DataRefresh with only 1 definition.
-        app.data.definitions = vec![make_definition(99, "Only", "\\")];
-        app.data.recent_builds = vec![];
-        app.data.latest_builds_by_def.clear();
-        app.data.active_builds = vec![];
-        app.data.pending_approvals = vec![];
+        app.core.data.definitions = vec![make_definition(99, "Only", "\\")];
+        app.core.data.recent_builds = vec![];
+        app.core.data.latest_builds_by_def.clear();
+        app.core.data.active_builds = vec![];
+        app.core.data.pending_approvals = vec![];
         app.rebuild_dashboard();
         app.rebuild_pipelines();
-        app.active_runs.rebuild(
-            &app.data.active_builds,
-            &app.filters.definition_ids,
-            &app.search.query,
+        let query = app.search.query.clone();
+        app.shell.views.active_runs.rebuild(
+            &app.core.data.active_builds,
+            &app.core.filters.definition_ids,
+            &query,
         );
-        app.last_refresh = Some(chrono::Utc::now());
-        app.loading = false;
+        app.refresh.last_refresh = Some(chrono::Utc::now());
+        app.refresh.loading = false;
 
-        assert_eq!(app.data.definitions.len(), 1);
+        assert_eq!(app.core.data.definitions.len(), 1);
         assert!(!app.pipelines.rows.is_empty());
         assert_eq!(app.active_runs.filtered.len(), 0);
+    }
+
+    #[test]
+    fn data_refresh_normalizes_core_data_by_stable_ids() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        let old_definition = make_definition(10, "Alpha old", "\\");
+        let updated_definition = make_definition(10, "Alpha updated", "\\");
+        let mut old_build = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
+        old_build.build_number = "old".to_string();
+        old_build.definition = BuildDefinitionRef {
+            id: 10,
+            name: "Alpha old".to_string(),
+        };
+        let mut updated_build = make_build(100, BuildStatus::InProgress, None);
+        updated_build.build_number = "updated".to_string();
+        updated_build.definition = BuildDefinitionRef {
+            id: 10,
+            name: "Alpha updated".to_string(),
+        };
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::fresh(vec![old_definition, updated_definition]),
+                recent_builds: RefreshOutcome::fresh(vec![old_build, updated_build]),
+                pending_approvals: RefreshOutcome::fresh(vec![
+                    approval("approval-1", 100),
+                    approval("approval-1", 200),
+                ]),
+                retention_leases: RefreshOutcome::fresh(vec![
+                    retention_lease(1, 10, 100),
+                    retention_lease(1, 10, 200),
+                ]),
+            },
+        );
+
+        assert_eq!(app.core.data.definitions.len(), 1);
+        assert_eq!(app.core.data.definition(10).unwrap().name, "Alpha updated");
+        assert_eq!(app.core.data.recent_builds.len(), 1);
+        assert_eq!(
+            app.core.data.recent_build(100).unwrap().build_number,
+            "updated"
+        );
+        assert!(app.core.data.active_build_ids.contains(&100));
+        assert_eq!(app.core.data.pending_approvals.len(), 1);
+        assert_eq!(
+            app.core
+                .data
+                .pending_approval("approval-1")
+                .and_then(Approval::build_id),
+            Some(200)
+        );
+        assert_eq!(
+            app.core.data.pending_approval_build_ids,
+            std::collections::HashSet::from([200])
+        );
+        assert_eq!(app.core.retention_leases.leases.len(), 1);
+        assert_eq!(app.core.retention_leases.leases_by_id[&1].run_id, 200);
+        assert!(app.core.retention_leases.retained_run_ids.contains(&200));
+        assert!(!app.core.retention_leases.retained_run_ids.contains(&100));
+    }
+
+    #[test]
+    fn data_refresh_partial_preserves_last_known_approvals() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let definitions = app.core.data.definitions.clone();
+        let recent_builds = app.core.data.recent_builds.clone();
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::fresh(definitions.clone()),
+                recent_builds: RefreshOutcome::fresh(recent_builds.clone()),
+                pending_approvals: RefreshOutcome::fresh(vec![approval("approval-1", 100)]),
+                retention_leases: RefreshOutcome::fresh(Vec::new()),
+            },
+        );
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::fresh(definitions),
+                recent_builds: RefreshOutcome::fresh(recent_builds),
+                pending_approvals: RefreshOutcome::failed("Approvals unavailable: timeout"),
+                retention_leases: RefreshOutcome::fresh(Vec::new()),
+            },
+        );
+
+        assert_eq!(app.core.data.pending_approvals.len(), 1);
+        assert!(app.core.data.pending_approval_build_ids.contains(&100));
+        assert_eq!(
+            app.core.availability.refresh.status(),
+            AvailabilityStatus::Partial
+        );
+        assert_eq!(
+            app.core.availability.pending_approvals.status(),
+            AvailabilityStatus::Stale
+        );
+    }
+
+    #[test]
+    fn data_refresh_mixed_success_and_failure_preserves_failed_sections() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let previous_definition_ids: Vec<u32> = app
+            .core
+            .data
+            .definitions
+            .iter()
+            .map(|definition| definition.id)
+            .collect();
+        let previous_last_refresh = chrono::Utc::now() - chrono::Duration::minutes(5);
+        app.refresh.last_refresh = Some(previous_last_refresh);
+
+        let mut fresh_build = make_build(900, BuildStatus::InProgress, None);
+        fresh_build.definition = BuildDefinitionRef {
+            id: 1,
+            name: "CI Pipeline".to_string(),
+        };
+
+        assert!(app.refresh.data_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::failed("Definitions unavailable: timeout"),
+                recent_builds: RefreshOutcome::fresh(vec![fresh_build]),
+                pending_approvals: RefreshOutcome::failed("Approvals unavailable: timeout"),
+                retention_leases: RefreshOutcome::fresh(vec![retention_lease(10, 1, 900)]),
+            },
+        );
+
+        assert_eq!(
+            app.core
+                .data
+                .definitions
+                .iter()
+                .map(|definition| definition.id)
+                .collect::<Vec<_>>(),
+            previous_definition_ids
+        );
+        assert_eq!(app.core.data.recent_builds.len(), 1);
+        assert_eq!(app.core.data.recent_builds[0].id, 900);
+        assert_eq!(
+            app.core.availability.definitions.status(),
+            AvailabilityStatus::Stale
+        );
+        assert_eq!(
+            app.core.availability.recent_builds.status(),
+            AvailabilityStatus::Fresh
+        );
+        assert_eq!(
+            app.core.availability.pending_approvals.status(),
+            AvailabilityStatus::Stale
+        );
+        assert_eq!(
+            app.core.availability.retention_leases.status(),
+            AvailabilityStatus::Fresh
+        );
+        assert_eq!(
+            app.core.availability.refresh.status(),
+            AvailabilityStatus::Partial
+        );
+        assert!(app.refresh.last_refresh > Some(previous_last_refresh));
+        assert_eq!(app.refresh.data_refresh.failures, 0);
+    }
+
+    #[test]
+    fn data_refresh_retention_partial_empty_is_not_fresh_empty() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let definitions = app.core.data.definitions.clone();
+        let recent_builds = app.core.data.recent_builds.clone();
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::fresh(definitions.clone()),
+                recent_builds: RefreshOutcome::fresh(recent_builds.clone()),
+                pending_approvals: RefreshOutcome::fresh(Vec::new()),
+                retention_leases: RefreshOutcome::partial(
+                    Vec::new(),
+                    vec!["Retention leases unavailable for definition 2: timeout".to_string()],
+                ),
+            },
+        );
+
+        assert!(app.core.retention_leases.leases.is_empty());
+        assert_eq!(
+            app.core.availability.retention_leases.status(),
+            AvailabilityStatus::Partial
+        );
+        assert_eq!(
+            app.core.availability.retention_leases.primary_error(),
+            Some("Retention leases unavailable for definition 2: timeout")
+        );
+        assert_eq!(
+            app.core.availability.refresh.status(),
+            AvailabilityStatus::Partial
+        );
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::fresh(definitions),
+                recent_builds: RefreshOutcome::fresh(recent_builds),
+                pending_approvals: RefreshOutcome::fresh(Vec::new()),
+                retention_leases: RefreshOutcome::fresh(Vec::new()),
+            },
+        );
+
+        assert!(app.core.retention_leases.leases.is_empty());
+        assert_eq!(
+            app.core.availability.retention_leases.status(),
+            AvailabilityStatus::Fresh
+        );
+        assert_eq!(
+            app.core.availability.refresh.status(),
+            AvailabilityStatus::Fresh
+        );
+    }
+
+    #[test]
+    fn approvals_refresh_error_preserves_existing_approvals_as_stale() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let definitions = app.core.data.definitions.clone();
+        let recent_builds = app.core.data.recent_builds.clone();
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::fresh(definitions),
+                recent_builds: RefreshOutcome::fresh(recent_builds),
+                pending_approvals: RefreshOutcome::fresh(vec![approval("approval-1", 100)]),
+                retention_leases: RefreshOutcome::fresh(Vec::new()),
+            },
+        );
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::RefreshError {
+                message: "Approve check: timeout".to_string(),
+                source: RefreshSource::Approvals,
+            },
+        );
+
+        assert_eq!(app.core.data.pending_approvals.len(), 1);
+        assert!(app.core.data.pending_approval_build_ids.contains(&100));
+        assert_eq!(
+            app.core.availability.pending_approvals.status(),
+            AvailabilityStatus::Stale
+        );
+        assert_eq!(
+            app.core.availability.pending_approvals.primary_error(),
+            Some("Approve check: timeout")
+        );
+        assert_eq!(
+            app.core.availability.refresh.status(),
+            AvailabilityStatus::Stale
+        );
+    }
+
+    #[test]
+    fn approvals_refresh_error_without_prior_data_marks_unavailable() {
+        let config = make_config();
+        let mut app = crate::state::App::new(
+            &config.devops.connection.organization,
+            &config.devops.connection.project,
+            &config,
+            PathBuf::from("test-config.toml"),
+        );
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::RefreshError {
+                message: "Approve check: timeout".to_string(),
+                source: RefreshSource::Approvals,
+            },
+        );
+
+        assert!(app.core.data.pending_approvals.is_empty());
+        assert_eq!(
+            app.core.availability.pending_approvals.status(),
+            AvailabilityStatus::Unavailable
+        );
+        assert_eq!(
+            app.core.availability.refresh.status(),
+            AvailabilityStatus::Unavailable
+        );
+    }
+
+    #[test]
+    fn data_refresh_failures_mark_existing_data_stale() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let previous_last_refresh = chrono::Utc::now() - chrono::Duration::minutes(10);
+        app.refresh.last_refresh = Some(previous_last_refresh);
+
+        assert!(app.refresh.data_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::failed("Definitions unavailable: timeout"),
+                recent_builds: RefreshOutcome::failed("Recent builds unavailable: timeout"),
+                pending_approvals: RefreshOutcome::failed("Approvals unavailable: timeout"),
+                retention_leases: RefreshOutcome::failed("Retention leases unavailable: timeout"),
+            },
+        );
+
+        assert_eq!(app.core.data.definitions.len(), 3);
+        assert_eq!(app.core.data.recent_builds.len(), 3);
+        assert_eq!(
+            app.core.availability.refresh.status(),
+            AvailabilityStatus::Stale
+        );
+        assert_eq!(
+            app.core.availability.pending_approvals.status(),
+            AvailabilityStatus::Stale
+        );
+        assert_eq!(
+            app.core.availability.retention_leases.status(),
+            AvailabilityStatus::Stale
+        );
+        assert_eq!(app.refresh.last_refresh, Some(previous_last_refresh));
+        assert_eq!(app.refresh.data_refresh.failures, 1);
+    }
+
+    #[test]
+    fn data_refresh_failures_without_prior_data_mark_unavailable() {
+        let config = make_config();
+        let mut app = crate::state::App::new(
+            &config.devops.connection.organization,
+            &config.devops.connection.project,
+            &config,
+            PathBuf::from("test-config.toml"),
+        );
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        assert!(app.refresh.data_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::DataRefresh {
+                definitions: RefreshOutcome::failed("Definitions unavailable: timeout"),
+                recent_builds: RefreshOutcome::failed("Recent builds unavailable: timeout"),
+                pending_approvals: RefreshOutcome::failed("Approvals unavailable: timeout"),
+                retention_leases: RefreshOutcome::failed("Retention leases unavailable: timeout"),
+            },
+        );
+
+        assert!(app.core.data.definitions.is_empty());
+        assert_eq!(
+            app.core.availability.refresh.status(),
+            AvailabilityStatus::Unavailable
+        );
+        assert_eq!(
+            app.core.availability.definitions.status(),
+            AvailabilityStatus::Unavailable
+        );
     }
 
     #[test]
@@ -1187,19 +1150,19 @@ mod tests {
         let mut def = make_definition(50, "Rare Pipeline", "\\");
         def.latest_build = Some(Box::new(embedded_build));
 
-        app.data.definitions = vec![def];
+        app.core.data.definitions = vec![def];
         let mut map: BTreeMap<u32, Build> = BTreeMap::new();
-        for d in &app.data.definitions {
+        for d in &app.core.data.definitions {
             if let Some(build) = &d.latest_build {
                 map.insert(d.id, *build.clone());
             }
         }
         // No recent_builds to overlay.
-        app.data.latest_builds_by_def = map;
-        app.data.recent_builds = vec![];
+        app.core.data.latest_builds_by_def = map;
+        app.core.data.recent_builds = vec![];
 
-        assert!(app.data.latest_builds_by_def.contains_key(&50));
-        assert_eq!(app.data.latest_builds_by_def[&50].id, 500);
+        assert!(app.core.data.latest_builds_by_def.contains_key(&50));
+        assert_eq!(app.core.data.latest_builds_by_def[&50].id, 500);
     }
 
     #[test]
@@ -1218,9 +1181,9 @@ mod tests {
             name: "Pipeline".into(),
         };
 
-        app.data.definitions = vec![def];
+        app.core.data.definitions = vec![def];
         let mut map: BTreeMap<u32, Build> = BTreeMap::new();
-        for d in &app.data.definitions {
+        for d in &app.core.data.definitions {
             if let Some(build) = &d.latest_build {
                 map.insert(d.id, *build.clone());
             }
@@ -1238,11 +1201,11 @@ mod tests {
                 }
             }
         }
-        app.data.latest_builds_by_def = map;
-        app.data.recent_builds = recent;
+        app.core.data.latest_builds_by_def = map;
+        app.core.data.recent_builds = recent;
 
         // recent_builds should win (overlay).
-        assert_eq!(app.data.latest_builds_by_def[&50].id, 501);
+        assert_eq!(app.core.data.latest_builds_by_def[&50].id, 501);
     }
 
     #[test]
@@ -1261,9 +1224,9 @@ mod tests {
             name: "Pipeline".into(),
         };
 
-        app.data.definitions = vec![def];
+        app.core.data.definitions = vec![def];
         let mut map: BTreeMap<u32, Build> = BTreeMap::new();
-        for d in &app.data.definitions {
+        for d in &app.core.data.definitions {
             if let Some(build) = &d.latest_build {
                 map.insert(d.id, *build.clone());
             }
@@ -1281,10 +1244,10 @@ mod tests {
                 }
             }
         }
-        app.data.latest_builds_by_def = map;
+        app.core.data.latest_builds_by_def = map;
 
         // latestBuild (502) should win — older recent build (499) must not overwrite.
-        assert_eq!(app.data.latest_builds_by_def[&50].id, 502);
+        assert_eq!(app.core.data.latest_builds_by_def[&50].id, 502);
     }
 
     // --- BuildHistory ---
@@ -1298,9 +1261,8 @@ mod tests {
             make_build(3, BuildStatus::InProgress, None),
         ];
         app.build_history.builds = builds;
-        app.build_history
-            .nav
-            .set_len(app.build_history.builds.len());
+        let build_count = app.build_history.builds.len();
+        app.build_history.nav.set_len(build_count);
 
         assert_eq!(app.build_history.builds.len(), 3);
         // Nav synced — 3 items, index starts at 0.
@@ -1336,9 +1298,8 @@ mod tests {
             make_build(5, BuildStatus::Completed, Some(BuildResult::Succeeded)),
         ];
         app.build_history.builds = builds;
-        app.build_history
-            .nav
-            .set_len(app.build_history.builds.len());
+        let build_count = app.build_history.builds.len();
+        app.build_history.nav.set_len(build_count);
         if let Some(idx) = app.build_history.pending_nav_index.take() {
             app.build_history.nav.set_index(idx);
         }
@@ -1359,9 +1320,8 @@ mod tests {
             make_build(3, BuildStatus::InProgress, None),
         ];
         app.build_history.builds = builds;
-        app.build_history
-            .nav
-            .set_len(app.build_history.builds.len());
+        let build_count = app.build_history.builds.len();
+        app.build_history.nav.set_len(build_count);
         if let Some(idx) = app.build_history.pending_nav_index.take() {
             app.build_history.nav.set_index(idx);
         }
@@ -1380,15 +1340,84 @@ mod tests {
             make_build(2, BuildStatus::Completed, Some(BuildResult::Failed)),
         ];
         app.build_history.builds = builds;
-        app.build_history
-            .nav
-            .set_len(app.build_history.builds.len());
+        let build_count = app.build_history.builds.len();
+        app.build_history.nav.set_len(build_count);
         if let Some(idx) = app.build_history.pending_nav_index.take() {
             app.build_history.nav.set_index(idx);
         }
 
         // No pending index — stays at default 0.
         assert_eq!(app.build_history.nav.index(), 0);
+    }
+
+    // --- LogRefresh ---
+
+    #[test]
+    fn refresh_cancelled_clears_log_in_flight_without_backoff() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        assert!(app.refresh.log_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::RefreshCancelled {
+                source: RefreshSource::Log,
+            },
+        );
+
+        assert!(!app.refresh.log_refresh.in_flight);
+        assert_eq!(app.refresh.log_refresh.failures, 0);
+        assert!(app.refresh.log_refresh.backoff_until.is_none());
+    }
+
+    #[test]
+    fn task_panicked_clears_log_refresh_when_fallback_is_missing() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        assert!(app.refresh.log_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::TaskPanicked {
+                task_name: "log_refresh",
+                message: "boom".to_string(),
+            },
+        );
+
+        assert!(!app.refresh.log_refresh.in_flight);
+        assert_eq!(app.refresh.log_refresh.failures, 1);
+        assert!(app.refresh.log_refresh.backoff_until.is_some());
+    }
+
+    #[test]
+    fn log_refresh_finished_after_cancel_does_not_double_backoff() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+
+        assert!(app.refresh.log_refresh.start());
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::RefreshCancelled {
+                source: RefreshSource::Log,
+            },
+        );
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::LogRefreshFinished { had_failure: true },
+        );
+
+        assert_eq!(app.refresh.log_refresh.failures, 0);
     }
 
     // --- LogContent ---
@@ -1616,9 +1645,9 @@ mod tests {
     fn simulate_notification_diff(app: &mut crate::state::App, map: &BTreeMap<u32, Build>) {
         use crate::state::notifications::NotificationLevel;
 
-        if app.notifications_enabled && !app.prev_latest_builds.is_empty() {
+        if app.refresh.notifications_enabled && !app.refresh.prev_latest_builds.is_empty() {
             for (def_id, build) in map {
-                let prev = app.prev_latest_builds.get(def_id);
+                let prev = app.refresh.prev_latest_builds.get(def_id);
                 let (prev_id, prev_status) = match prev {
                     Some(&(id, status, _)) => (Some(id), Some(status)),
                     None => (None, None),
@@ -1656,7 +1685,7 @@ mod tests {
                 }
             }
         }
-        app.prev_latest_builds = map
+        app.refresh.prev_latest_builds = map
             .iter()
             .map(|(&def_id, b)| (def_id, (b.id, b.status, b.result)))
             .collect();
@@ -1665,7 +1694,7 @@ mod tests {
     #[test]
     fn no_notification_on_first_data_refresh() {
         let mut app = make_app();
-        app.notifications_enabled = true;
+        app.refresh.notifications_enabled = true;
 
         let mut b = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
         b.definition = BuildDefinitionRef {
@@ -1680,13 +1709,13 @@ mod tests {
         // First load — prev was empty, so no notification should fire.
         assert!(app.notifications.clone_current().is_none());
         // But the snapshot should be populated now.
-        assert_eq!(app.prev_latest_builds.len(), 1);
+        assert_eq!(app.refresh.prev_latest_builds.len(), 1);
     }
 
     #[test]
     fn notification_on_build_started() {
         let mut app = make_app();
-        app.notifications_enabled = true;
+        app.refresh.notifications_enabled = true;
 
         // First refresh: completed build (seed).
         let mut b1 = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
@@ -1720,7 +1749,7 @@ mod tests {
     #[test]
     fn notification_on_same_build_completing() {
         let mut app = make_app();
-        app.notifications_enabled = true;
+        app.refresh.notifications_enabled = true;
 
         // First refresh: in-progress build (seed).
         let mut b1 = make_build(100, BuildStatus::InProgress, None);
@@ -1753,7 +1782,7 @@ mod tests {
     #[test]
     fn notification_on_new_build_completing() {
         let mut app = make_app();
-        app.notifications_enabled = true;
+        app.refresh.notifications_enabled = true;
 
         // Seed with build 100 in-progress.
         let mut b1 = make_build(100, BuildStatus::InProgress, None);
@@ -1786,7 +1815,7 @@ mod tests {
     #[test]
     fn no_notification_when_build_unchanged() {
         let mut app = make_app();
-        app.notifications_enabled = true;
+        app.refresh.notifications_enabled = true;
 
         // Seed with completed build.
         let mut b = make_build(100, BuildStatus::Completed, Some(BuildResult::Succeeded));
@@ -1808,10 +1837,11 @@ mod tests {
     #[test]
     fn no_notification_when_disabled() {
         let mut app = make_app();
-        app.notifications_enabled = false;
+        app.refresh.notifications_enabled = false;
 
         // Seed snapshot manually.
-        app.prev_latest_builds
+        app.refresh
+            .prev_latest_builds
             .insert(1, (100, BuildStatus::InProgress, None));
 
         let mut b = make_build(101, BuildStatus::Completed, Some(BuildResult::Failed));
@@ -1851,6 +1881,7 @@ mod tests {
                     board_work_item(2, Some(1), vec![], "Needle child", 2.0),
                     board_work_item(3, None, vec![], "Other root", 3.0),
                 ],
+                partial_errors: Vec::new(),
                 generation: 0,
             },
         );
@@ -1886,6 +1917,7 @@ mod tests {
                     board_work_item(20, None, vec![], "Authoritative parent", 20.0),
                     board_work_item(30, Some(20), vec![], "Child", 30.0),
                 ],
+                partial_errors: Vec::new(),
                 generation: 0,
             },
         );
@@ -1949,6 +1981,7 @@ mod tests {
                 team_name: "Stale Team".to_string(),
                 backlogs: vec![board_backlog("Epics", 1, false)],
                 work_items: vec![board_work_item(1, None, vec![], "Stale root", 1.0)],
+                partial_errors: Vec::new(),
                 generation: 1,
             },
         );
@@ -2024,8 +2057,9 @@ mod tests {
             make_pull_request(2, "PR two", "active", "repo-b"),
         ];
         // Simulate what handle_message does for PullRequestsLoaded.
-        if generation >= app.pull_requests.generation {
-            app.pull_requests.set_data(prs, &app.search.query);
+        if generation == app.pull_requests.generation {
+            let query = app.search.query.clone();
+            app.pull_requests.set_data(prs, &query);
         }
         assert_eq!(app.pull_requests.filtered.len(), 2);
     }
@@ -2042,10 +2076,11 @@ mod tests {
         let stale_prs = vec![make_pull_request(1, "Stale PR", "active", "repo")];
         // Simulate a response arriving with the old generation.
         let stale_gen = 1u64;
-        if stale_gen < app.pull_requests.generation {
-            // Should be dropped — don't call set_data.
+        if stale_gen == app.pull_requests.generation {
+            let query = app.search.query.clone();
+            app.pull_requests.set_data(stale_prs, &query);
         } else {
-            app.pull_requests.set_data(stale_prs, &app.search.query);
+            // Should be dropped — don't call set_data.
         }
         // Data should remain empty because the stale response was dropped.
         assert!(app.pull_requests.filtered.is_empty());
@@ -2064,10 +2099,65 @@ mod tests {
 
         let prs = vec![make_pull_request(5, "Current PR", "active", "repo")];
         // Response with matching generation should be accepted.
-        if current >= app.pull_requests.generation {
-            app.pull_requests.set_data(prs, &app.search.query);
+        if current == app.pull_requests.generation {
+            let query = app.search.query.clone();
+            app.pull_requests.set_data(prs, &query);
         }
         assert_eq!(app.pull_requests.filtered.len(), 1);
-        assert_eq!(app.pull_requests.filtered[0].pull_request_id, 5);
+        assert_eq!(
+            app.pull_requests
+                .pull_request_at(0)
+                .unwrap()
+                .pull_request_id,
+            5
+        );
+    }
+
+    #[test]
+    fn pull_requests_loaded_drops_future_generation() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        app.view = View::PullRequestsCreatedByMe;
+        app.pull_requests.next_generation();
+        let future_generation = app.pull_requests.generation + 1;
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::PullRequestsLoaded {
+                pull_requests: vec![make_pull_request(9, "Future PR", "active", "repo")],
+                generation: future_generation,
+            },
+        );
+
+        assert!(app.pull_requests.filtered.is_empty());
+    }
+
+    #[test]
+    fn build_history_drops_future_generation() {
+        let mut app = make_app();
+        let client = crate::client::http::AdoClient::new("org", "project").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        app.build_history.next_generation();
+        let future_generation = app.build_history.generation + 1;
+
+        handle_message(
+            &mut app,
+            &client,
+            &tx,
+            AppMessage::BuildHistory {
+                builds: vec![make_build(
+                    99,
+                    BuildStatus::Completed,
+                    Some(BuildResult::Succeeded),
+                )],
+                continuation_token: None,
+                generation: future_generation,
+            },
+        );
+
+        assert!(app.build_history.builds.is_empty());
     }
 }

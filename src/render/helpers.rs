@@ -5,6 +5,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::theme;
 use crate::client::models::{Build, BuildResult, BuildStatus, TaskState};
@@ -217,21 +218,38 @@ where
     f.render_widget(Paragraph::new(message.into()).style(style), area);
 }
 
-/// Truncates a string to at most `max_len` characters, safe for multi-byte UTF-8.
+/// Returns the display width of a string in terminal cells.
+pub fn display_width(s: &str) -> usize {
+    UnicodeWidthStr::width(s)
+}
+
+/// Truncates a string to at most `max_width` terminal cells.
+///
 /// Appends `…` when the text is clipped so the user knows content was cut.
-pub fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+pub fn truncate(s: &str, max_width: usize) -> String {
+    if display_width(s) <= max_width {
         return s.to_string();
     }
-    if max_len <= 1 {
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let ellipsis_width = UnicodeWidthChar::width('…').unwrap_or(1);
+    if max_width <= ellipsis_width {
         return "…".to_string();
     }
-    // Reserve one char for the ellipsis.
-    let mut end = max_len - 1;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
+
+    let content_width = max_width - ellipsis_width;
+    let mut used = 0;
+    let mut result = String::new();
+    for ch in s.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + ch_width > content_width {
+            break;
+        }
+        result.push(ch);
+        used += ch_width;
     }
-    let mut result = s[..end].to_string();
     result.push('…');
     result
 }
@@ -391,9 +409,19 @@ mod tests {
 
     #[test]
     fn truncate_multibyte_safe() {
-        // "café" = 5 bytes (é = 2 bytes), truncate at 4 should not split é.
-        let result = truncate("café", 4);
-        assert_eq!(result, "caf…");
+        assert_eq!(truncate("café au lait", 5), "café…");
+    }
+
+    #[test]
+    fn truncate_keeps_text_that_fits_display_width() {
+        assert_eq!(truncate("café", 4), "café");
+    }
+
+    #[test]
+    fn truncate_wide_text_by_display_width() {
+        let result = truncate("デプロイ", 5);
+        assert_eq!(result, "デプ…");
+        assert_eq!(display_width(&result), 5);
     }
 
     #[test]
@@ -403,7 +431,7 @@ mod tests {
 
     #[test]
     fn truncate_zero_len() {
-        assert_eq!(truncate("hello", 0), "…");
+        assert_eq!(truncate("hello", 0), "");
     }
 
     // --- build_elapsed tests ---

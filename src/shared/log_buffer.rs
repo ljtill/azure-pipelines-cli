@@ -64,11 +64,19 @@ impl LogBuffer {
         self.lines.iter()
     }
 
+    /// Returns an iterator over a clamped window of live lines.
+    pub fn window(&self, start: usize, len: usize) -> impl Iterator<Item = &str> {
+        let start = start.min(self.lines.len());
+        let end = start.saturating_add(len).min(self.lines.len());
+        (start..end).map(|idx| self.lines[idx].as_str())
+    }
+
     /// Returns the line at logical offset `idx` (0 = oldest currently held),
     /// or `None` if out of range.
     pub fn get(&self, idx: usize) -> Option<&String> {
         self.lines.get(idx)
     }
+
     /// Replaces the entire buffer with the lines split from `content`.
     ///
     /// If `content` contains more lines than `cap`, only the last `cap`
@@ -79,17 +87,29 @@ impl LogBuffer {
         self.lines.clear();
         self.dropped_from_front = 0;
 
-        let total = content.lines().count();
-        if total > self.cap {
-            let skip = total - self.cap;
-            self.dropped_from_front = skip as u64;
-            for line in content.lines().skip(skip) {
-                self.lines.push_back(line.to_string());
+        let mut retained = Vec::with_capacity(self.cap.min(DEFAULT_CAPACITY));
+        let mut next_slot = 0;
+
+        for line in content.lines() {
+            if retained.len() < self.cap {
+                retained.push(line);
+            } else {
+                retained[next_slot] = line;
+                next_slot = (next_slot + 1) % self.cap;
+                self.dropped_from_front += 1;
             }
+        }
+
+        self.lines.reserve(retained.len());
+        if self.dropped_from_front == 0 {
+            self.lines.extend(retained.into_iter().map(str::to_owned));
         } else {
-            for line in content.lines() {
-                self.lines.push_back(line.to_string());
-            }
+            self.lines.extend(
+                retained[next_slot..]
+                    .iter()
+                    .chain(retained[..next_slot].iter())
+                    .map(|line| (*line).to_owned()),
+            );
         }
     }
 
@@ -171,6 +191,20 @@ mod tests {
         // Oldest held line is line-{extra}; newest is line-{total-1}.
         assert_eq!(buf.get(0).unwrap(), &format!("line-{extra}"));
         assert_eq!(buf.iter().last().unwrap(), &format!("line-{}", total - 1));
+    }
+
+    #[test]
+    fn window_returns_clamped_slice() {
+        let mut buf = LogBuffer::new(MIN_CAPACITY);
+        buf.replace_from_str("a\nb\nc\nd");
+
+        let lines: Vec<&str> = buf.window(1, 2).collect();
+        assert_eq!(lines, vec!["b", "c"]);
+
+        let tail: Vec<&str> = buf.window(2, 99).collect();
+        assert_eq!(tail, vec!["c", "d"]);
+
+        assert!(buf.window(99, 2).next().is_none());
     }
 
     #[test]

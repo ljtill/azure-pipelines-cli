@@ -16,8 +16,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Right | KeyCode::Enter => {
             if let Some(pr) = app
                 .pull_requests
-                .filtered
-                .get(app.pull_requests.nav.index())
+                .pull_request_at(app.pull_requests.nav.index())
                 .cloned()
             {
                 let repo_id = pr

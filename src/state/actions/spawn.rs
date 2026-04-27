@@ -6,13 +6,17 @@ use std::panic::AssertUnwindSafe;
 use anyhow::Result;
 use futures::FutureExt;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use tracing::Instrument;
 
-use crate::client::http::{AdoClient, ApiVersionUnsupported, PaginationProgress};
+use crate::client::endpoints::pull_requests::PullRequestListRequest;
+use crate::client::errors::AdoError;
+use crate::client::http::{AdoClient, PaginationProgress};
 use crate::client::models::{BacklogLevelConfiguration, ProjectTeam, WorkItem};
 use crate::client::wiql::wiql_escape;
+use crate::state::effects::EffectKind;
 
-use super::super::messages::{AppMessage, RefreshSource};
+use super::super::messages::{AppMessage, RefreshOutcome, RefreshSource};
 use super::super::{
     App, DashboardPullRequestsState, DashboardWorkItemsState, ExactUserIdentity,
     PinnedWorkItemsState,
@@ -42,6 +46,35 @@ fn dashboard_identity_unavailable_message(detail: &str) -> String {
 }
 
 fn describe_connection_data_error(error: &anyhow::Error) -> String {
+    if let Some(ado_error) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<AdoError>())
+    {
+        match ado_error {
+            AdoError::Auth { .. } => {
+                return "authentication failed — run `az login` or `azd auth login`".to_string();
+            }
+            AdoError::Timeout { .. } => {
+                return "connection data request timed out".to_string();
+            }
+            AdoError::RateLimit { metadata, .. } => {
+                return metadata.diagnostic_summary().map_or_else(
+                    || "connection data request was rate limited (429)".to_string(),
+                    |summary| format!("connection data request was rate limited (429): {summary}"),
+                );
+            }
+            AdoError::HttpStatus { status, .. } => {
+                return match status.as_u16() {
+                    401 => "connection data request was unauthorized (401)".to_string(),
+                    403 => "connection data request was forbidden (403)".to_string(),
+                    404 => "connection data endpoint was not found (404)".to_string(),
+                    code => format!("connection data request failed with HTTP {code}"),
+                };
+            }
+            _ => {}
+        }
+    }
+
     let flattened_message = error
         .to_string()
         .split_whitespace()
@@ -147,7 +180,12 @@ pub(crate) fn hierarchy_descendant_ids(
 async fn load_boards_snapshot(
     client: &AdoClient,
     project: &str,
-) -> Result<(String, Vec<BacklogLevelConfiguration>, Vec<WorkItem>)> {
+) -> Result<(
+    String,
+    Vec<BacklogLevelConfiguration>,
+    Vec<WorkItem>,
+    Vec<String>,
+)> {
     let teams = client.list_project_teams().await?;
     let team = choose_boards_team(&teams, project)
         .ok_or_else(|| anyhow::anyhow!("Azure DevOps returned no teams for project `{project}`"))?;
@@ -172,6 +210,7 @@ async fn load_boards_snapshot(
     // recursive Hierarchy-Forward WorkItemLinks query and restricting results
     // to the transitive closure of the Epic seeds.
     let seed_ids: Vec<u32> = work_item_ids.iter().copied().collect();
+    let mut partial_errors = Vec::new();
     if !seed_ids.is_empty() {
         let wiql = build_board_descendants_wiql(project);
         match client.query_by_wiql(&wiql).await {
@@ -180,6 +219,9 @@ async fn load_boards_snapshot(
                 work_item_ids.extend(reachable);
             }
             Err(error) => {
+                partial_errors.push(format!(
+                    "Descendant hierarchy unavailable; showing Epic roots only: {error}"
+                ));
                 tracing::warn!(
                     %error,
                     "failed to fetch board descendants; rendering Epics only"
@@ -196,53 +238,82 @@ async fn load_boards_snapshot(
         )
         .await?;
 
-    Ok((team_name, backlogs, work_items))
+    Ok((team_name, backlogs, work_items, partial_errors))
 }
 
 // --- Drop guard for async refresh tasks ---
 
-/// Ensures a fallback message is sent if the spawned task exits unexpectedly
-/// (e.g., due to a panic). Call `defuse()` on the happy path to suppress.
+/// Ensures a fallback message is sent if the spawned task panics or is cancelled.
+/// Call `defuse()` on the happy path to suppress.
 pub(super) struct RefreshGuard {
     tx: Option<mpsc::Sender<AppMessage>>,
-    fallback: Option<AppMessage>,
+    panic_fallback: Option<AppMessage>,
+    cancel_fallback: Option<AppMessage>,
 }
 
 impl RefreshGuard {
-    pub(super) fn new(tx: mpsc::Sender<AppMessage>, fallback: AppMessage) -> Self {
+    pub(super) fn new(
+        tx: mpsc::Sender<AppMessage>,
+        panic_fallback: AppMessage,
+        cancel_fallback: AppMessage,
+    ) -> Self {
         Self {
             tx: Some(tx),
-            fallback: Some(fallback),
+            panic_fallback: Some(panic_fallback),
+            cancel_fallback: Some(cancel_fallback),
         }
     }
 
     /// Disarms the guard — no fallback message will be sent on drop.
     pub(super) fn defuse(&mut self) {
         self.tx = None;
-        self.fallback = None;
+        self.panic_fallback = None;
+        self.cancel_fallback = None;
     }
 }
 
 impl Drop for RefreshGuard {
     fn drop(&mut self) {
-        if let (Some(tx), Some(msg)) = (self.tx.take(), self.fallback.take()) {
-            let _ = tx.try_send(msg);
+        let Some(tx) = self.tx.take() else {
+            return;
+        };
+
+        let (context, fallback) = if std::thread::panicking() {
+            ("refresh_guard_panic", self.panic_fallback.take())
+        } else {
+            tracing::debug!("refresh guard dropped without defuse; sending cancellation fallback");
+            ("refresh_guard_cancel", self.cancel_fallback.take())
+        };
+
+        if let Some(msg) = fallback {
+            send_guard_fallback(tx, context, msg);
         }
     }
 }
 
 /// Returns an `AppMessage::AdoApiVersionUnsupported` when the error chain
-/// contains a typed [`ApiVersionUnsupported`], otherwise `None`.
+/// contains a typed [`AdoError::UnsupportedApiVersion`], otherwise `None`.
 ///
 /// Error conversion sites in this module consult this helper first so users
 /// get an actionable notification instead of a generic "request failed".
 pub(super) fn api_version_unsupported_message(e: &anyhow::Error) -> Option<AppMessage> {
-    e.chain()
-        .find_map(|cause| cause.downcast_ref::<ApiVersionUnsupported>())
-        .map(|v| AppMessage::AdoApiVersionUnsupported {
-            requested: v.requested.clone(),
-            server_message: v.server_message.clone(),
+    e.chain().find_map(|cause| {
+        cause.downcast_ref::<AdoError>().and_then(|err| {
+            if let AdoError::UnsupportedApiVersion {
+                requested,
+                server_message,
+                ..
+            } = err
+            {
+                Some(AppMessage::AdoApiVersionUnsupported {
+                    requested: requested.clone(),
+                    server_message: server_message.clone(),
+                })
+            } else {
+                None
+            }
         })
+    })
 }
 
 /// Builds an `AppMessage` for an API error, preferring the typed
@@ -258,10 +329,69 @@ pub(super) fn error_to_message(
     generic(e)
 }
 
-/// Spawns a named tokio task. If the task panics, a `TaskPanicked` message is
-/// sent through `tx` so the UI can surface the failure instead of leaving the
-/// user with a frozen or stale view.
-pub(super) fn spawn_named<F>(task_name: &'static str, tx: mpsc::Sender<AppMessage>, fut: F)
+fn refresh_outcome<T>(
+    result: Result<T>,
+    unavailable_prefix: &'static str,
+    tx: &mpsc::Sender<AppMessage>,
+) -> RefreshOutcome<T> {
+    match result {
+        Ok(value) => RefreshOutcome::fresh(value),
+        Err(error) => {
+            if let Some(message) = api_version_unsupported_message(&error) {
+                try_send_app_message(tx, "api_version_unsupported", message);
+            }
+            RefreshOutcome::failed(format!("{unavailable_prefix}: {error}"))
+        }
+    }
+}
+
+/// Sends an app message and logs when the main loop is no longer receiving.
+pub(crate) async fn send_app_message(
+    tx: &mpsc::Sender<AppMessage>,
+    context: &'static str,
+    msg: AppMessage,
+) -> bool {
+    if tx.send(msg).await.is_ok() {
+        true
+    } else {
+        tracing::debug!(context, "dropping app message because receiver is closed");
+        false
+    }
+}
+
+fn try_send_app_message(
+    tx: &mpsc::Sender<AppMessage>,
+    context: &'static str,
+    msg: AppMessage,
+) -> bool {
+    match tx.try_send(msg) {
+        Ok(()) => true,
+        Err(TrySendError::Full(_)) => {
+            tracing::debug!(context, "dropping app message because channel is full");
+            false
+        }
+        Err(TrySendError::Closed(_)) => {
+            tracing::debug!(context, "dropping app message because receiver is closed");
+            false
+        }
+    }
+}
+
+fn send_guard_fallback(tx: mpsc::Sender<AppMessage>, context: &'static str, msg: AppMessage) {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        let _fallback_task = handle.spawn(async move {
+            send_app_message(&tx, context, msg).await;
+        });
+    } else {
+        try_send_app_message(&tx, context, msg);
+    }
+}
+
+fn spawn_reported<F>(
+    task_name: &'static str,
+    tx: mpsc::Sender<AppMessage>,
+    fut: F,
+) -> tokio::task::JoinHandle<()>
 where
     F: Future<Output = ()> + Send + 'static,
 {
@@ -271,11 +401,45 @@ where
         if let Err(panic_payload) = result {
             let message = panic_message(&panic_payload);
             tracing::error!(task_name, %message, "background task panicked");
-            let _ = tx_panic
-                .send(AppMessage::TaskPanicked { task_name, message })
-                .await;
+            send_app_message(
+                &tx_panic,
+                "task_panic",
+                AppMessage::TaskPanicked { task_name, message },
+            )
+            .await;
         }
-    });
+    })
+}
+
+/// Spawns a named tokio task. If the task panics, a `TaskPanicked` message is
+/// sent through `tx` so the UI can surface the failure instead of leaving the
+/// user with a frozen or stale view.
+pub(super) fn spawn_named<F>(task_name: &'static str, tx: mpsc::Sender<AppMessage>, fut: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let _handle = spawn_reported(task_name, tx, fut);
+}
+
+fn spawn_managed<F>(
+    app: &mut App,
+    kind: EffectKind,
+    generation: Option<u64>,
+    task_name: &'static str,
+    tx: mpsc::Sender<AppMessage>,
+    fut: F,
+) where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let handle = spawn_reported(task_name, tx, fut);
+    if let Some(replaced) = app.refresh.effects.track(kind, generation, handle) {
+        tracing::debug!(
+            ?kind,
+            old_generation = ?replaced.generation,
+            new_generation = ?generation,
+            "cancelled superseded background effect"
+        );
+    }
 }
 
 fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
@@ -298,6 +462,24 @@ pub(super) fn spawn_api<F, Fut, T>(
     Fut: Future<Output = Result<T>> + Send,
     T: Send + 'static,
 {
+    spawn_api_with_error(client, tx, context, call, on_ok, move |e| {
+        AppMessage::Error(format!("{context}: {e}"))
+    });
+}
+
+/// Spawns an async API call with custom error routing.
+pub(super) fn spawn_api_with_error<F, Fut, T>(
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    context: &'static str,
+    call: F,
+    on_ok: impl FnOnce(T) -> AppMessage + Send + 'static,
+    on_err: impl FnOnce(anyhow::Error) -> AppMessage + Send + 'static,
+) where
+    F: FnOnce(AdoClient) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send,
+    T: Send + 'static,
+{
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("api_call", context);
@@ -307,9 +489,9 @@ pub(super) fn spawn_api<F, Fut, T>(
         async move {
             let msg = match call(client).await {
                 Ok(val) => on_ok(val),
-                Err(e) => error_to_message(e, |e| AppMessage::Error(format!("{context}: {e}"))),
+                Err(e) => error_to_message(e, on_err),
             };
-            let _ = tx.send(msg).await;
+            send_app_message(&tx, context, msg).await;
         }
         .instrument(span),
     );
@@ -320,7 +502,7 @@ pub fn spawn_data_refresh(
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
 ) -> bool {
-    if !app.data_refresh.start() {
+    if !app.refresh.data_refresh.start() {
         return false;
     }
 
@@ -337,6 +519,9 @@ pub fn spawn_data_refresh(
                     message: "Data refresh task terminated unexpectedly".into(),
                     source: RefreshSource::Data,
                 },
+                AppMessage::RefreshCancelled {
+                    source: RefreshSource::Data,
+                },
             );
 
             // Progress callback shared across paginated fetchers during this
@@ -344,64 +529,82 @@ pub fn spawn_data_refresh(
             // drops progress events — losing one update is harmless.
             let progress_tx = tx.clone();
             let progress = move |p: PaginationProgress| {
-                let _ = progress_tx.try_send(AppMessage::PaginationProgress {
-                    endpoint: p.endpoint,
-                    page: p.page,
-                    items: p.items_so_far,
-                });
+                try_send_app_message(
+                    &progress_tx,
+                    "pagination_progress",
+                    AppMessage::PaginationProgress {
+                        endpoint: p.endpoint,
+                        page: p.page,
+                        items: p.items_so_far,
+                    },
+                );
             };
 
             let (defs_result, recent_result, approvals_result) = tokio::join!(
                 client.list_definitions_with_progress(Some(&progress)),
-                client.list_recent_builds(),
+                client.list_recent_builds_with_progress(Some(&progress)),
                 client.list_pending_approvals(),
             );
 
-            let pending_approvals = match approvals_result {
-                Ok(approvals) => approvals,
-                Err(e) => {
-                    let msg = error_to_message(e, |e| AppMessage::RefreshError {
-                        message: format!("Approvals unavailable: {e}"),
-                        source: RefreshSource::Approvals,
-                    });
-                    let _ = tx.send(msg).await;
-                    Vec::new()
+            let definitions = refresh_outcome(defs_result, "Definitions unavailable", &tx);
+            let recent_builds = refresh_outcome(recent_result, "Recent builds unavailable", &tx);
+            let pending_approvals =
+                refresh_outcome(approvals_result, "Approvals unavailable", &tx);
+
+            // Fetch retention leases after definitions are known so we have the IDs.
+            let retention_leases = if let RefreshOutcome::Fresh(definitions) = &definitions {
+                let def_ids: Vec<u32> =
+                    definitions.iter().map(|definition| definition.id).collect();
+                match client
+                    .list_all_retention_leases_with_progress(&def_ids, Some(&progress))
+                    .await
+                {
+                    Ok(result) if result.is_partial() => {
+                        let errors: Vec<String> = result
+                            .failures
+                            .iter()
+                            .map(|failure| {
+                                failure.definition_id.map_or_else(
+                                    || format!("Retention lease task failed: {}", failure.message),
+                                    |definition_id| {
+                                        format!(
+                                            "Retention leases unavailable for definition {definition_id}: {}",
+                                            failure.message
+                                        )
+                                    },
+                                )
+                            })
+                            .collect();
+                        tracing::warn!(
+                            failures = errors.len(),
+                            total = def_ids.len(),
+                            "retention leases partially unavailable"
+                        );
+                        RefreshOutcome::partial(result.leases, errors)
+                    }
+                    Ok(result) => RefreshOutcome::fresh(result.leases),
+                    Err(e) => {
+                        if let Some(message) = api_version_unsupported_message(&e) {
+                            try_send_app_message(&tx, "api_version_unsupported", message);
+                        }
+                        RefreshOutcome::failed(format!("Retention leases unavailable: {e}"))
+                    }
                 }
+            } else {
+                RefreshOutcome::failed("Retention leases unavailable: definitions unavailable")
             };
 
-            match (defs_result, recent_result) {
-                (Ok(definitions), Ok(recent_builds)) => {
-                    // Fetch retention leases in parallel across all definitions.
-                    // Done after definitions are known so we have the IDs.
-                    let def_ids: Vec<u32> = definitions.iter().map(|d| d.id).collect();
-                    let retention_leases = match client
-                        .list_all_retention_leases_with_progress(&def_ids, Some(&progress))
-                        .await
-                    {
-                        Ok(leases) => leases,
-                        Err(e) => {
-                            tracing::warn!(error = %e, "retention leases unavailable");
-                            Vec::new()
-                        }
-                    };
-
-                    let _ = tx
-                        .send(AppMessage::DataRefresh {
-                            definitions,
-                            recent_builds,
-                            pending_approvals,
-                            retention_leases,
-                        })
-                        .await;
-                }
-                (Err(e), _) | (_, Err(e)) => {
-                    let msg = error_to_message(e, |e| AppMessage::RefreshError {
-                        message: format!("Refresh: {e}"),
-                        source: RefreshSource::Data,
-                    });
-                    let _ = tx.send(msg).await;
-                }
-            }
+            send_app_message(
+                &tx,
+                "data_refresh",
+                AppMessage::DataRefresh {
+                    definitions,
+                    recent_builds,
+                    pending_approvals,
+                    retention_leases,
+                },
+            )
+            .await;
 
             guard.defuse();
         }
@@ -425,43 +628,100 @@ pub(super) fn spawn_build_history_refresh(
     if let Some(def) = app.build_history.selected_definition.clone() {
         // Bump generation so any in-flight response for a prior request is dropped.
         let generation = app.build_history.next_generation();
-        let client = client.clone();
-        let tx = tx.clone();
-        let def_id = def.id;
-        let span = tracing::debug_span!("build_history_refresh", definition_id = def_id);
-        spawn_named(
-            "build_history_refresh",
-            tx.clone(),
-            async move {
-                let result = match top {
-                    Some(n) => client.list_builds_for_definition_top(def_id, n).await,
-                    None => client.list_builds_for_definition(def_id).await,
-                };
-                match result {
-                    Ok((builds, continuation_token)) => {
-                        let _ = tx
-                            .send(AppMessage::BuildHistory {
-                                builds,
-                                continuation_token,
-                                generation,
-                            })
-                            .await;
-                    }
-                    Err(e) => {
-                        let msg = error_to_message(e, |e| AppMessage::RefreshError {
-                            message: format!("Refresh builds: {e}"),
-                            source: RefreshSource::BuildHistory,
-                        });
-                        let _ = tx.send(msg).await;
-                    }
-                }
-            }
-            .instrument(span),
-        );
+        spawn_build_history_fetch(app, client, tx, def.id, top, generation);
     }
 }
 
+/// Spawns a managed build history fetch for a specific pipeline definition.
+pub(super) fn spawn_build_history_fetch(
+    app: &mut App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    def_id: u32,
+    top: Option<u32>,
+    generation: u64,
+) {
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::debug_span!("build_history_refresh", definition_id = def_id);
+    spawn_managed(
+        app,
+        EffectKind::BuildHistoryRefresh,
+        Some(generation),
+        "build_history_refresh",
+        tx.clone(),
+        async move {
+            let result = match top {
+                Some(n) => client.list_builds_for_definition_top(def_id, n).await,
+                None => client.list_builds_for_definition(def_id).await,
+            };
+            match result {
+                Ok((builds, continuation_token)) => {
+                    send_app_message(
+                        &tx,
+                        "build_history_refresh",
+                        AppMessage::BuildHistory {
+                            builds,
+                            continuation_token,
+                            generation,
+                        },
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    let msg = error_to_message(e, |e| AppMessage::RefreshError {
+                        message: format!("Refresh builds: {e}"),
+                        source: RefreshSource::BuildHistory,
+                    });
+                    send_app_message(&tx, "build_history_refresh_error", msg).await;
+                }
+            }
+        }
+        .instrument(span),
+    );
+}
+
+/// Spawns a managed fetch for the next page of build history.
+pub(super) fn spawn_build_history_more_fetch(
+    app: &mut App,
+    client: &AdoClient,
+    tx: &mpsc::Sender<AppMessage>,
+    definition_id: u32,
+    continuation_token: String,
+    generation: u64,
+) {
+    let client = client.clone();
+    let tx = tx.clone();
+    let span = tracing::debug_span!("build_history_more", definition_id);
+    spawn_managed(
+        app,
+        EffectKind::BuildHistoryRefresh,
+        Some(generation),
+        "build_history_more",
+        tx.clone(),
+        async move {
+            let msg = match client
+                .list_builds_for_definition_continued(definition_id, &continuation_token)
+                .await
+            {
+                Ok((builds, continuation_token)) => AppMessage::BuildHistoryMore {
+                    builds,
+                    continuation_token,
+                    generation,
+                },
+                Err(e) => error_to_message(e, |e| AppMessage::RefreshError {
+                    message: format!("Fetch more builds: {e}"),
+                    source: RefreshSource::BuildHistory,
+                }),
+            };
+            send_app_message(&tx, "build_history_more", msg).await;
+        }
+        .instrument(span),
+    );
+}
+
 pub fn spawn_log_fetch(
+    app: &mut App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
     build_id: u32,
@@ -471,23 +731,29 @@ pub fn spawn_log_fetch(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::debug_span!("log_fetch", build_id, log_id);
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::LogFetch,
+        Some(generation),
         "log_fetch",
         tx.clone(),
         async move {
             match client.get_build_log(build_id, log_id).await {
                 Ok(content) => {
-                    let _ = tx
-                        .send(AppMessage::LogContent {
+                    send_app_message(
+                        &tx,
+                        "log_fetch",
+                        AppMessage::LogContent {
                             content,
                             generation,
                             log_id,
-                        })
-                        .await;
+                        },
+                    )
+                    .await;
                 }
                 Err(e) => {
                     let msg = error_to_message(e, |e| AppMessage::Error(format!("Fetch log: {e}")));
-                    let _ = tx.send(msg).await;
+                    send_app_message(&tx, "log_fetch_error", msg).await;
                 }
             }
         }
@@ -496,6 +762,7 @@ pub fn spawn_log_fetch(
 }
 
 pub fn spawn_timeline_fetch(
+    app: &mut App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
     build_id: u32,
@@ -505,25 +772,31 @@ pub fn spawn_timeline_fetch(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::debug_span!("timeline_fetch", build_id, is_refresh);
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::TimelineFetch,
+        Some(generation),
         "timeline_fetch",
         tx.clone(),
         async move {
             match client.get_build_timeline(build_id).await {
                 Ok(timeline) => {
-                    let _ = tx
-                        .send(AppMessage::Timeline {
+                    send_app_message(
+                        &tx,
+                        "timeline_fetch",
+                        AppMessage::Timeline {
                             build_id,
                             timeline,
                             generation,
                             is_refresh,
-                        })
-                        .await;
+                        },
+                    )
+                    .await;
                 }
                 Err(e) => {
                     let msg =
                         error_to_message(e, |e| AppMessage::Error(format!("Fetch timeline: {e}")));
-                    let _ = tx.send(msg).await;
+                    send_app_message(&tx, "timeline_fetch_error", msg).await;
                 }
             }
         }
@@ -532,12 +805,12 @@ pub fn spawn_timeline_fetch(
 }
 
 pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<AppMessage>) -> bool {
-    if !app.log_refresh.start() {
+    if !app.refresh.log_refresh.start() {
         return false;
     }
     let generation = app.log_viewer.generation();
     let Some(build) = app.log_viewer.selected_build() else {
-        app.log_refresh.succeed(); // wasn't really in-flight
+        app.refresh.log_refresh.succeed(); // wasn't really in-flight
         return false;
     };
     let build_id = build.id;
@@ -555,13 +828,19 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
     let log_client = client.clone();
     let tx = tx.clone();
     let span = tracing::debug_span!("log_refresh", build_id);
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::LogRefresh,
+        Some(generation),
         "log_refresh",
         tx.clone(),
         async move {
             let mut guard = RefreshGuard::new(
                 tx.clone(),
                 AppMessage::LogRefreshFinished { had_failure: true },
+                AppMessage::RefreshCancelled {
+                    source: RefreshSource::Log,
+                },
             );
 
             let timeline_future = async move {
@@ -589,14 +868,17 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
             if let Some(result) = timeline_result {
                 match result {
                     Ok(timeline) => {
-                        let _ = tx
-                            .send(AppMessage::Timeline {
+                        send_app_message(
+                            &tx,
+                            "log_refresh_timeline",
+                            AppMessage::Timeline {
                                 build_id,
                                 timeline,
                                 generation,
                                 is_refresh: true,
-                            })
-                            .await;
+                            },
+                        )
+                        .await;
                     }
                     Err(e) => {
                         had_failure = true;
@@ -604,7 +886,7 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
                             message: format!("Refresh timeline: {e}"),
                             source: RefreshSource::Log,
                         });
-                        let _ = tx.send(msg).await;
+                        send_app_message(&tx, "log_refresh_timeline_error", msg).await;
                     }
                 }
             }
@@ -612,13 +894,16 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
             if let Some((log_id, result)) = log_result {
                 match result {
                     Ok(content) => {
-                        let _ = tx
-                            .send(AppMessage::LogContent {
+                        send_app_message(
+                            &tx,
+                            "log_refresh_content",
+                            AppMessage::LogContent {
                                 content,
                                 generation,
                                 log_id,
-                            })
-                            .await;
+                            },
+                        )
+                        .await;
                     }
                     Err(e) => {
                         had_failure = true;
@@ -626,14 +911,17 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
                             message: format!("Refresh log: {e}"),
                             source: RefreshSource::Log,
                         });
-                        let _ = tx.send(msg).await;
+                        send_app_message(&tx, "log_refresh_content_error", msg).await;
                     }
                 }
             }
 
-            let _ = tx
-                .send(AppMessage::LogRefreshFinished { had_failure })
-                .await;
+            send_app_message(
+                &tx,
+                "log_refresh_finished",
+                AppMessage::LogRefreshFinished { had_failure },
+            )
+            .await;
 
             guard.defuse();
         }
@@ -644,7 +932,7 @@ pub fn spawn_log_refresh(app: &mut App, client: &AdoClient, tx: &mpsc::Sender<Ap
 
 /// Spawns an async task that fetches pull requests from the Azure DevOps REST API.
 pub fn spawn_fetch_pull_requests(
-    app: &App,
+    app: &mut App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
     generation: u64,
@@ -652,7 +940,7 @@ pub fn spawn_fetch_pull_requests(
     use crate::state::View;
 
     let view = app.view;
-    let user_id = app.current_user.id.clone();
+    let user_id = app.core.current_user.id.clone();
 
     // Warn when a filtered view cannot actually filter.
     if user_id.is_none()
@@ -670,20 +958,28 @@ pub fn spawn_fetch_pull_requests(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_pull_requests", ?view, generation);
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::PullRequestsRefresh,
+        Some(generation),
         "fetch_pull_requests",
         tx.clone(),
         async move {
-            let (status, creator_id, reviewer_id) = match view {
-                View::PullRequestsAssignedToMe => ("active", None, user_id.as_deref()),
-                View::PullRequestsAllActive => ("active", None, None),
+            let request = match view {
+                View::PullRequestsAssignedToMe => user_id
+                    .as_deref()
+                    .map_or_else(PullRequestListRequest::active, |id| {
+                        PullRequestListRequest::active().with_reviewer_id(id)
+                    }),
+                View::PullRequestsAllActive => PullRequestListRequest::active(),
                 // Default to CreatedByMe semantics for the root PR view.
-                _ => ("active", user_id.as_deref(), None),
+                _ => user_id
+                    .as_deref()
+                    .map_or_else(PullRequestListRequest::active, |id| {
+                        PullRequestListRequest::active().with_creator_id(id)
+                    }),
             };
-            let msg = match client
-                .list_pull_requests(status, creator_id, reviewer_id)
-                .await
-            {
+            let msg = match client.list_pull_requests(request).await {
                 Ok(prs) => AppMessage::PullRequestsLoaded {
                     pull_requests: prs,
                     generation,
@@ -692,7 +988,7 @@ pub fn spawn_fetch_pull_requests(
                     AppMessage::Error(format!("Fetch pull requests: {e}"))
                 }),
             };
-            let _ = tx.send(msg).await;
+            send_app_message(&tx, "fetch_pull_requests", msg).await;
         }
         .instrument(span),
     );
@@ -707,7 +1003,7 @@ pub fn spawn_fetch_dashboard_pull_requests(
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
 ) {
-    if !app.current_user.is_known() {
+    if !app.core.current_user.is_known() {
         if matches!(
             app.dashboard_pull_requests,
             DashboardPullRequestsState::Loading
@@ -720,21 +1016,28 @@ pub fn spawn_fetch_dashboard_pull_requests(
         return;
     }
 
-    app.dashboard_pull_requests = DashboardPullRequestsState::Loading;
-    app.rebuild_dashboard();
+    if app.dashboard_pull_requests.should_show_loading() {
+        app.dashboard_pull_requests = DashboardPullRequestsState::Loading;
+        app.rebuild_dashboard();
+    }
 
-    let creator_id = app.current_user.id.clone();
+    let creator_id = app.core.current_user.id.clone();
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_dashboard_prs");
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::DashboardPullRequests,
+        None,
         "fetch_dashboard_prs",
         tx.clone(),
         async move {
-            let msg = match client
-                .list_pull_requests("active", creator_id.as_deref(), None)
-                .await
-            {
+            let request = creator_id
+                .as_deref()
+                .map_or_else(PullRequestListRequest::active, |id| {
+                    PullRequestListRequest::active().with_creator_id(id)
+                });
+            let msg = match client.list_pull_requests(request).await {
                 Ok(prs) => AppMessage::DashboardPullRequests {
                     pull_requests: prs,
                     creator_scoped_by_id: creator_id.is_some(),
@@ -746,7 +1049,7 @@ pub fn spawn_fetch_dashboard_pull_requests(
                     }
                 }
             };
-            let _ = tx.send(msg).await;
+            send_app_message(&tx, "fetch_dashboard_prs", msg).await;
         }
         .instrument(span),
     );
@@ -774,7 +1077,7 @@ pub fn spawn_fetch_dashboard_work_items(
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
 ) {
-    if !app.current_user.is_known() {
+    if !app.core.current_user.is_known() {
         if matches!(app.dashboard_work_items, DashboardWorkItemsState::Loading) {
             return;
         }
@@ -784,15 +1087,20 @@ pub fn spawn_fetch_dashboard_work_items(
         return;
     }
 
-    app.dashboard_work_items = DashboardWorkItemsState::Loading;
-    app.rebuild_dashboard();
+    if app.dashboard_work_items.should_show_loading() {
+        app.dashboard_work_items = DashboardWorkItemsState::Loading;
+        app.rebuild_dashboard();
+    }
 
     let wiql = build_dashboard_work_items_wiql(&app.current_config().devops.connection.project);
-    let assigned_scoped_by_id = app.current_user.id.is_some();
+    let assigned_scoped_by_id = app.core.current_user.id.is_some();
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_dashboard_work_items");
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::DashboardWorkItems,
+        None,
         "fetch_dashboard_work_items",
         tx.clone(),
         async move {
@@ -808,7 +1116,7 @@ pub fn spawn_fetch_dashboard_work_items(
                     }
                 }
             };
-            let _ = tx.send(msg).await;
+            send_app_message(&tx, "fetch_dashboard_work_items", msg).await;
         }
         .instrument(span),
     );
@@ -822,20 +1130,25 @@ pub fn spawn_fetch_pinned_work_items(
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
 ) {
-    let ids: Vec<u32> = app.filters.pinned_work_item_ids.clone();
+    let ids: Vec<u32> = app.core.filters.pinned_work_item_ids.clone();
     if ids.is_empty() {
         app.pinned_work_items = PinnedWorkItemsState::Ready(Vec::new());
         app.rebuild_dashboard();
         return;
     }
 
-    app.pinned_work_items = PinnedWorkItemsState::Loading;
-    app.rebuild_dashboard();
+    if app.pinned_work_items.should_show_loading() {
+        app.pinned_work_items = PinnedWorkItemsState::Loading;
+        app.rebuild_dashboard();
+    }
 
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_pinned_work_items", id_count = ids.len());
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::PinnedWorkItems,
+        None,
         "fetch_pinned_work_items",
         tx.clone(),
         async move {
@@ -863,7 +1176,7 @@ pub fn spawn_fetch_pinned_work_items(
                     }
                 }
             };
-            let _ = tx.send(msg).await;
+            send_app_message(&tx, "fetch_pinned_work_items", msg).await;
         }
         .instrument(span),
     );
@@ -871,6 +1184,7 @@ pub fn spawn_fetch_pinned_work_items(
 
 /// Spawns an async task that fetches a pull request and its threads in parallel.
 pub fn spawn_fetch_pr_detail(
+    app: &mut App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
     repo_id: String,
@@ -879,7 +1193,10 @@ pub fn spawn_fetch_pr_detail(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_pr_detail", pr_id);
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::PullRequestDetail,
+        None,
         "fetch_pr_detail",
         tx.clone(),
         async move {
@@ -896,7 +1213,7 @@ pub fn spawn_fetch_pr_detail(
                     error_to_message(e, |e| AppMessage::Error(format!("Fetch PR detail: {e}")))
                 }
             };
-            let _ = tx.send(msg).await;
+            send_app_message(&tx, "fetch_pr_detail", msg).await;
         }
         .instrument(span),
     );
@@ -905,6 +1222,7 @@ pub fn spawn_fetch_pr_detail(
 /// Spawns an async task that fetches a single work item (with relations) and
 /// its comments in parallel.
 pub fn spawn_fetch_work_item_detail(
+    app: &mut App,
     client: &AdoClient,
     tx: &mpsc::Sender<AppMessage>,
     work_item_id: u32,
@@ -912,7 +1230,10 @@ pub fn spawn_fetch_work_item_detail(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_work_item_detail", work_item_id);
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::WorkItemDetail,
+        None,
         "fetch_work_item_detail",
         tx.clone(),
         async move {
@@ -931,7 +1252,7 @@ pub fn spawn_fetch_work_item_detail(
                     message: format!("Fetch work item detail: {e}"),
                 },
             };
-            let _ = tx.send(msg).await;
+            send_app_message(&tx, "fetch_work_item_detail", msg).await;
         }
         .instrument(span),
     );
@@ -955,37 +1276,51 @@ pub fn spawn_fetch_user_identity(client: &AdoClient, tx: &mpsc::Sender<AppMessag
                             descriptor: user.descriptor,
                         };
                         if identity.is_known() {
-                            let _ = tx.send(AppMessage::UserIdentity { identity }).await;
+                            send_app_message(
+                                &tx,
+                                "fetch_user_identity",
+                                AppMessage::UserIdentity { identity },
+                            )
+                            .await;
                         } else {
                             tracing::warn!("connection data returned no exact identity fields");
-                            let _ = tx
-                                .send(AppMessage::UserIdentityFailed {
+                            send_app_message(
+                                &tx,
+                                "fetch_user_identity_failed",
+                                AppMessage::UserIdentityFailed {
                                     message: dashboard_identity_unavailable_message(
                                         "Azure DevOps did not return id, uniqueName, or descriptor for the signed-in user",
                                     ),
-                                })
-                                .await;
+                                },
+                            )
+                            .await;
                         }
                     } else {
                         tracing::warn!("connection data returned no authenticated user");
-                        let _ = tx
-                            .send(AppMessage::UserIdentityFailed {
+                        send_app_message(
+                            &tx,
+                            "fetch_user_identity_failed",
+                            AppMessage::UserIdentityFailed {
                                 message: dashboard_identity_unavailable_message(
                                     "Azure DevOps connection data did not include an authenticated user",
                                 ),
-                            })
-                            .await;
+                            },
+                        )
+                        .await;
                     }
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "failed to resolve user identity");
-                    let _ = tx
-                        .send(AppMessage::UserIdentityFailed {
+                    send_app_message(
+                        &tx,
+                        "fetch_user_identity_failed",
+                        AppMessage::UserIdentityFailed {
                             message: dashboard_identity_unavailable_message(
                                 &describe_connection_data_error(&e),
                             ),
-                        })
-                        .await;
+                        },
+                    )
+                    .await;
                 }
             }
         }
@@ -1006,15 +1341,19 @@ pub fn spawn_fetch_boards(
     let tx = tx.clone();
     let project = app.current_config().devops.connection.project;
     let span = tracing::info_span!("fetch_boards", generation, project = %project);
-    spawn_named(
+    spawn_managed(
+        app,
+        EffectKind::BoardsRefresh,
+        Some(generation),
         "fetch_boards",
         tx.clone(),
         async move {
             let message = match load_boards_snapshot(&client, &project).await {
-                Ok((team_name, backlogs, work_items)) => AppMessage::BoardsLoaded {
+                Ok((team_name, backlogs, work_items, partial_errors)) => AppMessage::BoardsLoaded {
                     team_name,
                     backlogs,
                     work_items,
+                    partial_errors,
                     generation,
                 },
                 Err(error) => AppMessage::BoardsFailed {
@@ -1023,7 +1362,7 @@ pub fn spawn_fetch_boards(
                 },
             };
 
-            let _ = tx.send(message).await;
+            send_app_message(&tx, "fetch_boards", message).await;
         }
         .instrument(span),
     );
@@ -1057,6 +1396,9 @@ pub fn spawn_fetch_my_work_items(
     tx: &mpsc::Sender<AppMessage>,
     view: super::super::View,
 ) {
+    let Some(effect_kind) = EffectKind::my_work_items(view) else {
+        return;
+    };
     let Some(list) = app.my_work_items.list_for_mut(view) else {
         return;
     };
@@ -1071,7 +1413,10 @@ pub fn spawn_fetch_my_work_items(
     let client = client.clone();
     let tx = tx.clone();
     let span = tracing::info_span!("fetch_my_work_items", ?view, generation);
-    spawn_named(
+    spawn_managed(
+        app,
+        effect_kind,
+        Some(generation),
         "fetch_my_work_items",
         tx.clone(),
         async move {
@@ -1087,7 +1432,7 @@ pub fn spawn_fetch_my_work_items(
                     generation,
                 },
             };
-            let _ = tx.send(message).await;
+            send_app_message(&tx, "fetch_my_work_items", message).await;
         }
         .instrument(span),
     );
@@ -1185,6 +1530,43 @@ mod tests {
             }
             _ => panic!("unexpected message variant — expected TaskPanicked"),
         }
+    }
+
+    #[tokio::test]
+    async fn refresh_guard_fallback_waits_when_channel_is_full() {
+        let (tx, mut rx) = mpsc::channel::<AppMessage>(1);
+        tx.send(AppMessage::Error("filler".to_string()))
+            .await
+            .expect("receiver should still be open");
+
+        let guard = RefreshGuard::new(
+            tx,
+            AppMessage::RefreshError {
+                message: "panic fallback".to_string(),
+                source: RefreshSource::Data,
+            },
+            AppMessage::RefreshCancelled {
+                source: RefreshSource::Data,
+            },
+        );
+        drop(guard);
+
+        let first = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .expect("timed out waiting for filler message")
+            .expect("channel closed unexpectedly");
+        assert!(matches!(first, AppMessage::Error(message) if message == "filler"));
+
+        let fallback = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .expect("timed out waiting for refresh fallback")
+            .expect("channel closed unexpectedly");
+        assert!(matches!(
+            fallback,
+            AppMessage::RefreshCancelled {
+                source: RefreshSource::Data
+            }
+        ));
     }
 
     #[test]

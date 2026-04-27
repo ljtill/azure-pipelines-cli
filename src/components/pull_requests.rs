@@ -1,5 +1,7 @@
 //! Pull Requests list view component.
 
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -11,19 +13,23 @@ use super::Component;
 use crate::render::columns::{PullRequestRowOpts, pull_request_row};
 use crate::render::helpers::{
     draw_state_message, draw_view_frame, pr_status_icon, row_style, split_with_search_bar,
-    sub_view_tab_spans, truncate,
+    sub_view_tab_spans,
 };
-use crate::render::table::{render_header, resolve_widths};
+use crate::render::table::{
+    Align, DEFAULT_SCROLL_PADDING, format_cell, render_header, resolve_widths, visible_rows,
+};
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav};
 
 /// Stores state for the Pull Requests list view.
 #[derive(Debug, Default)]
 pub struct PullRequests {
-    /// All PRs received from the API (unfiltered).
-    all: Vec<crate::client::models::PullRequest>,
-    /// Filtered and sorted list for display.
-    pub filtered: Vec<crate::client::models::PullRequest>,
+    /// All PRs received from the API, keyed by stable pull request ID.
+    all: BTreeMap<u32, crate::client::models::PullRequest>,
+    /// Source ordering from the API, de-duplicated by pull request ID.
+    order: Vec<u32>,
+    /// Filtered and sorted pull request IDs for display.
+    pub filtered: Vec<u32>,
     pub nav: ListNav,
     /// Monotonic counter incremented on each fetch request to discard stale responses.
     pub generation: u64,
@@ -58,7 +64,7 @@ fn pr_title_spans(pr: &crate::client::models::PullRequest, width: usize) -> Vec<
     let draft_marker = if pr.is_draft { " [draft]" } else { "" };
     let prefix = format!("#{} ", pr.pull_request_id);
     let title_text = format!("{prefix}{}{}", pr.title, draft_marker);
-    let title_cell = format!("{:<width$}", truncate(&title_text, width));
+    let title_cell = format_cell(&title_text, width, Align::Left);
     let title_style = pr_title_style(&pr.status, pr.is_draft);
     let prefix_style = theme::SUBTLE;
 
@@ -92,14 +98,20 @@ fn vote_spans(
     width: usize,
 ) -> Vec<Span<'static>> {
     if !has_reviewers {
-        return vec![Span::styled(format!("{:<width$}", ""), theme::VOTE_NONE)];
+        return vec![Span::styled(
+            format_cell("", width, Align::Left),
+            theme::VOTE_NONE,
+        )];
     }
 
     let approved_text = format!("✓{approved}");
     let rejected_text = format!("✗{rejected}");
     let waiting_text = format!("●{waiting}");
     let vote_summary = format!("{approved_text} {rejected_text} {waiting_text}");
-    let vote_cell = format!("{vote_summary:<width$}");
+    let vote_cell = format_cell(&vote_summary, width, Align::Left);
+    if !vote_cell.starts_with(&vote_summary) {
+        return vec![Span::styled(vote_cell, theme::VOTE_NONE)];
+    }
     let padding = vote_cell[vote_summary.len()..].to_string();
 
     vec![
@@ -125,29 +137,48 @@ impl PullRequests {
         pull_requests: Vec<crate::client::models::PullRequest>,
         search_query: &str,
     ) {
-        self.all = pull_requests;
+        self.order.clear();
+        self.all.clear();
+        for pull_request in pull_requests {
+            let pull_request_id = pull_request.pull_request_id;
+            if !self.all.contains_key(&pull_request_id) {
+                self.order.push(pull_request_id);
+            }
+            self.all.insert(pull_request_id, pull_request);
+        }
         self.rebuild(search_query);
     }
 
     /// Rebuilds the filtered list from `all` using the search query.
     pub fn rebuild(&mut self, search_query: &str) {
         if search_query.is_empty() {
-            self.filtered = self.all.clone();
+            self.filtered = self.order.clone();
         } else {
             let q = search_query.to_lowercase();
             self.filtered = self
-                .all
+                .order
                 .iter()
-                .filter(|pr| {
-                    pr.title.to_lowercase().contains(&q)
-                        || pr.repo_name().to_lowercase().contains(&q)
-                        || pr.author().to_lowercase().contains(&q)
+                .copied()
+                .filter(|pull_request_id| {
+                    self.all.get(pull_request_id).is_some_and(|pr| {
+                        pr.title.to_lowercase().contains(&q)
+                            || pr.repo_name().to_lowercase().contains(&q)
+                            || pr.author().to_lowercase().contains(&q)
+                    })
                 })
-                .cloned()
                 .collect();
         }
-        self.filtered.sort_by_key(|pr| pr.is_draft);
+        let all = &self.all;
+        self.filtered
+            .sort_by_key(|pull_request_id| all[pull_request_id].is_draft);
         self.nav.set_len(self.filtered.len());
+    }
+
+    /// Returns the pull request at the filtered row index.
+    pub fn pull_request_at(&self, index: usize) -> Option<&crate::client::models::PullRequest> {
+        self.filtered
+            .get(index)
+            .and_then(|pull_request_id| self.all.get(pull_request_id))
     }
 
     /// Renders the pull requests list using data from the App.
@@ -187,14 +218,19 @@ impl PullRequests {
             .map(|&w| w as usize)
             .collect();
 
-        let items: Vec<ListItem> = self
-            .filtered
-            .iter()
-            .enumerate()
-            .map(|(i, pr)| {
+        let window = visible_rows(
+            self.filtered.len(),
+            self.nav.index(),
+            list_area.height,
+            DEFAULT_SCROLL_PADDING,
+        );
+        let items: Vec<ListItem> = window
+            .range()
+            .filter_map(|i| {
+                let pr = self.pull_request_at(i)?;
                 let (icon, _) = pr_status_icon(&pr.status, pr.is_draft);
                 let (approved, rejected, waiting, _no_vote) = pr.vote_summary();
-                let is_selected = i == self.nav.index();
+                let is_selected = window.selected == Some(i - window.start);
 
                 let w_icon = widths[schema.icon];
                 let w_title = widths[schema.title];
@@ -204,24 +240,21 @@ impl PullRequests {
                 let w_votes = widths[schema.votes];
 
                 let mut spans = vec![Span::styled(
-                    format!("{icon:<w_icon$}"),
+                    format_cell(icon, w_icon, Align::Left),
                     pr_status_style(&pr.status, pr.is_draft),
                 )];
                 spans.extend(pr_title_spans(pr, w_title));
                 spans.extend([
                     Span::styled(
-                        format!("{:<w_repo$}", truncate(pr.repo_name(), w_repo)),
+                        format_cell(pr.repo_name(), w_repo, Align::Left),
                         theme::SUBTLE,
                     ),
                     Span::styled(
-                        format!("{:<w_author$}", truncate(pr.author(), w_author)),
+                        format_cell(pr.author(), w_author, Align::Left),
                         theme::MUTED,
                     ),
                     Span::styled(
-                        format!(
-                            "{:<w_branch$}",
-                            truncate(pr.short_target_branch(), w_branch)
-                        ),
+                        format_cell(pr.short_target_branch(), w_branch, Align::Left),
                         theme::BRANCH,
                     ),
                 ]);
@@ -233,13 +266,13 @@ impl PullRequests {
                     w_votes,
                 ));
 
-                ListItem::new(Line::from(spans)).style(row_style(is_selected))
+                Some(ListItem::new(Line::from(spans)).style(row_style(is_selected)))
             })
             .collect();
 
-        let list = List::new(items).scroll_padding(3);
+        let list = List::new(items).scroll_padding(DEFAULT_SCROLL_PADDING);
         let mut state = ListState::default();
-        state.select(Some(self.nav.index()));
+        state.select(window.selected);
         f.render_stateful_widget(list, list_area, &mut state);
     }
 }
@@ -280,7 +313,7 @@ mod tests {
         ];
         prs.set_data(data, "feature");
         assert_eq!(prs.filtered.len(), 1);
-        assert_eq!(prs.filtered[0].pull_request_id, 1);
+        assert_eq!(prs.pull_request_at(0).unwrap().pull_request_id, 1);
     }
 
     #[test]
@@ -292,7 +325,7 @@ mod tests {
         ];
         prs.set_data(data, "backend");
         assert_eq!(prs.filtered.len(), 1);
-        assert_eq!(prs.filtered[0].pull_request_id, 2);
+        assert_eq!(prs.pull_request_at(0).unwrap().pull_request_id, 2);
     }
 
     #[test]
@@ -324,8 +357,20 @@ mod tests {
         prs.set_data(vec![draft, active], "");
 
         assert_eq!(prs.filtered.len(), 2);
-        assert_eq!(prs.filtered[0].pull_request_id, 2);
-        assert_eq!(prs.filtered[1].pull_request_id, 1);
+        assert_eq!(prs.pull_request_at(0).unwrap().pull_request_id, 2);
+        assert_eq!(prs.pull_request_at(1).unwrap().pull_request_id, 1);
+    }
+
+    #[test]
+    fn set_data_normalizes_duplicate_pull_request_ids() {
+        let mut prs = PullRequests::default();
+        let first = make_pull_request(1, "Old title", "active", "frontend");
+        let updated = make_pull_request(1, "Updated title", "active", "frontend");
+
+        prs.set_data(vec![first, updated], "");
+
+        assert_eq!(prs.filtered, vec![1]);
+        assert_eq!(prs.pull_request_at(0).unwrap().title, "Updated title");
     }
 
     #[test]

@@ -16,7 +16,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Enter => app
             .my_work_items
             .list_for(app.view)
-            .and_then(|list| list.filtered.get(list.nav.index()))
+            .and_then(|list| list.row_at(list.nav.index()))
             .map(|row| row.id)
             .map_or(Action::None, |id| {
                 app.navigate_to_work_item_detail(id);
@@ -26,7 +26,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             let selected = app
                 .my_work_items
                 .list_for(app.view)
-                .and_then(|list| list.filtered.get(list.nav.index()))
+                .and_then(|list| list.row_at(list.nav.index()))
                 .map(|row| row.id);
             selected.map_or(Action::None, |id| {
                 super::pins::toggle_work_item_pin(app, id)

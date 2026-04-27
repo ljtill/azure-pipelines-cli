@@ -9,32 +9,33 @@ pub fn handle_open_in_browser(app: &App) -> Action {
         View::Dashboard => {
             let idx = app.dashboard.nav.index();
             app.dashboard
-                .pinned_definition_at(idx)
+                .pinned_definition_at(idx, &app.core.data.definitions)
                 .map(|def| app.endpoints_web_definition(def.id))
                 .or_else(|| {
-                    app.dashboard.pull_request_at(idx).and_then(|pr| {
-                        let repo_name = pr.repo_name();
-                        if repo_name.is_empty() {
-                            None
-                        } else {
-                            Some(app.endpoints_web_pull_request(repo_name, pr.pull_request_id))
-                        }
-                    })
+                    app.dashboard
+                        .pull_request_at(idx, &app.dashboard_pull_requests)
+                        .and_then(|pr| {
+                            let repo_name = pr.repo_name();
+                            if repo_name.is_empty() {
+                                None
+                            } else {
+                                Some(app.endpoints_web_pull_request(repo_name, pr.pull_request_id))
+                            }
+                        })
                 })
                 .or_else(|| {
                     app.dashboard
-                        .work_item_at(idx)
+                        .work_item_at(idx, &app.dashboard_work_items, &app.pinned_work_items)
                         .map(|wi| app.endpoints_web_work_item(wi.id))
                 })
         }
         View::Pipelines => app
             .pipelines
-            .definition_at(app.pipelines.nav.index())
+            .definition_at(app.pipelines.nav.index(), &app.core.data.definitions)
             .map(|def| app.endpoints_web_definition(def.id)),
         View::ActiveRuns => app
             .active_runs
-            .filtered
-            .get(app.active_runs.nav.index())
+            .build_at(&app.core.data.active_builds, app.active_runs.nav.index())
             .map(|b| app.endpoints_web_build(b.id)),
         View::BuildHistory => app
             .build_history
@@ -49,8 +50,7 @@ pub fn handle_open_in_browser(app: &App) -> Action {
         | View::PullRequestsAssignedToMe
         | View::PullRequestsAllActive => app
             .pull_requests
-            .filtered
-            .get(app.pull_requests.nav.index())
+            .pull_request_at(app.pull_requests.nav.index())
             .and_then(|pr| {
                 let repo_name = pr.repo_name();
                 if repo_name.is_empty() {
@@ -78,7 +78,7 @@ pub fn handle_open_in_browser(app: &App) -> Action {
         View::BoardsAssignedToMe | View::BoardsCreatedByMe => app
             .my_work_items
             .list_for(app.view)
-            .and_then(|list| list.filtered.get(list.nav.index()))
+            .and_then(|list| list.row_at(list.nav.index()))
             .map(|row| app.endpoints_web_work_item(row.id)),
         View::WorkItemDetail => app
             .work_item_detail
@@ -106,7 +106,9 @@ pub fn handle_cancel_request(app: &mut App) -> Action {
     // Single cancel: cursor item.
     let build = match app.view {
         View::LogViewer => app.log_viewer.selected_build(),
-        View::ActiveRuns => app.active_runs.filtered.get(app.active_runs.nav.index()),
+        View::ActiveRuns => app
+            .active_runs
+            .build_at(&app.core.data.active_builds, app.active_runs.nav.index()),
         View::BuildHistory => app.build_history.builds.get(app.build_history.nav.index()),
         _ => None,
     };
@@ -128,7 +130,7 @@ pub fn handle_queue_request(app: &mut App) -> Action {
         View::Dashboard => {
             if let Some(def) = app
                 .dashboard
-                .pinned_definition_at(app.dashboard.nav.index())
+                .pinned_definition_at(app.dashboard.nav.index(), &app.core.data.definitions)
             {
                 (def.id, def.name.clone())
             } else {
@@ -136,7 +138,10 @@ pub fn handle_queue_request(app: &mut App) -> Action {
             }
         }
         View::Pipelines => {
-            if let Some(def) = app.pipelines.definition_at(app.pipelines.nav.index()) {
+            if let Some(def) = app
+                .pipelines
+                .definition_at(app.pipelines.nav.index(), &app.core.data.definitions)
+            {
                 (def.id, def.name.clone())
             } else {
                 return Action::None;
@@ -170,7 +175,8 @@ pub fn handle_delete_build_leases_request(app: &mut App) -> Action {
             .selected
             .iter()
             .flat_map(|&build_id| {
-                app.retention_leases
+                app.core
+                    .retention_leases
                     .leases_for_run(build_id)
                     .into_iter()
                     .map(|l| l.lease_id)
@@ -192,6 +198,7 @@ pub fn handle_delete_build_leases_request(app: &mut App) -> Action {
     // Single delete: cursor item.
     if let Some(build) = app.build_history.builds.get(app.build_history.nav.index()) {
         let lease_ids: Vec<u32> = app
+            .core
             .retention_leases
             .leases_for_run(build.id)
             .iter()

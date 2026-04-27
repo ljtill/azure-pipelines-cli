@@ -93,6 +93,11 @@ fn handle_key(state: &mut SetupState, code: KeyCode) -> Outcome {
 // --- UI ---
 
 fn draw(f: &mut Frame, state: &SetupState) {
+    if super::is_terminal_too_small(f.area()) {
+        super::draw_terminal_too_small(f, f.area());
+        return;
+    }
+
     let dialog_width = 54;
     let dialog_height = 10;
     let area = centered_rect(dialog_width, dialog_height, f.area());

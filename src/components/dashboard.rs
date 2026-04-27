@@ -16,31 +16,46 @@ use crate::client::models::{Build, PipelineDefinition, PullRequest, WorkItem};
 use crate::render::columns::{BuildRowOpts, build_row, pull_request_row, work_item_row};
 use crate::render::helpers::{
     build_elapsed, draw_view_frame, effective_status_icon, effective_status_label, pr_status_icon,
-    row_style, truncate,
+    row_style,
 };
-use crate::render::table::resolve_widths;
+use crate::render::table::{
+    Align, DEFAULT_SCROLL_PADDING, format_cell, resolve_widths, visible_rows,
+};
 use crate::render::theme;
+use crate::shared::availability::{Availability, AvailabilityStatus};
 use crate::state::nav::ListNav;
 use crate::state::{
-    App, DashboardPullRequestsState, DashboardWorkItemsState, PinnedWorkItemsState,
+    App, CoreDataAvailability, DashboardPullRequestsState, DashboardWorkItemsState,
+    PinnedWorkItemsState,
 };
 
 /// Represents a selectable row in the dashboard view.
 #[derive(Debug, Clone)]
 pub enum DashboardRow {
     PinnedPipeline {
-        definition: PipelineDefinition,
-        latest_build: Option<Box<Build>>,
+        definition_id: u32,
     },
     DashboardPullRequest {
-        pull_request: Box<PullRequest>,
+        pull_request_id: u32,
     },
     DashboardWorkItem {
-        work_item: Box<WorkItem>,
+        source: DashboardWorkItemSource,
+        work_item_id: u32,
     },
     EmptyHint {
         message: String,
     },
+    DegradedHint {
+        message: String,
+        status: AvailabilityStatus,
+    },
+}
+
+/// Identifies which dashboard work-item section owns a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashboardWorkItemSource {
+    Pinned,
+    Active,
 }
 
 /// Number of sections rendered as separate panels on the dashboard.
@@ -59,6 +74,169 @@ fn pad(n: usize) -> String {
     " ".repeat(n)
 }
 
+fn dashboard_work_item_at<'a>(
+    source: DashboardWorkItemSource,
+    work_item_id: u32,
+    dashboard_wis: &'a DashboardWorkItemsState,
+    pinned_wis: &'a PinnedWorkItemsState,
+) -> Option<&'a WorkItem> {
+    match source {
+        DashboardWorkItemSource::Pinned => pinned_wis
+            .work_items()?
+            .iter()
+            .find(|wi| wi.id == work_item_id),
+        DashboardWorkItemSource::Active => dashboard_wis
+            .work_items()?
+            .iter()
+            .find(|wi| wi.id == work_item_id),
+    }
+}
+
+fn availability_rank(status: AvailabilityStatus) -> u8 {
+    match status {
+        AvailabilityStatus::Fresh => 0,
+        AvailabilityStatus::Partial => 1,
+        AvailabilityStatus::Stale => 2,
+        AvailabilityStatus::Unavailable => 3,
+    }
+}
+
+fn worst_status(left: AvailabilityStatus, right: AvailabilityStatus) -> AvailabilityStatus {
+    if availability_rank(left) >= availability_rank(right) {
+        left
+    } else {
+        right
+    }
+}
+
+fn status_label(status: AvailabilityStatus) -> &'static str {
+    match status {
+        AvailabilityStatus::Fresh => "fresh",
+        AvailabilityStatus::Partial => "partial",
+        AvailabilityStatus::Stale => "stale",
+        AvailabilityStatus::Unavailable => "unavailable",
+    }
+}
+
+fn degraded_message<T>(label: &str, availability: &Availability<Vec<T>>) -> Option<String> {
+    if availability.status() == AvailabilityStatus::Fresh {
+        return None;
+    }
+    let detail = if availability.errors().is_empty() {
+        availability.primary_error()?.to_string()
+    } else {
+        availability.errors().join("; ")
+    };
+    Some(format!("{label}: {detail}"))
+}
+
+fn collect_core_degradation<T>(
+    status: &mut AvailabilityStatus,
+    messages: &mut Vec<String>,
+    label: &str,
+    availability: &Availability<Vec<T>>,
+) {
+    *status = worst_status(*status, availability.status());
+    if let Some(message) = degraded_message(label, availability) {
+        messages.push(message);
+    }
+}
+
+fn pinned_pipeline_degradation(
+    availability: Option<&CoreDataAvailability>,
+) -> Option<(AvailabilityStatus, String)> {
+    let availability = availability?;
+    let mut status = AvailabilityStatus::Fresh;
+    let mut messages = Vec::new();
+    collect_core_degradation(
+        &mut status,
+        &mut messages,
+        "definitions",
+        &availability.definitions,
+    );
+    collect_core_degradation(
+        &mut status,
+        &mut messages,
+        "builds",
+        &availability.recent_builds,
+    );
+    collect_core_degradation(
+        &mut status,
+        &mut messages,
+        "approvals",
+        &availability.pending_approvals,
+    );
+
+    if status == AvailabilityStatus::Fresh {
+        None
+    } else {
+        Some((status, messages.join("; ")))
+    }
+}
+
+fn dashboard_pull_requests_degraded_status(
+    state: &DashboardPullRequestsState,
+) -> Option<AvailabilityStatus> {
+    match state {
+        DashboardPullRequestsState::Partial { .. } => Some(AvailabilityStatus::Partial),
+        DashboardPullRequestsState::Stale { .. } => Some(AvailabilityStatus::Stale),
+        DashboardPullRequestsState::Unavailable(_) => Some(AvailabilityStatus::Unavailable),
+        DashboardPullRequestsState::Loading
+        | DashboardPullRequestsState::Ready(_)
+        | DashboardPullRequestsState::EmptyVerified => None,
+    }
+}
+
+fn dashboard_work_items_degraded_status(
+    state: &DashboardWorkItemsState,
+) -> Option<AvailabilityStatus> {
+    match state {
+        DashboardWorkItemsState::Partial { .. } => Some(AvailabilityStatus::Partial),
+        DashboardWorkItemsState::Stale { .. } => Some(AvailabilityStatus::Stale),
+        DashboardWorkItemsState::Unavailable(_) => Some(AvailabilityStatus::Unavailable),
+        DashboardWorkItemsState::Loading
+        | DashboardWorkItemsState::Ready(_)
+        | DashboardWorkItemsState::EmptyVerified => None,
+    }
+}
+
+fn pinned_work_items_degraded_status(state: &PinnedWorkItemsState) -> Option<AvailabilityStatus> {
+    match state {
+        PinnedWorkItemsState::Partial { .. } => Some(AvailabilityStatus::Partial),
+        PinnedWorkItemsState::Stale { .. } => Some(AvailabilityStatus::Stale),
+        PinnedWorkItemsState::Unavailable(_) => Some(AvailabilityStatus::Unavailable),
+        PinnedWorkItemsState::Loading | PinnedWorkItemsState::Ready(_) => None,
+    }
+}
+
+fn section_degraded_status(section_idx: usize, app: &App) -> Option<AvailabilityStatus> {
+    match section_idx {
+        0 => pinned_pipeline_degradation(Some(&app.core.availability)).map(|(status, _)| status),
+        1 => pinned_work_items_degraded_status(&app.pinned_work_items),
+        2 => dashboard_pull_requests_degraded_status(&app.dashboard_pull_requests),
+        3 => dashboard_work_items_degraded_status(&app.dashboard_work_items),
+        _ => None,
+    }
+}
+
+fn push_degraded_hint(
+    rows: &mut Vec<DashboardRow>,
+    status: AvailabilityStatus,
+    section: &str,
+    detail: &str,
+) {
+    let prefix = match status {
+        AvailabilityStatus::Fresh => return,
+        AvailabilityStatus::Partial => "Partial",
+        AvailabilityStatus::Stale => "Showing stale",
+        AvailabilityStatus::Unavailable => "Unavailable",
+    };
+    rows.push(DashboardRow::DegradedHint {
+        message: format!("{prefix} {section}: {detail}"),
+        status,
+    });
+}
+
 /// Renders the cross-service dashboard with pinned pipelines and pull requests.
 #[derive(Debug, Default)]
 pub struct Dashboard {
@@ -74,113 +252,167 @@ impl Dashboard {
     pub fn rebuild(
         &mut self,
         definitions: &[PipelineDefinition],
-        latest_builds_by_def: &BTreeMap<u32, Build>,
+        _latest_builds_by_def: &BTreeMap<u32, Build>,
         pinned_ids: &[u32],
         dashboard_prs: &DashboardPullRequestsState,
         dashboard_wis: &DashboardWorkItemsState,
         pinned_wis: &PinnedWorkItemsState,
+    ) {
+        self.rebuild_inner(
+            definitions,
+            pinned_ids,
+            dashboard_prs,
+            dashboard_wis,
+            pinned_wis,
+            None,
+        );
+    }
+
+    /// Rebuilds the dashboard while surfacing core data availability in sections.
+    pub fn rebuild_with_availability(
+        &mut self,
+        definitions: &[PipelineDefinition],
+        pinned_ids: &[u32],
+        dashboard_prs: &DashboardPullRequestsState,
+        dashboard_wis: &DashboardWorkItemsState,
+        pinned_wis: &PinnedWorkItemsState,
+        core_availability: &CoreDataAvailability,
+    ) {
+        self.rebuild_inner(
+            definitions,
+            pinned_ids,
+            dashboard_prs,
+            dashboard_wis,
+            pinned_wis,
+            Some(core_availability),
+        );
+    }
+
+    fn rebuild_inner(
+        &mut self,
+        definitions: &[PipelineDefinition],
+        pinned_ids: &[u32],
+        dashboard_prs: &DashboardPullRequestsState,
+        dashboard_wis: &DashboardWorkItemsState,
+        pinned_wis: &PinnedWorkItemsState,
+        core_availability: Option<&CoreDataAvailability>,
     ) {
         let mut rows: Vec<DashboardRow> = Vec::new();
         let mut ranges: [Range<usize>; SECTION_COUNT] = std::array::from_fn(|_| 0..0);
 
         // --- Section 0: Pinned Pipelines ---
         let start = rows.len();
-        let mut pinned: Vec<(PipelineDefinition, Option<Build>)> = pinned_ids
+        let pipeline_degradation = pinned_pipeline_degradation(core_availability);
+        if let Some((status, message)) = &pipeline_degradation {
+            push_degraded_hint(&mut rows, *status, "pipeline data", message);
+        }
+        let definitions_by_id: BTreeMap<u32, &PipelineDefinition> = definitions
             .iter()
-            .filter_map(|id| {
-                definitions
-                    .iter()
-                    .find(|d| d.id == *id)
-                    .map(|d| (d.clone(), latest_builds_by_def.get(id).cloned()))
-            })
+            .map(|definition| (definition.id, definition))
             .collect();
-        pinned.sort_by_key(|(a, _)| a.name.to_lowercase());
+        let mut pinned: Vec<u32> = pinned_ids
+            .iter()
+            .copied()
+            .filter(|id| definitions_by_id.contains_key(id))
+            .collect();
+        pinned.sort_by_cached_key(|id| {
+            definitions_by_id
+                .get(id)
+                .map(|definition| definition.name.to_lowercase())
+                .unwrap_or_default()
+        });
 
-        if pinned.is_empty() {
+        if pinned.is_empty() && !(pipeline_degradation.is_some() && definitions.is_empty()) {
             rows.push(DashboardRow::EmptyHint {
                 message: "No pipelines pinned — press 'p' in the Pipelines view to pin".to_string(),
             });
         } else {
-            for (def, build) in pinned {
-                rows.push(DashboardRow::PinnedPipeline {
-                    definition: def,
-                    latest_build: build.map(Box::new),
-                });
+            for definition_id in pinned {
+                rows.push(DashboardRow::PinnedPipeline { definition_id });
             }
         }
         ranges[0] = start..rows.len();
 
         // --- Section 1: Pinned Work Items ---
         let start = rows.len();
-        match pinned_wis {
-            PinnedWorkItemsState::Loading => rows.push(DashboardRow::EmptyHint {
-                message: "Loading pinned work items...".to_string(),
-            }),
-            PinnedWorkItemsState::Unavailable(message) => {
-                rows.push(DashboardRow::EmptyHint {
-                    message: message.clone(),
-                });
+        if let Some(message) = pinned_wis.degraded_message() {
+            push_degraded_hint(&mut rows, pinned_wis.status(), "pinned work items", message);
+        }
+        match pinned_wis.work_items() {
+            Some(wis) if !wis.is_empty() => {
+                for work_item in wis {
+                    rows.push(DashboardRow::DashboardWorkItem {
+                        source: DashboardWorkItemSource::Pinned,
+                        work_item_id: work_item.id,
+                    });
+                }
             }
-            PinnedWorkItemsState::Ready(wis) if wis.is_empty() => {
+            Some(_) if pinned_wis.status() == AvailabilityStatus::Fresh => {
                 rows.push(DashboardRow::EmptyHint {
                     message: "No work items pinned — press 'P' in a Boards view to pin".to_string(),
                 });
             }
-            PinnedWorkItemsState::Ready(wis) => {
-                for wi in wis {
-                    rows.push(DashboardRow::DashboardWorkItem {
-                        work_item: Box::new(wi.clone()),
-                    });
-                }
+            None if matches!(pinned_wis, PinnedWorkItemsState::Loading) => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: "Loading pinned work items...".to_string(),
+                });
             }
+            Some(_) | None => {}
         }
         ranges[1] = start..rows.len();
 
         // --- Section 2: Pull Requests ---
         let start = rows.len();
-        match dashboard_prs {
-            DashboardPullRequestsState::Loading => rows.push(DashboardRow::EmptyHint {
-                message: "Loading pull requests...".to_string(),
-            }),
-            DashboardPullRequestsState::Unavailable(message) => {
-                rows.push(DashboardRow::EmptyHint {
-                    message: message.clone(),
-                });
-            }
-            DashboardPullRequestsState::EmptyVerified => rows.push(DashboardRow::EmptyHint {
-                message: "No pull requests found".to_string(),
-            }),
-            DashboardPullRequestsState::Ready(prs) => {
-                for pr in prs.iter().take(10) {
+        if let Some(message) = dashboard_prs.degraded_message() {
+            push_degraded_hint(&mut rows, dashboard_prs.status(), "pull requests", message);
+        }
+        match dashboard_prs.pull_requests() {
+            Some(prs) if !prs.is_empty() => {
+                for pull_request in prs.iter().take(10) {
                     rows.push(DashboardRow::DashboardPullRequest {
-                        pull_request: Box::new(pr.clone()),
+                        pull_request_id: pull_request.pull_request_id,
                     });
                 }
             }
+            Some(_) if dashboard_prs.status() == AvailabilityStatus::Fresh => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: "No pull requests found".to_string(),
+                });
+            }
+            None if matches!(dashboard_prs, DashboardPullRequestsState::Loading) => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: "Loading pull requests...".to_string(),
+                });
+            }
+            Some(_) | None => {}
         }
         ranges[2] = start..rows.len();
 
         // --- Section 3: Work Items ---
         let start = rows.len();
-        match dashboard_wis {
-            DashboardWorkItemsState::Loading => rows.push(DashboardRow::EmptyHint {
-                message: "Loading work items...".to_string(),
-            }),
-            DashboardWorkItemsState::Unavailable(message) => {
-                rows.push(DashboardRow::EmptyHint {
-                    message: message.clone(),
-                });
-            }
-            DashboardWorkItemsState::EmptyVerified => rows.push(DashboardRow::EmptyHint {
-                message: "No work items found".to_string(),
-            }),
-            DashboardWorkItemsState::Ready(wis) => {
-                for wi in wis.iter().take(10) {
+        if let Some(message) = dashboard_wis.degraded_message() {
+            push_degraded_hint(&mut rows, dashboard_wis.status(), "work items", message);
+        }
+        match dashboard_wis.work_items() {
+            Some(wis) if !wis.is_empty() => {
+                for work_item in wis.iter().take(10) {
                     rows.push(DashboardRow::DashboardWorkItem {
-                        work_item: Box::new(wi.clone()),
+                        source: DashboardWorkItemSource::Active,
+                        work_item_id: work_item.id,
                     });
                 }
             }
+            Some(_) if dashboard_wis.status() == AvailabilityStatus::Fresh => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: "No work items found".to_string(),
+                });
+            }
+            None if matches!(dashboard_wis, DashboardWorkItemsState::Loading) => {
+                rows.push(DashboardRow::EmptyHint {
+                    message: "Loading work items...".to_string(),
+                });
+            }
+            Some(_) | None => {}
         }
         ranges[3] = start..rows.len();
 
@@ -190,25 +422,46 @@ impl Dashboard {
     }
 
     /// Returns the pipeline definition at the given row index, if it is a pinned pipeline.
-    pub fn pinned_definition_at(&self, index: usize) -> Option<&PipelineDefinition> {
+    pub fn pinned_definition_at<'a>(
+        &self,
+        index: usize,
+        definitions: &'a [PipelineDefinition],
+    ) -> Option<&'a PipelineDefinition> {
         match self.rows.get(index) {
-            Some(DashboardRow::PinnedPipeline { definition, .. }) => Some(definition),
+            Some(DashboardRow::PinnedPipeline { definition_id }) => definitions
+                .iter()
+                .find(|definition| definition.id == *definition_id),
             _ => None,
         }
     }
 
     /// Returns the pull request at the given row index, if it is a dashboard PR.
-    pub fn pull_request_at(&self, index: usize) -> Option<&PullRequest> {
+    pub fn pull_request_at<'a>(
+        &self,
+        index: usize,
+        dashboard_prs: &'a DashboardPullRequestsState,
+    ) -> Option<&'a PullRequest> {
         match self.rows.get(index) {
-            Some(DashboardRow::DashboardPullRequest { pull_request }) => Some(pull_request),
+            Some(DashboardRow::DashboardPullRequest { pull_request_id }) => dashboard_prs
+                .pull_requests()?
+                .iter()
+                .find(|pull_request| pull_request.pull_request_id == *pull_request_id),
             _ => None,
         }
     }
 
     /// Returns the work item at the given row index, if it is a dashboard work item.
-    pub fn work_item_at(&self, index: usize) -> Option<&WorkItem> {
+    pub fn work_item_at<'a>(
+        &self,
+        index: usize,
+        dashboard_wis: &'a DashboardWorkItemsState,
+        pinned_wis: &'a PinnedWorkItemsState,
+    ) -> Option<&'a WorkItem> {
         match self.rows.get(index) {
-            Some(DashboardRow::DashboardWorkItem { work_item }) => Some(work_item),
+            Some(DashboardRow::DashboardWorkItem {
+                source,
+                work_item_id,
+            }) => dashboard_work_item_at(*source, *work_item_id, dashboard_wis, pinned_wis),
             _ => None,
         }
     }
@@ -303,12 +556,18 @@ impl Dashboard {
         }
 
         // --- Header line ---
-        let label = SECTION_LABELS[section_idx];
+        let status = section_degraded_status(section_idx, app);
+        let label = status.map_or_else(
+            || SECTION_LABELS[section_idx].to_string(),
+            |status| format!("{} [{}]", SECTION_LABELS[section_idx], status_label(status)),
+        );
         let total_w = area.width.saturating_sub(1) as usize;
         let label_len = label.chars().count() + 2;
         let rule_len = total_w.saturating_sub(label_len);
         let rule = "─".repeat(rule_len);
-        let label_style = if is_active_section {
+        let label_style = if status.is_some() {
+            theme::WARNING
+        } else if is_active_section {
             theme::SECTION_HEADER
         } else {
             theme::SUBTLE
@@ -343,11 +602,18 @@ impl Dashboard {
             None
         };
 
-        let items: Vec<ListItem> = self.rows[range]
-            .iter()
-            .enumerate()
-            .map(|(local_idx, row)| {
-                let is_selected = is_active_section && Some(local_idx) == local_selected;
+        let window = visible_rows(
+            range.len(),
+            local_selected.unwrap_or(0),
+            body_rect.height,
+            DEFAULT_SCROLL_PADDING,
+        );
+        let selected = local_selected.and_then(|index| window.local_index(index));
+        let items: Vec<ListItem> = window
+            .range()
+            .map(|local_idx| {
+                let row = &self.rows[range.start + local_idx];
+                let is_selected = selected == Some(local_idx - window.start);
                 let sel_style = row_style(is_selected);
                 Self::render_row(
                     row,
@@ -363,16 +629,16 @@ impl Dashboard {
             })
             .collect();
 
-        let list = List::new(items).scroll_padding(3);
+        let list = List::new(items).scroll_padding(DEFAULT_SCROLL_PADDING);
         let mut state = ListState::default();
-        state.select(local_selected);
+        state.select(selected);
         f.render_stateful_widget(list, body_rect, &mut state);
     }
 
     /// Builds a single `ListItem` for the given row, sharing styling helpers across panels.
     #[allow(clippy::too_many_arguments)]
-    fn render_row<'a>(
-        row: &'a DashboardRow,
+    fn render_row(
+        row: &DashboardRow,
         sel_style: Style,
         app: &App,
         pinned_schema: &crate::render::columns::BuildRowSchema,
@@ -381,7 +647,7 @@ impl Dashboard {
         pr_widths: &[usize],
         wi_schema: &crate::render::columns::WorkItemSchema,
         wi_widths: &[usize],
-    ) -> ListItem<'a> {
+    ) -> ListItem<'static> {
         match row {
             DashboardRow::EmptyHint { message } => ListItem::new(Line::from(vec![
                 Span::raw(pad(pinned_widths[pinned_schema.icon])),
@@ -389,20 +655,39 @@ impl Dashboard {
             ]))
             .style(sel_style),
 
-            DashboardRow::PinnedPipeline {
-                definition,
-                latest_build,
-            } => {
-                let (icon, icon_color) =
-                    latest_build.as_ref().map_or(("○", theme::PENDING_FG), |b| {
-                        let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
-                        effective_status_icon(b.status, b.result, awaiting)
-                    });
-                let label = latest_build.as_ref().map_or("", |b| {
-                    let awaiting = app.data.pending_approval_build_ids.contains(&b.id);
+            DashboardRow::DegradedHint { message, status } => {
+                let style = match status {
+                    AvailabilityStatus::Fresh => theme::MUTED,
+                    AvailabilityStatus::Partial | AvailabilityStatus::Stale => theme::WARNING,
+                    AvailabilityStatus::Unavailable => theme::ERROR,
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format_cell("⚠", pinned_widths[pinned_schema.icon], Align::Left),
+                        style,
+                    ),
+                    Span::styled(message.clone(), style),
+                ]))
+                .style(sel_style)
+            }
+
+            DashboardRow::PinnedPipeline { definition_id } => {
+                let definition = app
+                    .core
+                    .data
+                    .definitions
+                    .iter()
+                    .find(|definition| definition.id == *definition_id);
+                let latest_build = app.core.data.latest_builds_by_def.get(definition_id);
+                let (icon, icon_color) = latest_build.map_or(("○", theme::PENDING_FG), |b| {
+                    let awaiting = app.core.data.pending_approval_build_ids.contains(&b.id);
+                    effective_status_icon(b.status, b.result, awaiting)
+                });
+                let label = latest_build.map_or("", |b| {
+                    let awaiting = app.core.data.pending_approval_build_ids.contains(&b.id);
                     effective_status_label(b.status, b.result, awaiting)
                 });
-                let name_style = if latest_build.is_some() {
+                let name_style = if latest_build.is_some() && definition.is_some() {
                     theme::TEXT
                 } else {
                     theme::MUTED
@@ -416,10 +701,21 @@ impl Dashboard {
                 let w_elapsed = pinned_widths[pinned_schema.elapsed];
 
                 let mut spans = vec![
-                    Span::styled(format!("{icon:<w_icon$}"), theme::foreground(icon_color)),
-                    Span::styled(format!("{label:<w_status$}"), theme::foreground(icon_color)),
                     Span::styled(
-                        format!("{:<w_name$}", truncate(&definition.name, w_name)),
+                        format_cell(icon, w_icon, Align::Left),
+                        theme::foreground(icon_color),
+                    ),
+                    Span::styled(
+                        format_cell(label, w_status, Align::Left),
+                        theme::foreground(icon_color),
+                    ),
+                    Span::styled(
+                        format_cell(
+                            definition
+                                .map_or("Unknown pipeline", |definition| definition.name.as_str()),
+                            w_name,
+                            Align::Left,
+                        ),
                         name_style,
                     ),
                 ];
@@ -429,24 +725,12 @@ impl Dashboard {
                     let elapsed = build_elapsed(b);
                     spans.extend([
                         Span::styled(
-                            format!(
-                                "{:<w_build$}",
-                                format!(
-                                    "#{}",
-                                    truncate(&b.build_number, w_build.saturating_sub(1))
-                                )
-                            ),
+                            format_cell(&format!("#{}", b.build_number), w_build, Align::Left),
                             theme::MUTED,
                         ),
-                        Span::styled(
-                            format!("{:<w_branch$}", truncate(&branch, w_branch)),
-                            theme::BRANCH,
-                        ),
-                        Span::styled(
-                            format!("{:<w_req$}", truncate(b.requestor(), w_req)),
-                            theme::MUTED,
-                        ),
-                        Span::styled(format!("{elapsed:>w_elapsed$}"), theme::MUTED),
+                        Span::styled(format_cell(&branch, w_branch, Align::Left), theme::BRANCH),
+                        Span::styled(format_cell(b.requestor(), w_req, Align::Left), theme::MUTED),
+                        Span::styled(format_cell(&elapsed, w_elapsed, Align::Right), theme::MUTED),
                     ]);
                 } else {
                     spans.push(Span::styled("no builds", theme::MUTED));
@@ -455,7 +739,18 @@ impl Dashboard {
                 ListItem::new(Line::from(spans)).style(sel_style)
             }
 
-            DashboardRow::DashboardPullRequest { pull_request } => {
+            DashboardRow::DashboardPullRequest { pull_request_id } => {
+                let Some(pull_request) = app
+                    .dashboard_pull_requests
+                    .pull_requests()
+                    .and_then(|prs| prs.iter().find(|pr| pr.pull_request_id == *pull_request_id))
+                else {
+                    return ListItem::new(Line::from(vec![
+                        Span::raw(pad(pr_widths[pr_schema.icon])),
+                        Span::styled("Pull request unavailable", theme::MUTED),
+                    ]))
+                    .style(sel_style);
+                };
                 let (icon, color) = pr_status_icon(&pull_request.status, pull_request.is_draft);
                 let (approved, rejected, waiting, _) = pull_request.vote_summary();
                 let vote_summary = if pull_request.reviewers.is_empty() {
@@ -479,34 +774,47 @@ impl Dashboard {
                 let w_votes = pr_widths[pr_schema.votes];
 
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("{icon:<w_icon$}"), theme::foreground(color)),
                     Span::styled(
-                        format!("{:<w_title$}", truncate(&title_text, w_title)),
-                        theme::TEXT,
+                        format_cell(icon, w_icon, Align::Left),
+                        theme::foreground(color),
                     ),
+                    Span::styled(format_cell(&title_text, w_title, Align::Left), theme::TEXT),
                     Span::styled(
-                        format!("{:<w_repo$}", truncate(pull_request.repo_name(), w_repo)),
+                        format_cell(pull_request.repo_name(), w_repo, Align::Left),
                         theme::MUTED,
                     ),
                     Span::styled(
-                        format!(
-                            "{:<w_branch$}",
-                            format!(
-                                "→ {}",
-                                truncate(
-                                    pull_request.short_target_branch(),
-                                    w_branch.saturating_sub(2)
-                                )
-                            )
+                        format_cell(
+                            &format!("→ {}", pull_request.short_target_branch()),
+                            w_branch,
+                            Align::Left,
                         ),
                         theme::BRANCH,
                     ),
-                    Span::styled(format!("{vote_summary:<w_votes$}"), theme::MUTED),
+                    Span::styled(
+                        format_cell(&vote_summary, w_votes, Align::Left),
+                        theme::MUTED,
+                    ),
                 ]))
                 .style(sel_style)
             }
 
-            DashboardRow::DashboardWorkItem { work_item } => {
+            DashboardRow::DashboardWorkItem {
+                source,
+                work_item_id,
+            } => {
+                let Some(work_item) = dashboard_work_item_at(
+                    *source,
+                    *work_item_id,
+                    &app.dashboard_work_items,
+                    &app.pinned_work_items,
+                ) else {
+                    return ListItem::new(Line::from(vec![
+                        Span::raw(pad(wi_widths[wi_schema.id])),
+                        Span::styled("Work item unavailable", theme::MUTED),
+                    ]))
+                    .style(sel_style);
+                };
                 let w_id = wi_widths[wi_schema.id];
                 let w_type = wi_widths[wi_schema.work_item_type];
                 let w_title = wi_widths[wi_schema.title];
@@ -516,35 +824,34 @@ impl Dashboard {
 
                 ListItem::new(Line::from(vec![
                     Span::styled(
-                        format!("#{:<w$}", work_item.id, w = w_id.saturating_sub(1)),
+                        format_cell(&format!("#{}", work_item.id), w_id, Align::Left),
                         theme::MUTED,
                     ),
                     Span::styled(
-                        format!("{:<w_type$}", truncate(work_item.work_item_type(), w_type)),
+                        format_cell(work_item.work_item_type(), w_type, Align::Left),
                         theme::work_item_type_style(work_item.work_item_type()),
                     ),
                     Span::styled(
-                        format!("{:<w_title$}", truncate(work_item.title(), w_title)),
+                        format_cell(work_item.title(), w_title, Align::Left),
                         theme::TEXT,
                     ),
                     Span::styled(
-                        format!("{:<w_state$}", truncate(work_item.state_label(), w_state)),
+                        format_cell(work_item.state_label(), w_state, Align::Left),
                         theme::work_item_state_style(work_item.state_label()),
                     ),
                     Span::styled(
-                        format!(
-                            "{:<w_assigned$}",
-                            truncate(work_item.assigned_to_display().unwrap_or("—"), w_assigned)
+                        format_cell(
+                            work_item.assigned_to_display().unwrap_or("—"),
+                            w_assigned,
+                            Align::Left,
                         ),
                         theme::MUTED,
                     ),
                     Span::styled(
-                        format!(
-                            "{:<w_iter$}",
-                            truncate(
-                                work_item.fields.iteration_path.as_deref().unwrap_or(""),
-                                w_iter
-                            )
+                        format_cell(
+                            work_item.fields.iteration_path.as_deref().unwrap_or(""),
+                            w_iter,
+                            Align::Left,
                         ),
                         theme::MUTED,
                     ),
@@ -598,10 +905,10 @@ mod tests {
         assert_eq!(d.section_ranges[2], 3..4);
         assert_eq!(d.section_ranges[3], 4..5);
         assert!(
-            matches!(&d.rows[0], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 1)
+            matches!(&d.rows[0], DashboardRow::PinnedPipeline { definition_id } if *definition_id == 1)
         );
         assert!(
-            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition, .. } if definition.id == 3)
+            matches!(&d.rows[1], DashboardRow::PinnedPipeline { definition_id } if *definition_id == 3)
         );
         assert!(matches!(&d.rows[2], DashboardRow::EmptyHint { .. }));
     }
@@ -669,8 +976,8 @@ mod tests {
             &DashboardWorkItemsState::EmptyVerified,
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
-        assert_eq!(d.pinned_definition_at(0).unwrap().id, 1);
-        assert!(d.pinned_definition_at(1).is_none());
+        assert_eq!(d.pinned_definition_at(0, &defs).unwrap().id, 1);
+        assert!(d.pinned_definition_at(1, &defs).is_none());
     }
 
     #[test]
@@ -686,10 +993,18 @@ mod tests {
             &PinnedWorkItemsState::Ready(Vec::new()),
         );
         // Layout: [0]=Pinned Pipelines empty, [1]=Pinned WIs empty, [2]=PR, [3]=WIs empty.
-        assert!(d.pull_request_at(0).is_none());
-        assert!(d.pull_request_at(1).is_none());
-        assert_eq!(d.pull_request_at(2).unwrap().pull_request_id, 42);
-        assert!(d.pull_request_at(3).is_none());
+        let dashboard_prs = DashboardPullRequestsState::Ready(vec![make_pull_request(
+            42, "Test", "active", "repo",
+        )]);
+        assert!(d.pull_request_at(0, &dashboard_prs).is_none());
+        assert!(d.pull_request_at(1, &dashboard_prs).is_none());
+        assert_eq!(
+            d.pull_request_at(2, &dashboard_prs)
+                .unwrap()
+                .pull_request_id,
+            42
+        );
+        assert!(d.pull_request_at(3, &dashboard_prs).is_none());
     }
 
     #[test]
@@ -747,7 +1062,39 @@ mod tests {
         let pr_idx = d.section_ranges[2].start;
         assert!(matches!(
             &d.rows[pr_idx],
-            DashboardRow::EmptyHint { message } if message == "Unavailable"
+            DashboardRow::DegradedHint { message, status }
+                if message == "Unavailable pull requests: Unavailable"
+                    && *status == AvailabilityStatus::Unavailable
+        ));
+    }
+
+    #[test]
+    fn rebuild_stale_prs_keeps_rows_with_warning_hint() {
+        let mut d = Dashboard::default();
+        let prs = vec![make_pull_request(42, "Stale PR", "active", "repo")];
+
+        d.rebuild(
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &DashboardPullRequestsState::Stale {
+                pull_requests: prs,
+                message: "timeout".to_string(),
+            },
+            &DashboardWorkItemsState::EmptyVerified,
+            &PinnedWorkItemsState::Ready(Vec::new()),
+        );
+
+        let pr_idx = d.section_ranges[2].start;
+        assert!(matches!(
+            &d.rows[pr_idx],
+            DashboardRow::DegradedHint { message, status }
+                if message == "Showing stale pull requests: timeout"
+                    && *status == AvailabilityStatus::Stale
+        ));
+        assert!(matches!(
+            &d.rows[pr_idx + 1],
+            DashboardRow::DashboardPullRequest { pull_request_id } if *pull_request_id == 42
         ));
     }
 

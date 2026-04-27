@@ -15,16 +15,18 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Left => {
             let index = app.boards.nav.index();
-            if !app.boards.collapse_row(index, &app.search.query)
-                && let Some(parent_index) = app.boards.parent_index(index)
+            let query = app.search.query.clone();
+            if !app.shell.views.boards.collapse_row(index, &query)
+                && let Some(parent_index) = app.shell.views.boards.parent_index(index)
             {
-                app.boards.nav.set_index(parent_index);
+                app.shell.views.boards.nav.set_index(parent_index);
             }
             Action::None
         }
         KeyCode::Right => {
-            app.boards
-                .expand_row(app.boards.nav.index(), &app.search.query);
+            let index = app.boards.nav.index();
+            let query = app.search.query.clone();
+            app.shell.views.boards.expand_row(index, &query);
             Action::None
         }
         KeyCode::Enter => {
@@ -32,8 +34,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 app.navigate_to_work_item_detail(id);
                 Action::FetchWorkItemDetail { work_item_id: id }
             } else {
-                app.boards
-                    .toggle_row(app.boards.nav.index(), &app.search.query);
+                let index = app.boards.nav.index();
+                let query = app.search.query.clone();
+                app.shell.views.boards.toggle_row(index, &query);
                 Action::None
             }
         }

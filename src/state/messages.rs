@@ -7,6 +7,41 @@ use crate::client::models::{
 
 use super::ExactUserIdentity;
 
+/// Represents the result of refreshing one independently loaded data section.
+pub enum RefreshOutcome<T> {
+    Fresh(T),
+    Partial { data: T, errors: Vec<String> },
+    Failed { message: String },
+}
+
+impl<T> RefreshOutcome<T> {
+    /// Returns a fresh refresh outcome.
+    pub fn fresh(data: T) -> Self {
+        Self::Fresh(data)
+    }
+
+    /// Returns a partial refresh outcome with usable data and errors.
+    pub fn partial(data: T, errors: Vec<String>) -> Self {
+        if errors.is_empty() {
+            Self::Fresh(data)
+        } else {
+            Self::Partial { data, errors }
+        }
+    }
+
+    /// Returns a failed refresh outcome with a user-facing message.
+    pub fn failed(message: impl Into<String>) -> Self {
+        Self::Failed {
+            message: message.into(),
+        }
+    }
+
+    /// Returns `true` when the outcome contains fresh data.
+    pub fn is_fresh(&self) -> bool {
+        matches!(self, Self::Fresh(_) | Self::Partial { .. })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefreshSource {
     Data,
@@ -18,10 +53,10 @@ pub enum RefreshSource {
 /// Represents a message sent from background tasks to the main event loop.
 pub enum AppMessage {
     DataRefresh {
-        definitions: Vec<PipelineDefinition>,
-        recent_builds: Vec<Build>,
-        pending_approvals: Vec<Approval>,
-        retention_leases: Vec<RetentionLease>,
+        definitions: RefreshOutcome<Vec<PipelineDefinition>>,
+        recent_builds: RefreshOutcome<Vec<Build>>,
+        pending_approvals: RefreshOutcome<Vec<Approval>>,
+        retention_leases: RefreshOutcome<Vec<RetentionLease>>,
     },
     BuildHistory {
         builds: Vec<Build>,
@@ -67,6 +102,10 @@ pub enum AppMessage {
     /// flooding the notification queue when the network is persistently down.
     RefreshError {
         message: String,
+        source: RefreshSource,
+    },
+    /// Signals that a refresh task was cancelled before its terminal message.
+    RefreshCancelled {
         source: RefreshSource,
     },
     RetentionLeasesDeleted {
@@ -120,6 +159,7 @@ pub enum AppMessage {
         team_name: String,
         backlogs: Vec<BacklogLevelConfiguration>,
         work_items: Vec<WorkItem>,
+        partial_errors: Vec<String>,
         generation: u64,
     },
     BoardsFailed {

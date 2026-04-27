@@ -7,13 +7,16 @@ use crate::state::App;
 ///
 /// Returns `Action::FetchPinnedWorkItems` so the dashboard's pinned section stays in sync.
 pub fn toggle_work_item_pin(app: &mut App, id: u32) -> Action {
-    let was_pinned = app.filters.pinned_work_item_ids.contains(&id);
+    let was_pinned = app.core.filters.pinned_work_item_ids.contains(&id);
     if was_pinned {
-        app.filters.pinned_work_item_ids.retain(|pid| *pid != id);
+        app.core
+            .filters
+            .pinned_work_item_ids
+            .retain(|pid| *pid != id);
         app.notifications
             .success(format!("Unpinned work item #{id}"));
     } else {
-        app.filters.pinned_work_item_ids.push(id);
+        app.core.filters.pinned_work_item_ids.push(id);
         app.notifications.success(format!("Pinned work item #{id}"));
     }
 

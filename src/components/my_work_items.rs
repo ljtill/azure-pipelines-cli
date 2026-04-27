@@ -1,5 +1,7 @@
 //! Personal work items list view (Assigned to me / Created by me).
 
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -12,9 +14,10 @@ use crate::client::models::{AssignedToField, WorkItem};
 use crate::render::columns::work_item_row;
 use crate::render::helpers::{
     draw_state_message, draw_view_frame, row_style, split_with_search_bar, sub_view_tab_spans,
-    truncate,
 };
-use crate::render::table::{render_header, resolve_widths};
+use crate::render::table::{
+    Align, DEFAULT_SCROLL_PADDING, format_cell, render_header, resolve_widths, visible_rows,
+};
 use crate::render::theme;
 use crate::state::{App, InputMode, ListNav, View};
 
@@ -69,8 +72,9 @@ impl MyWorkItemRow {
 /// State for one of the personal Boards list sub-views.
 #[derive(Debug, Default)]
 pub struct MyWorkItemsList {
-    all: Vec<MyWorkItemRow>,
-    pub filtered: Vec<MyWorkItemRow>,
+    all: BTreeMap<u32, MyWorkItemRow>,
+    order: Vec<u32>,
+    pub filtered: Vec<u32>,
     pub nav: ListNav,
     pub generation: u64,
 }
@@ -85,26 +89,39 @@ impl MyWorkItemsList {
     /// Replaces the underlying data (preserving the WIQL-provided ordering)
     /// and rebuilds the filtered list using the given search query.
     pub fn set_data(&mut self, work_items: &[WorkItem], search_query: &str) {
-        self.all = work_items
-            .iter()
-            .map(MyWorkItemRow::from_work_item)
-            .collect();
+        self.order.clear();
+        self.all.clear();
+        for row in work_items.iter().map(MyWorkItemRow::from_work_item) {
+            if !self.all.contains_key(&row.id) {
+                self.order.push(row.id);
+            }
+            self.all.insert(row.id, row);
+        }
         self.rebuild(search_query);
     }
 
     /// Rebuilds the filtered list from `all` using the search query.
     pub fn rebuild(&mut self, search_query: &str) {
         if search_query.is_empty() {
-            self.filtered = self.all.clone();
+            self.filtered = self.order.clone();
         } else {
             self.filtered = self
-                .all
+                .order
                 .iter()
-                .filter(|r| r.matches(search_query))
-                .cloned()
+                .copied()
+                .filter(|id| {
+                    self.all
+                        .get(id)
+                        .is_some_and(|row| row.matches(search_query))
+                })
                 .collect();
         }
         self.nav.set_len(self.filtered.len());
+    }
+
+    /// Returns the row at the filtered row index.
+    pub fn row_at(&self, index: usize) -> Option<&MyWorkItemRow> {
+        self.filtered.get(index).and_then(|id| self.all.get(id))
     }
 }
 
@@ -178,57 +195,67 @@ impl MyWorkItems {
             .map(|&w| w as usize)
             .collect();
 
-        let items: Vec<ListItem> = list
-            .filtered
-            .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                let is_selected = i == list.nav.index();
+        let window = visible_rows(
+            list.filtered.len(),
+            list.nav.index(),
+            list_area.height,
+            DEFAULT_SCROLL_PADDING,
+        );
+        let items: Vec<ListItem> = window
+            .range()
+            .filter_map(|i| {
+                let row = list.row_at(i)?;
+                let is_selected = window.selected == Some(i - window.start);
                 let w_id = widths[schema.id];
                 let w_type = widths[schema.work_item_type];
                 let w_title = widths[schema.title];
                 let w_state = widths[schema.state];
                 let w_assigned = widths[schema.assigned];
                 let w_iter = widths[schema.iteration];
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        format!("#{:<w$}", row.id, w = w_id.saturating_sub(1)),
-                        id_style(),
-                    ),
-                    Span::styled(
-                        format!("{:<w_type$}", truncate(&row.work_item_type, w_type)),
-                        theme::work_item_type_style(&row.work_item_type),
-                    ),
-                    Span::styled(
-                        format!("{:<w_title$}", truncate(&row.title, w_title)),
-                        title_style(),
-                    ),
-                    Span::styled(
-                        format!("{:<w_state$}", truncate(&row.state, w_state)),
-                        theme::work_item_state_style(&row.state),
-                    ),
-                    Span::styled(
-                        format!(
-                            "{:<w_assigned$}",
-                            truncate(row.assigned_to.as_deref().unwrap_or("—"), w_assigned)
+                Some(
+                    ListItem::new(Line::from(vec![
+                        Span::styled(
+                            format_cell(&format!("#{}", row.id), w_id, Align::Left),
+                            id_style(),
                         ),
-                        theme::SUBTLE,
-                    ),
-                    Span::styled(
-                        format!(
-                            "{:<w_iter$}",
-                            truncate(row.iteration_path.as_deref().unwrap_or(""), w_iter)
+                        Span::styled(
+                            format_cell(&row.work_item_type, w_type, Align::Left),
+                            theme::work_item_type_style(&row.work_item_type),
                         ),
-                        theme::SUBTLE,
-                    ),
-                ]))
-                .style(row_style(is_selected))
+                        Span::styled(format_cell(&row.title, w_title, Align::Left), title_style()),
+                        Span::styled(
+                            format_cell(&row.state, w_state, Align::Left),
+                            theme::work_item_state_style(&row.state),
+                        ),
+                        Span::styled(
+                            format_cell(
+                                row.assigned_to.as_deref().unwrap_or("—"),
+                                w_assigned,
+                                Align::Left,
+                            ),
+                            theme::SUBTLE,
+                        ),
+                        Span::styled(
+                            format_cell(
+                                row.iteration_path.as_deref().unwrap_or(""),
+                                w_iter,
+                                Align::Left,
+                            ),
+                            theme::SUBTLE,
+                        ),
+                    ]))
+                    .style(row_style(is_selected)),
+                )
             })
             .collect();
 
         let mut state = ListState::default();
-        state.select(Some(list.nav.index()));
-        f.render_stateful_widget(List::new(items).scroll_padding(3), list_area, &mut state);
+        state.select(window.selected);
+        f.render_stateful_widget(
+            List::new(items).scroll_padding(DEFAULT_SCROLL_PADDING),
+            list_area,
+            &mut state,
+        );
     }
 }
 
@@ -315,7 +342,7 @@ mod tests {
             "auth",
         );
         assert_eq!(list.filtered.len(), 1);
-        assert_eq!(list.filtered[0].id, 1);
+        assert_eq!(list.row_at(0).unwrap().id, 1);
     }
 
     #[test]
@@ -329,7 +356,22 @@ mod tests {
             "222",
         );
         assert_eq!(list.filtered.len(), 1);
-        assert_eq!(list.filtered[0].id, 222);
+        assert_eq!(list.row_at(0).unwrap().id, 222);
+    }
+
+    #[test]
+    fn set_data_normalizes_duplicate_work_item_ids() {
+        let mut list = MyWorkItemsList::default();
+        list.set_data(
+            &[
+                wi(111, "Old title", "Bug", "Active", None, None),
+                wi(111, "Updated title", "Bug", "Active", None, None),
+            ],
+            "",
+        );
+
+        assert_eq!(list.filtered, vec![111]);
+        assert_eq!(list.row_at(0).unwrap().title, "Updated title");
     }
 
     #[test]

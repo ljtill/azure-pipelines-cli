@@ -108,35 +108,32 @@ pub fn handle_settings_save(app: &mut App) -> Action {
         match settings.save() {
             Ok(config) => {
                 // Detect connection change (org/project).
-                let new_label = format!(
-                    "{} / {}",
-                    config.devops.connection.organization, config.devops.connection.project
-                );
-                let needs_reload = new_label != app.org_project_label;
+                let needs_reload = !app.connection.matches_config(&config.devops.connection);
 
                 // Apply runtime-relevant changes.
-                app.filters.folders = config.devops.filters.folders;
-                app.filters.definition_ids = config.devops.filters.definition_ids.clone();
-                app.filters.pinned_definition_ids =
+                app.core.filters.folders = config.devops.filters.folders;
+                app.core.filters.definition_ids = config.devops.filters.definition_ids.clone();
+                app.core.filters.pinned_definition_ids =
                     config.devops.filters.pinned_definition_ids.clone();
-                app.filters.pinned_work_item_ids =
+                app.core.filters.pinned_work_item_ids =
                     config.devops.filters.pinned_work_item_ids.clone();
-                app.notifications_enabled = config.devops.notifications.enabled;
+                app.refresh.notifications_enabled = config.devops.notifications.enabled;
 
                 // Apply display settings live.
-                app.refresh_interval =
+                app.refresh.refresh_interval =
                     Duration::from_secs(config.devops.display.refresh_interval_secs);
-                app.log_refresh_interval =
+                app.refresh.log_refresh_interval =
                     Duration::from_secs(config.devops.display.log_refresh_interval_secs);
-                app.max_log_lines = config.devops.display.max_log_lines;
+                app.refresh.max_log_lines = config.devops.display.max_log_lines;
 
                 // Rebuild filtered views with new filters.
                 app.rebuild_dashboard();
                 app.rebuild_pipelines();
-                app.active_runs.rebuild(
-                    &app.data.active_builds,
-                    &app.filters.definition_ids,
-                    &app.search.query,
+                let query = app.search.query.clone();
+                app.shell.views.active_runs.rebuild(
+                    &app.core.data.active_builds,
+                    &app.core.filters.definition_ids,
+                    &query,
                 );
 
                 app.show_settings = false;
@@ -196,26 +193,31 @@ pub fn rebuild_search_results(app: &mut App) {
             app.pipelines.nav.set_index(0);
         }
         View::ActiveRuns => {
-            app.active_runs.rebuild(
-                &app.data.active_builds,
-                &app.filters.definition_ids,
-                &app.search.query,
+            let query = app.search.query.clone();
+            app.shell.views.active_runs.rebuild(
+                &app.core.data.active_builds,
+                &app.core.filters.definition_ids,
+                &query,
             );
             app.active_runs.nav.set_index(0);
         }
         View::PullRequestsCreatedByMe
         | View::PullRequestsAssignedToMe
         | View::PullRequestsAllActive => {
-            app.pull_requests.rebuild(&app.search.query);
+            let query = app.search.query.clone();
+            app.pull_requests.rebuild(&query);
             app.pull_requests.nav.set_index(0);
         }
         View::Boards => {
-            app.boards.rebuild(&app.search.query);
+            let query = app.search.query.clone();
+            app.boards.rebuild(&query);
             app.boards.nav.set_index(0);
         }
         View::BoardsAssignedToMe | View::BoardsCreatedByMe => {
-            if let Some(list) = app.my_work_items.list_for_mut(app.view) {
-                list.rebuild(&app.search.query);
+            let view = app.view;
+            let query = app.search.query.clone();
+            if let Some(list) = app.my_work_items.list_for_mut(view) {
+                list.rebuild(&query);
                 list.nav.set_index(0);
             }
         }

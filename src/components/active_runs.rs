@@ -14,9 +14,11 @@ use crate::client::models::Build;
 use crate::render::columns::{BuildRowOpts, build_row};
 use crate::render::helpers::{
     build_elapsed, draw_state_message, draw_view_frame, effective_status_icon,
-    effective_status_label, row_style, split_with_search_bar, truncate,
+    effective_status_label, row_style, split_with_search_bar,
 };
-use crate::render::table::{render_header, resolve_widths};
+use crate::render::table::{
+    Align, DEFAULT_SCROLL_PADDING, format_cell, render_header, resolve_widths, visible_rows,
+};
 use crate::render::theme;
 use crate::state::nav::ListNav;
 use crate::state::{App, InputMode};
@@ -24,7 +26,7 @@ use crate::state::{App, InputMode};
 /// Renders currently running builds with multi-select support.
 #[derive(Debug, Default)]
 pub struct ActiveRuns {
-    pub filtered: Vec<Build>,
+    pub filtered: Vec<u32>,
     pub nav: ListNav,
     pub selected: HashSet<u32>,
 }
@@ -36,9 +38,9 @@ impl ActiveRuns {
         filter_definition_ids: &[u32],
         search_query: &str,
     ) {
-        let base = active_builds.iter().filter(|b| {
+        let base = active_builds.iter().filter(|build| {
             if !filter_definition_ids.is_empty()
-                && !filter_definition_ids.contains(&b.definition.id)
+                && !filter_definition_ids.contains(&build.definition.id)
             {
                 return false;
             }
@@ -46,24 +48,31 @@ impl ActiveRuns {
         });
 
         if search_query.is_empty() {
-            self.filtered = base.cloned().collect();
+            self.filtered = base.map(|build| build.id).collect();
         } else {
             let q = search_query.to_lowercase();
             self.filtered = base
-                .filter(|b| {
-                    b.definition.name.to_lowercase().contains(&q)
-                        || b.build_number.to_lowercase().contains(&q)
-                        || b.branch_display().to_lowercase().contains(&q)
+                .filter(|build| {
+                    build.definition.name.to_lowercase().contains(&q)
+                        || build.build_number.to_lowercase().contains(&q)
+                        || build.branch_display().to_lowercase().contains(&q)
                 })
-                .cloned()
+                .map(|build| build.id)
                 .collect();
         }
         self.nav.set_len(self.filtered.len());
     }
 
+    /// Returns the build at the filtered row index.
+    pub fn build_at<'a>(&self, active_builds: &'a [Build], index: usize) -> Option<&'a Build> {
+        self.filtered
+            .get(index)
+            .and_then(|build_id| active_builds.iter().find(|build| build.id == *build_id))
+    }
+
     /// Toggles selection state for the item at the current nav index.
-    pub fn toggle_selected_at_cursor(&mut self) {
-        if let Some(build) = self.filtered.get(self.nav.index()) {
+    pub fn toggle_selected_at_cursor(&mut self, active_builds: &[Build]) {
+        if let Some(build) = self.build_at(active_builds, self.nav.index()) {
             let id = build.id;
             if !self.selected.remove(&id) {
                 self.selected.insert(id);
@@ -76,7 +85,7 @@ impl ActiveRuns {
             && (app.search.mode == InputMode::Search || !app.search.query.is_empty());
         let sel_count = self.selected.len();
         let filtered = self.filtered.len();
-        let total = app.data.active_builds.len();
+        let total = app.core.data.active_builds.len();
         let mut subtitle_spans = crate::render::helpers::sub_view_tab_spans(app.service, app.view);
         if !subtitle_spans.is_empty() {
             subtitle_spans.push(Span::styled("  ·  ", theme::MUTED));
@@ -120,82 +129,81 @@ impl ActiveRuns {
         let resolved = resolve_widths(&schema.columns, list_area.width);
         let widths: Vec<usize> = resolved.iter().map(|&w| w as usize).collect();
 
-        let items: Vec<ListItem> = self
-            .filtered
-            .iter()
-            .enumerate()
-            .map(|(i, build)| {
-                let is_focused = i == self.nav.index();
+        let window = visible_rows(
+            self.filtered.len(),
+            self.nav.index(),
+            list_area.height,
+            DEFAULT_SCROLL_PADDING,
+        );
+        let items: Vec<ListItem> = window
+            .range()
+            .filter_map(|i| {
+                let build = self.build_at(&app.core.data.active_builds, i)?;
+                let is_focused = window.selected == Some(i - window.start);
                 let elapsed = build_elapsed(build);
                 let selected = self.selected.contains(&build.id);
-                let retained = app.retention_leases.retained_run_ids.contains(&build.id);
+                let retained = app
+                    .core
+                    .retention_leases
+                    .retained_run_ids
+                    .contains(&build.id);
                 let check = if selected { "✓ " } else { "  " };
-                let awaiting = app.data.pending_approval_build_ids.contains(&build.id);
+                let awaiting = app.core.data.pending_approval_build_ids.contains(&build.id);
                 let (icon, icon_color) =
                     effective_status_icon(build.status, build.result, awaiting);
                 let label = effective_status_label(build.status, build.result, awaiting);
                 let primary_style = theme::TEXT;
                 let secondary_style = theme::SUBTLE;
 
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        check,
-                        if selected {
-                            theme::SUCCESS
-                        } else {
-                            Style::new()
-                        },
-                    ),
-                    Span::styled(format!(" {icon} "), theme::foreground(icon_color)),
-                    Span::styled(
-                        format!("{:<width$}", label, width = widths[2]),
-                        theme::foreground(icon_color),
-                    ),
-                    Span::styled(
-                        format!(
-                            "{:<width$} ",
-                            truncate(&build.definition.name, widths[3].saturating_sub(1)),
-                            width = widths[3].saturating_sub(1)
+                Some(
+                    ListItem::new(Line::from(vec![
+                        Span::styled(
+                            check,
+                            if selected {
+                                theme::SUCCESS
+                            } else {
+                                Style::new()
+                            },
                         ),
-                        primary_style,
-                    ),
-                    Span::styled(
-                        format!(
-                            "#{:<width$}",
-                            truncate(&build.build_number, widths[4] - 1),
-                            width = widths[4] - 1
+                        Span::styled(format!(" {icon} "), theme::foreground(icon_color)),
+                        Span::styled(
+                            format_cell(label, widths[2], Align::Left),
+                            theme::foreground(icon_color),
                         ),
-                        secondary_style,
-                    ),
-                    Span::styled(if retained { "◈ " } else { "  " }, theme::WARNING),
-                    Span::styled(
-                        format!(
-                            "{:<width$} ",
-                            truncate(&build.branch_display(), widths[6].saturating_sub(1)),
-                            width = widths[6].saturating_sub(1)
+                        Span::styled(
+                            format_cell(&build.definition.name, widths[3], Align::Left),
+                            primary_style,
                         ),
-                        theme::BRANCH,
-                    ),
-                    Span::styled(
-                        format!(
-                            "{:<width$} ",
-                            truncate(build.requestor(), widths[7].saturating_sub(1)),
-                            width = widths[7].saturating_sub(1)
+                        Span::styled(
+                            format_cell(
+                                &format!("#{}", build.build_number),
+                                widths[4],
+                                Align::Left,
+                            ),
+                            secondary_style,
                         ),
-                        secondary_style,
-                    ),
-                    Span::styled(
-                        format!("{:>width$}", elapsed, width = widths[8]),
-                        theme::WARNING,
-                    ),
-                ]))
-                .style(row_style(is_focused))
+                        Span::styled(if retained { "◈ " } else { "  " }, theme::WARNING),
+                        Span::styled(
+                            format_cell(&build.branch_display(), widths[6], Align::Left),
+                            theme::BRANCH,
+                        ),
+                        Span::styled(
+                            format_cell(build.requestor(), widths[7], Align::Left),
+                            secondary_style,
+                        ),
+                        Span::styled(
+                            format_cell(&elapsed, widths[8], Align::Right),
+                            theme::WARNING,
+                        ),
+                    ]))
+                    .style(row_style(is_focused)),
+                )
             })
             .collect();
-        let list = List::new(items).scroll_padding(3);
+        let list = List::new(items).scroll_padding(DEFAULT_SCROLL_PADDING);
 
         let mut state = ListState::default();
-        state.select(Some(self.nav.index()));
+        state.select(window.selected);
         f.render_stateful_widget(list, list_area, &mut state);
     }
 }

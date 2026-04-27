@@ -2,6 +2,7 @@
 
 mod dispatch;
 mod messages;
+mod reducers;
 pub mod spawn;
 
 pub use dispatch::handle_action;

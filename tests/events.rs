@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use azure_devops_cli::client::models::*;
 use azure_devops_cli::components::boards::BoardItem;
 use azure_devops_cli::events::{Action, handle_key};
+use azure_devops_cli::shared::availability::Availability;
 use azure_devops_cli::state::{
     App, ConfirmAction, ConfirmPrompt, DashboardRow, InputMode, Service, View,
 };
@@ -74,7 +75,8 @@ fn key_2_switches_to_boards_and_rebuilds_after_clearing_search() {
     app.boards.root_ids = vec![1, 3];
     app.boards.collapsed = HashSet::new();
     app.search.query = "needle".to_string();
-    app.boards.rebuild(&app.search.query);
+    let query = app.search.query.clone();
+    app.boards.rebuild(&query);
 
     assert_eq!(
         app.boards
@@ -315,7 +317,7 @@ fn enter_commits_search() {
 fn enter_on_pipelines_fetches_history() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
+    app.core.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
     app.rebuild_pipelines();
     // Navigate past the folder header to the first pipeline.
     app.pipelines.nav.set_index(1);
@@ -332,11 +334,12 @@ fn enter_on_pipelines_fetches_history() {
 fn enter_on_active_runs_fetches_timeline() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.data.active_builds = vec![make_build(42, BuildStatus::InProgress, None)];
-    app.active_runs.rebuild(
-        &app.data.active_builds,
-        &app.filters.definition_ids,
-        &app.search.query,
+    app.core.data.active_builds = vec![make_build(42, BuildStatus::InProgress, None)];
+    let query = app.search.query.clone();
+    app.shell.views.active_runs.rebuild(
+        &app.core.data.active_builds,
+        &app.core.filters.definition_ids,
+        &query,
     );
 
     let action = handle_key(&mut app, key(KeyCode::Enter));
@@ -424,11 +427,12 @@ fn confirm_blocks_other_keys() {
 fn space_toggles_in_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.data.active_builds = vec![make_build(10, BuildStatus::InProgress, None)];
-    app.active_runs.rebuild(
-        &app.data.active_builds,
-        &app.filters.definition_ids,
-        &app.search.query,
+    app.core.data.active_builds = vec![make_build(10, BuildStatus::InProgress, None)];
+    let query = app.search.query.clone();
+    app.shell.views.active_runs.rebuild(
+        &app.core.data.active_builds,
+        &app.core.filters.definition_ids,
+        &query,
     );
 
     // Toggle on
@@ -459,11 +463,12 @@ fn space_noop_on_other_views() {
 fn c_sets_confirm_on_active_runs() {
     let mut app = test_app();
     app.view = View::ActiveRuns;
-    app.data.active_builds = vec![make_build(7, BuildStatus::InProgress, None)];
-    app.active_runs.rebuild(
-        &app.data.active_builds,
-        &app.filters.definition_ids,
-        &app.search.query,
+    app.core.data.active_builds = vec![make_build(7, BuildStatus::InProgress, None)];
+    let query = app.search.query.clone();
+    app.shell.views.active_runs.rebuild(
+        &app.core.data.active_builds,
+        &app.core.filters.definition_ids,
+        &query,
     );
 
     let action = handle_key(&mut app, key(KeyCode::Char('c')));
@@ -485,8 +490,12 @@ fn c_sets_confirm_on_active_runs() {
 #[test]
 fn o_opens_browser_on_dashboard() {
     let mut app = test_app();
-    app.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
-    app.filters.pinned_definition_ids = vec![1];
+    app.core.data.definitions = vec![make_definition(1, "Pipeline 1", "\\")];
+    app.core.availability.definitions = Availability::fresh(app.core.data.definitions.clone());
+    app.core.availability.recent_builds = Availability::fresh(app.core.data.recent_builds.clone());
+    app.core.availability.pending_approvals =
+        Availability::fresh(app.core.data.pending_approvals.clone());
+    app.core.filters.pinned_definition_ids = vec![1];
     app.rebuild_dashboard();
     // Row 0 is the pinned pipeline (section headers were removed).
 
@@ -534,7 +543,7 @@ fn f_outside_log_viewer_is_noop() {
 fn arrow_keys_navigate_list() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.data.definitions = vec![
+    app.core.data.definitions = vec![
         make_definition(1, "Pipeline 1", "\\"),
         make_definition(2, "Pipeline 2", "\\"),
         make_definition(3, "Pipeline 3", "\\"),
@@ -556,7 +565,7 @@ fn arrow_keys_navigate_list() {
 fn home_and_end_keys() {
     let mut app = test_app();
     app.view = View::Pipelines;
-    app.data.definitions = vec![
+    app.core.data.definitions = vec![
         make_definition(1, "Pipeline 1", "\\"),
         make_definition(2, "Pipeline 2", "\\"),
         make_definition(3, "Pipeline 3", "\\"),
@@ -801,7 +810,13 @@ fn pr_search_filters_list() {
     handle_key(&mut app, key(KeyCode::Char('u')));
     handle_key(&mut app, key(KeyCode::Char('g')));
     assert_eq!(app.pull_requests.filtered.len(), 1);
-    assert_eq!(app.pull_requests.filtered[0].pull_request_id, 2);
+    assert_eq!(
+        app.pull_requests
+            .pull_request_at(0)
+            .unwrap()
+            .pull_request_id,
+        2
+    );
 }
 
 #[test]
