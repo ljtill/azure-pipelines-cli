@@ -1,0 +1,21 @@
+# cargo-audit configuration. Run locally with `cargo audit`.
+#
+# Keep advisory ignores in sync with the `[advisories].ignore` list in
+# ../deny.toml so that `cargo audit` and `cargo deny check advisories`
+# agree on what is suppressed.
+
+[advisories]
+ignore = [
+    # rsa 0.9.x: Marvin Attack timing sidechannel. No safe upgrade is available
+    # upstream. Pulled in transitively via `sigstore` (release-signature
+    # verification on self-update); this CLI does not expose RSA over a network
+    # in a way that an attacker could observe timing sidechannels.
+    # https://rustsec.org/advisories/RUSTSEC-2023-0071
+    "RUSTSEC-2023-0071",
+
+    # proc-macro-error 1.0.4: unmaintained. Build-time only (proc macro), pulled
+    # in transitively via sigstore -> json-syntax -> locspan-derive. No upstream
+    # replacement available without dropping `sigstore`.
+    # https://rustsec.org/advisories/RUSTSEC-2024-0370
+    "RUSTSEC-2024-0370",
+]
