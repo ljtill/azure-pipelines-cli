@@ -1,5 +1,5 @@
-<p align="center"><code>curl -fsSL https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.sh | sh</code><br />or <code>irm https://raw.githubusercontent.com/ljtill/azure-devops-cli/main/install.ps1 | iex</code></p>
-<p align="center"><strong>azure-devops-cli</strong> is a terminal dashboard for Azure DevOps that runs in any modern terminal.</p>
+<h1 align="center">azure-devops-cli</h1>
+<p align="center">A terminal dashboard for Azure DevOps that runs in any modern terminal.</p>
 
 ---
 
