@@ -4,7 +4,7 @@ A terminal (TUI) dashboard for Azure DevOps, built with [ratatui](https://ratatu
 
 ## First run
 
-On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project. Boards uses that same project and resolves the default team/backlog at runtime, so there is no separate Boards section to configure. All settings can be adjusted in-app with `,` (settings).
+On first launch, an interactive setup wizard creates `~/.config/devops/config.toml` with your Azure DevOps organization and project. Boards uses that same project and resolves the default team/backlog at runtime, so there is no separate Boards section to configure. Do not store tokens, PATs, or other secrets in the config file; sign in with Azure CLI or Azure Developer CLI instead. All settings can be adjusted in-app with `,` (settings).
 
 ```bash
 # Uses default config path
@@ -20,7 +20,7 @@ DEVOPS_API_VERSION=7.2-preview.3 devops
 # Print installed version
 devops version
 
-# Update to the latest release
+# Verify and update to the latest release
 devops update
 ```
 
@@ -64,12 +64,13 @@ Read-only backlog tree plus personal "Assigned to me" and "Created by me" work i
 - **In-app settings** — Edit configuration live, save, and reload without restarting (`,`).
 - **First-run setup** — Interactive setup wizard when no config file exists.
 - **Auto-update check** — Background check for new releases on GitHub; persistent notification when an update is available.
-- **Self-update** — `devops update` downloads the latest release and updates the symlink.
+- **Self-update** — `devops update` verifies the Sigstore-signed checksum manifest, verifies the archive SHA-256, and updates the active binary.
 - **Azure CLI auth** — Uses `DeveloperToolsCredential` (Azure CLI / Azure Developer CLI chain).
 
 ## Next steps
 
 - [Keybindings](keybindings.md) — full key reference.
+- [Installation](install.md) — secure install and update verification.
 - [Configuration](configuration.md) — config file schema and display options.
 - [Limitations](limitations.md) — known caps and how to override them.
 - [Stability](stability.md) — 1.x compatibility guarantees.

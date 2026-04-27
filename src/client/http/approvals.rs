@@ -1,9 +1,8 @@
 //! HTTP client methods for Azure DevOps pipeline approval operations.
 
-use std::time::Instant;
-
 use anyhow::Result;
 
+use super::RequestRetryPolicy;
 use crate::client::models::{Approval, ApprovalListResponse};
 
 impl super::AdoClient {
@@ -11,8 +10,10 @@ impl super::AdoClient {
     pub async fn list_pending_approvals(&self) -> Result<Vec<Approval>> {
         tracing::debug!("listing pending approvals");
         let url = self.endpoints.approvals_pending();
-        let resp: ApprovalListResponse = self.get(&url).await?;
-        Ok(resp.value)
+        self.get_all_continuation_pages(&url, "approvals", None, |page: ApprovalListResponse| {
+            page.value
+        })
+        .await
     }
 
     /// Sends an approval status update (approve/reject) with an optional comment.
@@ -24,27 +25,15 @@ impl super::AdoClient {
     ) -> Result<()> {
         tracing::info!(approval_id, status, "updating approval");
         let url = self.endpoints.approvals_update();
-        let token = self.auth.token().await?;
-        let start = Instant::now();
-        let resp = self
-            .http
-            .patch(&url)
-            .bearer_auth(token.expose_secret())
-            .json(&serde_json::json!([{
+        self.patch_json(
+            &url,
+            &serde_json::json!([{
                 "approvalId": approval_id,
                 "status": status,
                 "comment": comment
-            }]))
-            .send()
-            .await?;
-        let resp = self.ensure_success(resp, "PATCH", &url).await?;
-        let resp_status = resp.status().as_u16();
-        tracing::debug!(
-            method = "PATCH",
-            status = resp_status,
-            elapsed_ms = start.elapsed().as_millis() as u64,
-            "approval updated"
-        );
-        Ok(())
+            }]),
+            RequestRetryPolicy::NonIdempotent,
+        )
+        .await
     }
 }

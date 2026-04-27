@@ -3,6 +3,7 @@
 pub mod api_version;
 pub mod auth;
 pub mod endpoints;
+pub mod errors;
 pub mod http;
 pub mod models;
 pub mod wiql;

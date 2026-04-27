@@ -19,6 +19,27 @@ project = "your-project"
 
 Boards uses the same project and resolves the default team and backlog at runtime — there is no separate `[devops.boards]` section.
 
+Use the organization and project path segments from your Azure DevOps URL (`https://dev.azure.com/{organization}/{project}`), not the full URL. Both values are validated when the config loads and when the setup wizard writes a config:
+
+- They must not be empty or whitespace-only.
+- They must not contain control characters such as newlines or tabs.
+- They must be 256 bytes or fewer.
+
+Do not store tokens, PATs, service principal credentials, or other secrets in `config.toml`. The CLI does not read credentials from config; authentication uses Azure CLI or Azure Developer CLI sign-in state.
+
+Optional network timeouts default to:
+
+```toml
+[devops.connection.timeouts]
+request_timeout_secs = 30
+connect_timeout_secs = 10
+log_timeout_secs = 60
+```
+
+`request_timeout_secs` applies to regular Azure DevOps REST calls,
+`connect_timeout_secs` caps TCP connection setup, and `log_timeout_secs` applies
+to build log downloads. All timeout values must be between 1 and 600 seconds.
+
 ## Sections
 
 The config file groups all app tables under a single top-level `[devops]` table. New keys are added with safe defaults so older configs keep loading on newer binaries.
@@ -31,6 +52,22 @@ The config file groups all app tables under a single top-level `[devops]` table.
 - `[devops.display]` — refresh cadences and log-viewer caps (see below).
 
 An optional top-level `schema_version` field is accepted (default `1`). See [stability.md](stability.md) for forward/backward compatibility rules.
+
+## `[devops.update]`
+
+```toml
+[devops.update]
+check_for_updates = true
+```
+
+`check_for_updates` controls the background GitHub Release check and update
+notification only; it does not install anything. Running `devops update` always
+uses the verified update flow described in [install.md](install.md).
+
+Update checks use a 5-second request timeout and update downloads use a 60-second
+request timeout by default. Set `DEVOPS_UPDATE_CHECK_TIMEOUT_SECS` or
+`DEVOPS_UPDATE_DOWNLOAD_TIMEOUT_SECS` to override those values for constrained
+networks; overrides must also be between 1 and 600 seconds.
 
 ## `[devops.display]`
 

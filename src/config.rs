@@ -1,12 +1,16 @@
 //! TOML configuration loading, validation, and persistence.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 /// The highest config schema version this binary understands.
 pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
+const MAX_CONNECTION_VALUE_BYTES: usize = 256;
+const MIN_TIMEOUT_SECS: u64 = 1;
+const MAX_TIMEOUT_SECS: u64 = 600;
 
 /// Error returned when loading or parsing a config file.
 #[derive(Debug)]
@@ -15,6 +19,36 @@ pub enum ConfigError {
     Parse(toml::de::Error),
     /// The config declares a `schema_version` newer than this binary supports.
     SchemaTooNew { found: u32, supported: u32 },
+    /// The Azure DevOps organization or project value is invalid.
+    InvalidConnectionValue {
+        field: &'static str,
+        reason: ConnectionValidationReason,
+    },
+    /// A network timeout value is invalid.
+    InvalidTimeoutValue {
+        field: &'static str,
+        reason: TimeoutValidationReason,
+    },
+}
+
+/// Explains why an Azure DevOps connection config value is invalid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionValidationReason {
+    /// Indicates that the value is empty or contains only whitespace.
+    Empty,
+    /// Indicates that the value contains a control character.
+    ControlCharacter,
+    /// Indicates that the value exceeds the maximum allowed byte length.
+    TooLong { max_bytes: usize },
+}
+
+/// Explains why a timeout config value is invalid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeoutValidationReason {
+    /// Indicates that the value is zero.
+    Zero,
+    /// Indicates that the value exceeds the maximum allowed seconds.
+    TooLarge { max_secs: u64 },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -25,6 +59,34 @@ impl std::fmt::Display for ConfigError {
                 f,
                 "Config was written by a newer devops (schema v{found}, this binary supports v{supported}). Upgrade the CLI to v2+ or remove the `schema_version` line from your config to reset to defaults."
             ),
+            Self::InvalidConnectionValue { field, reason } => {
+                write!(
+                    f,
+                    "Invalid [devops.connection].{field}: {reason}. Set `{field}` to the Azure DevOps {field} name from your dev.azure.com URL."
+                )
+            }
+            Self::InvalidTimeoutValue { field, reason } => {
+                write!(f, "Invalid [devops.connection.timeouts].{field}: {reason}.")
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for ConnectionValidationReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => write!(f, "value must not be empty or whitespace-only"),
+            Self::ControlCharacter => write!(f, "value must not contain control characters"),
+            Self::TooLong { max_bytes } => write!(f, "value must be {max_bytes} bytes or fewer"),
+        }
+    }
+}
+
+impl std::fmt::Display for TimeoutValidationReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Zero => write!(f, "value must be at least {MIN_TIMEOUT_SECS} second"),
+            Self::TooLarge { max_secs } => write!(f, "value must be {max_secs} seconds or fewer"),
         }
     }
 }
@@ -33,7 +95,9 @@ impl std::error::Error for ConfigError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Parse(e) => Some(e),
-            Self::SchemaTooNew { .. } => None,
+            Self::SchemaTooNew { .. }
+            | Self::InvalidConnectionValue { .. }
+            | Self::InvalidTimeoutValue { .. } => None,
         }
     }
 }
@@ -80,6 +144,113 @@ pub struct DevOpsConfig {
 pub struct ConnectionConfig {
     pub organization: String,
     pub project: String,
+    #[serde(default)]
+    pub timeouts: ConnectionTimeoutConfig,
+}
+
+/// Configures Azure DevOps HTTP request timeouts.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ConnectionTimeoutConfig {
+    /// Sets the default end-to-end request timeout in seconds.
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+    /// Sets the TCP connection timeout in seconds.
+    #[serde(default = "default_connect_timeout_secs")]
+    pub connect_timeout_secs: u64,
+    /// Sets the end-to-end timeout for build log downloads in seconds.
+    #[serde(default = "default_log_timeout_secs")]
+    pub log_timeout_secs: u64,
+}
+
+impl Default for ConnectionTimeoutConfig {
+    fn default() -> Self {
+        Self {
+            request_timeout_secs: default_request_timeout_secs(),
+            connect_timeout_secs: default_connect_timeout_secs(),
+            log_timeout_secs: default_log_timeout_secs(),
+        }
+    }
+}
+
+impl ConnectionTimeoutConfig {
+    /// Returns the configured request timeout.
+    pub fn request_timeout(self) -> Duration {
+        Duration::from_secs(self.request_timeout_secs)
+    }
+
+    /// Returns the configured connection timeout.
+    pub fn connect_timeout(self) -> Duration {
+        Duration::from_secs(self.connect_timeout_secs)
+    }
+
+    /// Returns the configured log download timeout.
+    pub fn log_timeout(self) -> Duration {
+        Duration::from_secs(self.log_timeout_secs)
+    }
+
+    /// Validates every timeout value.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_timeout_value("request_timeout_secs", self.request_timeout_secs)?;
+        validate_timeout_value("connect_timeout_secs", self.connect_timeout_secs)?;
+        validate_timeout_value("log_timeout_secs", self.log_timeout_secs)?;
+        Ok(())
+    }
+}
+
+impl ConnectionConfig {
+    /// Validates the Azure DevOps organization and project names.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_connection_value("organization", &self.organization)?;
+        validate_connection_value("project", &self.project)?;
+        self.timeouts.validate()?;
+        Ok(())
+    }
+}
+
+fn validate_connection_value(field: &'static str, value: &str) -> Result<(), ConfigError> {
+    let reason = if value.trim().is_empty() {
+        Some(ConnectionValidationReason::Empty)
+    } else if value.chars().any(char::is_control) {
+        Some(ConnectionValidationReason::ControlCharacter)
+    } else if value.len() > MAX_CONNECTION_VALUE_BYTES {
+        Some(ConnectionValidationReason::TooLong {
+            max_bytes: MAX_CONNECTION_VALUE_BYTES,
+        })
+    } else {
+        None
+    };
+
+    reason.map_or(Ok(()), |reason| {
+        Err(ConfigError::InvalidConnectionValue { field, reason })
+    })
+}
+
+fn validate_timeout_value(field: &'static str, value: u64) -> Result<(), ConfigError> {
+    let reason = if value == 0 {
+        Some(TimeoutValidationReason::Zero)
+    } else if value > MAX_TIMEOUT_SECS {
+        Some(TimeoutValidationReason::TooLarge {
+            max_secs: MAX_TIMEOUT_SECS,
+        })
+    } else {
+        None
+    };
+
+    reason.map_or(Ok(()), |reason| {
+        Err(ConfigError::InvalidTimeoutValue { field, reason })
+    })
+}
+
+fn default_request_timeout_secs() -> u64 {
+    30
+}
+
+fn default_connect_timeout_secs() -> u64 {
+    10
+}
+
+fn default_log_timeout_secs() -> u64 {
+    60
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -200,10 +371,7 @@ fn default_max_log_lines() -> usize {
 }
 
 impl Config {
-    /// Parses a config from a TOML string and enforces `schema_version`
-    /// compatibility. Unknown top-level fields other than `schema_version`
-    /// remain non-fatal (serde's default behavior) — only a `schema_version`
-    /// higher than [`CURRENT_SCHEMA_VERSION`] is rejected.
+    /// Parses a config from a TOML string and validates schema and connection values.
     pub fn parse_str(s: &str) -> Result<Self, ConfigError> {
         let config: Config = toml::from_str(s).map_err(ConfigError::Parse)?;
         if let Some(found) = config.schema_version
@@ -214,6 +382,7 @@ impl Config {
                 supported: CURRENT_SCHEMA_VERSION,
             });
         }
+        config.devops.connection.validate()?;
         Ok(config)
     }
 
@@ -225,7 +394,10 @@ impl Config {
 
         tracing::debug!(path = %config_path.display(), "loading config");
 
-        if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+        if !tokio::fs::try_exists(&config_path)
+            .await
+            .with_context(|| format!("Failed to check config path {}", config_path.display()))?
+        {
             tracing::warn!(path = %config_path.display(), "config file not found");
             anyhow::bail!(
                 "Config file not found at {}. Create it with:\n\n\
@@ -253,13 +425,18 @@ impl Config {
             Some(p) => p.clone(),
             None => default_config_path()?,
         };
-        let exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
+        let exists = tokio::fs::try_exists(&path)
+            .await
+            .with_context(|| format!("Failed to check config path {}", path.display()))?;
         tracing::debug!(path = %path.display(), exists, "resolved config path");
         Ok((path, exists))
     }
 
     /// Writes a minimal config file with the given org and project.
     pub async fn write_initial(path: &PathBuf, organization: &str, project: &str) -> Result<()> {
+        validate_connection_value("organization", organization)?;
+        validate_connection_value("project", project)?;
+
         tracing::info!(
             path = %path.display(),
             organization,
@@ -361,7 +538,10 @@ impl Config {
             None => default_config_path()?,
         };
 
-        if !config_path.exists() {
+        if !config_path
+            .try_exists()
+            .with_context(|| format!("Failed to check config path {}", config_path.display()))?
+        {
             anyhow::bail!(
                 "Config file not found at {}. Create it with:\n\n\
                  [devops.connection]\n\
@@ -456,6 +636,10 @@ project = "myproject"
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.devops.connection.organization, "myorg");
         assert_eq!(config.devops.connection.project, "myproject");
+        assert_eq!(
+            config.devops.connection.timeouts,
+            ConnectionTimeoutConfig::default()
+        );
         assert!(config.devops.filters.folders.is_empty());
         assert!(config.devops.filters.definition_ids.is_empty());
         // Update config defaults.
@@ -481,10 +665,18 @@ project = "myproject"
 [devops.filters]
 folders = ["\\Infra", "\\Deploy"]
 definition_ids = [42, 99]
+
+[devops.connection.timeouts]
+request_timeout_secs = 45
+connect_timeout_secs = 15
+log_timeout_secs = 120
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.devops.filters.folders, vec!["\\Infra", "\\Deploy"]);
         assert_eq!(config.devops.filters.definition_ids, vec![42, 99]);
+        assert_eq!(config.devops.connection.timeouts.request_timeout_secs, 45);
+        assert_eq!(config.devops.connection.timeouts.connect_timeout_secs, 15);
+        assert_eq!(config.devops.connection.timeouts.log_timeout_secs, 120);
     }
 
     #[test]
@@ -495,6 +687,142 @@ folders = []
 ";
         let result: Result<Config, _> = toml::from_str(toml);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_rejects_empty_connection_values() {
+        let toml = r#"
+[devops.connection]
+organization = "   "
+project = "myproject"
+"#;
+        let err = Config::parse_str(toml).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::InvalidConnectionValue {
+                field: "organization",
+                reason: ConnectionValidationReason::Empty
+            }
+        ));
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn parse_rejects_control_characters_in_connection_values() {
+        let toml = r#"
+[devops.connection]
+organization = "myorg"
+project = "my\u0007project"
+"#;
+        let err = Config::parse_str(toml).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::InvalidConnectionValue {
+                field: "project",
+                reason: ConnectionValidationReason::ControlCharacter
+            }
+        ));
+        assert!(err.to_string().contains("control characters"));
+    }
+
+    #[test]
+    fn parse_rejects_pathologically_long_connection_values() {
+        let organization = "o".repeat(MAX_CONNECTION_VALUE_BYTES + 1);
+        let toml = format!(
+            r#"
+[devops.connection]
+organization = "{organization}"
+project = "myproject"
+"#
+        );
+        let err = Config::parse_str(&toml).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::InvalidConnectionValue {
+                field: "organization",
+                reason: ConnectionValidationReason::TooLong {
+                    max_bytes: MAX_CONNECTION_VALUE_BYTES
+                }
+            }
+        ));
+        assert!(err.to_string().contains("bytes or fewer"));
+    }
+
+    #[test]
+    fn parse_config_with_connection_timeouts() {
+        let toml = r#"
+[devops.connection]
+organization = "org"
+project = "proj"
+
+[devops.connection.timeouts]
+request_timeout_secs = 45
+connect_timeout_secs = 12
+log_timeout_secs = 180
+"#;
+        let config = Config::parse_str(toml).unwrap();
+
+        assert_eq!(config.devops.connection.timeouts.request_timeout_secs, 45);
+        assert_eq!(config.devops.connection.timeouts.connect_timeout_secs, 12);
+        assert_eq!(config.devops.connection.timeouts.log_timeout_secs, 180);
+    }
+
+    #[test]
+    fn parse_rejects_zero_timeout_values() {
+        let toml = r#"
+[devops.connection]
+organization = "org"
+project = "proj"
+
+[devops.connection.timeouts]
+request_timeout_secs = 0
+"#;
+        let err = Config::parse_str(toml).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConfigError::InvalidTimeoutValue {
+                field: "request_timeout_secs",
+                reason: TimeoutValidationReason::Zero
+            }
+        ));
+        assert!(err.to_string().contains("at least 1 second"));
+    }
+
+    #[test]
+    fn parse_rejects_pathologically_large_timeout_values() {
+        let toml = format!(
+            r#"
+[devops.connection]
+organization = "org"
+project = "proj"
+
+[devops.connection.timeouts]
+log_timeout_secs = {}
+"#,
+            MAX_TIMEOUT_SECS + 1
+        );
+        let err = Config::parse_str(&toml).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConfigError::InvalidTimeoutValue {
+                field: "log_timeout_secs",
+                reason: TimeoutValidationReason::TooLarge {
+                    max_secs: MAX_TIMEOUT_SECS
+                }
+            }
+        ));
+        assert!(err.to_string().contains("seconds or fewer"));
+    }
+
+    #[tokio::test]
+    async fn write_initial_rejects_invalid_connection_values() {
+        let path = PathBuf::from("target/should-not-write-invalid-config.toml");
+        let err = Config::write_initial(&path, "", "project")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("[devops.connection].organization"));
     }
 
     #[test]
@@ -633,6 +961,11 @@ definition_ids = [42, 99]
 [devops.update]
 check_for_updates = false
 
+[devops.connection.timeouts]
+request_timeout_secs = 45
+connect_timeout_secs = 12
+log_timeout_secs = 180
+
 [devops.logging]
 level = "debug"
 
@@ -652,6 +985,9 @@ log_refresh_interval_secs = 10
         assert_eq!(config2.devops.filters.folders, vec!["\\Infra", "\\Deploy"]);
         assert_eq!(config2.devops.filters.definition_ids, vec![42, 99]);
         assert!(!config2.devops.update.check_for_updates);
+        assert_eq!(config2.devops.connection.timeouts.request_timeout_secs, 45);
+        assert_eq!(config2.devops.connection.timeouts.connect_timeout_secs, 12);
+        assert_eq!(config2.devops.connection.timeouts.log_timeout_secs, 180);
         assert_eq!(config2.devops.logging.level, "debug");
         assert!(!config2.devops.notifications.enabled);
         assert_eq!(config2.devops.display.refresh_interval_secs, 30);
@@ -729,7 +1065,7 @@ project = "myproject"
                 assert_eq!(found, 99);
                 assert_eq!(supported, 1);
             }
-            other @ ConfigError::Parse(_) => panic!("expected SchemaTooNew, got {other:?}"),
+            other => panic!("expected SchemaTooNew, got {other:?}"),
         }
     }
 

@@ -11,6 +11,7 @@ use azure_core::{credentials::TokenCredential, time::OffsetDateTime};
 use azure_identity::DeveloperToolsCredential;
 use tokio::sync::RwLock;
 
+use crate::client::errors::AdoError;
 use crate::shared::SecretString;
 
 const ADO_RESOURCE: &str = "499b84ac-1321-427f-aa17-267ca6975798";
@@ -34,7 +35,8 @@ pub struct AdoAuth {
 impl AdoAuth {
     /// Creates a new authenticator backed by `DeveloperToolsCredential`.
     pub fn new() -> Result<Self> {
-        let credential: Arc<dyn TokenCredential> = DeveloperToolsCredential::new(None)?;
+        let credential: Arc<dyn TokenCredential> = DeveloperToolsCredential::new(None)
+            .map_err(|e| auth_error("Failed to initialize Azure Developer Tools credential.", e))?;
         Ok(Self {
             credential,
             cache: Arc::new(RwLock::new(None)),
@@ -71,8 +73,9 @@ impl AdoAuth {
             .await
             .map_err(|e| {
                 tracing::warn!(error = %e, "authentication failed");
-                anyhow::anyhow!(
-                    "Authentication failed — ensure you are logged in with `az login` or `azd auth login`.\n\nUnderlying error: {e}"
+                auth_error(
+                    "Authentication failed — ensure you are logged in with `az login` or `azd auth login`.",
+                    e,
                 )
             })?;
 
@@ -104,7 +107,8 @@ impl AdoAuth {
     /// `token()` call is served from the cache. Hidden from the rendered docs.
     #[doc(hidden)]
     pub fn with_static_token(token: &str) -> Result<Self> {
-        let credential: Arc<dyn TokenCredential> = DeveloperToolsCredential::new(None)?;
+        let credential: Arc<dyn TokenCredential> = DeveloperToolsCredential::new(None)
+            .map_err(|e| auth_error("Failed to initialize Azure Developer Tools credential.", e))?;
         let cached = CachedToken {
             secret: SecretString::from(token.to_string()),
             expires_on: std::time::Instant::now() + std::time::Duration::from_hours(1),
@@ -113,5 +117,12 @@ impl AdoAuth {
             credential,
             cache: Arc::new(RwLock::new(Some(cached))),
         })
+    }
+}
+
+fn auth_error(message: &'static str, source: impl std::fmt::Display) -> AdoError {
+    AdoError::Auth {
+        message: message.to_string(),
+        source: Some(source.to_string()),
     }
 }

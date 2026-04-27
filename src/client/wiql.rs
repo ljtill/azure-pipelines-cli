@@ -32,4 +32,84 @@ mod tests {
     fn doubles_every_single_quote() {
         assert_eq!(wiql_escape("'a'b'c'"), "''a''b''c''");
     }
+
+    #[test]
+    fn property_style_escapes_sampled_wiql_literals() {
+        let samples = [
+            "",
+            "plain",
+            "it's mine",
+            "''",
+            "'leading",
+            "trailing'",
+            "a'b'c",
+            "line\nbreak",
+            "tab\tvalue",
+            "emoji 🦀 'quote'",
+            "[System.Title] = 'x' OR '1' = '1'",
+        ];
+
+        for input in samples {
+            assert_wiql_escape_properties(input);
+        }
+    }
+
+    #[test]
+    fn property_style_escapes_generated_fragment_combinations() {
+        let fragments = [
+            "",
+            "'",
+            "''",
+            "name",
+            " space ",
+            "line\nbreak",
+            "tab\tvalue",
+            "🦀",
+            "[System.Title]",
+            "; DROP?",
+        ];
+
+        for &left in &fragments {
+            for &right in &fragments {
+                let input = format!("{left}middle{right}");
+                assert_wiql_escape_properties(&input);
+            }
+        }
+    }
+
+    fn assert_wiql_escape_properties(input: &str) {
+        let escaped = wiql_escape(input);
+        let quote_count = input.chars().filter(|&ch| ch == '\'').count();
+
+        assert_eq!(
+            escaped.chars().filter(|&ch| ch == '\'').count(),
+            quote_count * 2,
+            "escaped WIQL should double every quote for {input:?}"
+        );
+        assert_eq!(
+            wiql_unescape(&escaped),
+            input,
+            "escaped WIQL should round trip for {input:?}"
+        );
+    }
+
+    fn wiql_unescape(escaped: &str) -> String {
+        let mut output = String::with_capacity(escaped.len());
+        let mut chars = escaped.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '\'' {
+                assert_eq!(
+                    chars.next(),
+                    Some('\''),
+                    "escaped WIQL literal contains an unpaired quote: {escaped:?}"
+                );
+                output.push('\'');
+            } else {
+                output.push(ch);
+            }
+        }
+
+        output
+    }
 }

@@ -2,6 +2,8 @@
 
 use super::{Endpoints, encode_path_segment};
 
+const TOP_WORK_ITEM_COMMENTS: u32 = 200;
+
 impl Endpoints {
     /// Constructs the URL for listing project teams.
     pub fn project_teams(&self) -> String {
@@ -63,7 +65,7 @@ impl Endpoints {
     /// Uses the 7.1-preview.3 comments endpoint.
     pub fn work_item_comments(&self, work_item_id: u32) -> String {
         format!(
-            "{}/wit/workItems/{work_item_id}/comments?api-version=7.1-preview.3",
+            "{}/wit/workItems/{work_item_id}/comments?api-version=7.1-preview.3&$top={TOP_WORK_ITEM_COMMENTS}",
             self.base_url
         )
     }
@@ -131,7 +133,7 @@ mod tests {
     fn work_item_comments_url_uses_preview_api_version() {
         assert_eq!(
             ep().work_item_comments(42),
-            format!("{BASE}/wit/workItems/42/comments?api-version=7.1-preview.3")
+            format!("{BASE}/wit/workItems/42/comments?api-version=7.1-preview.3&$top=200")
         );
     }
 }

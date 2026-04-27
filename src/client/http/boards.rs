@@ -1,7 +1,10 @@
 //! HTTP client methods for Azure Boards and work item tracking operations.
 
+use std::future::Future;
+
 use anyhow::Result;
 
+use super::RequestRetryPolicy;
 use crate::client::models::{
     BacklogLevelConfiguration, BacklogLevelWorkItems, ListResponse, ProjectTeam, WiqlQuery,
     WorkItem, WorkItemBatchGetRequest, WorkItemComment, WorkItemCommentList, WorkItemErrorPolicy,
@@ -54,6 +57,7 @@ impl super::AdoClient {
             &WiqlQuery {
                 query: query.to_string(),
             },
+            RequestRetryPolicy::Idempotent,
         )
         .await
     }
@@ -75,7 +79,9 @@ impl super::AdoClient {
         for chunk in ids.chunks(200) {
             tracing::debug!(count = chunk.len(), "fetching work item batch");
             let req = work_item_batch_request(chunk, fields, expand);
-            let resp: ListResponse<WorkItem> = self.post_json(&url, &req).await?;
+            let resp: ListResponse<WorkItem> = self
+                .post_json(&url, &req, RequestRetryPolicy::Idempotent)
+                .await?;
             all.extend(resp.value);
         }
 
@@ -89,7 +95,9 @@ impl super::AdoClient {
         tracing::debug!(work_item_id = id, "fetching work item detail");
         let url = self.endpoints.work_items_batch();
         let req = work_item_batch_request(&[id], &[], Some(WorkItemExpand::Relations));
-        let resp: ListResponse<WorkItem> = self.post_json(&url, &req).await?;
+        let resp: ListResponse<WorkItem> = self
+            .post_json(&url, &req, RequestRetryPolicy::Idempotent)
+            .await?;
         resp.value
             .into_iter()
             .next()
@@ -100,9 +108,32 @@ impl super::AdoClient {
     pub async fn list_work_item_comments(&self, id: u32) -> Result<Vec<WorkItemComment>> {
         tracing::debug!(work_item_id = id, "listing work item comments");
         let url = self.endpoints.work_item_comments(id);
-        let resp: WorkItemCommentList = self.get(&url).await?;
-        Ok(resp.comments)
+        collect_work_item_comment_pages(
+            &url,
+            super::PaginationOptions::new("work_item_comments", None),
+            |full_url| async move { self.get::<WorkItemCommentList>(&full_url).await },
+        )
+        .await
     }
+}
+
+async fn collect_work_item_comment_pages<Fetch, Fut>(
+    url: &str,
+    options: super::PaginationOptions<'_>,
+    mut fetch_page: Fetch,
+) -> Result<Vec<WorkItemComment>>
+where
+    Fetch: FnMut(String) -> Fut,
+    Fut: Future<Output = Result<WorkItemCommentList>>,
+{
+    super::collect_continuation_item_pages(url, options, move |full_url| {
+        let fetch = fetch_page(full_url);
+        async move {
+            let page = fetch.await?;
+            Ok((page.comments, page.continuation_token))
+        }
+    })
+    .await
 }
 
 fn work_item_batch_request(
@@ -126,7 +157,24 @@ fn work_item_batch_request(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::client::errors::AdoError;
+    use crate::client::http::PaginationOptions;
+
     use super::*;
+
+    fn comment(id: u32) -> WorkItemComment {
+        WorkItemComment {
+            id,
+            text: format!("comment {id}"),
+            created_by: None,
+            created_date: None,
+            modified_by: None,
+            modified_date: None,
+        }
+    }
 
     #[test]
     fn boards_batch_contract_uses_org_scoped_url_and_fields_only_body() {
@@ -170,5 +218,47 @@ mod tests {
                 "errorPolicy": "Omit",
             })
         );
+    }
+
+    #[tokio::test]
+    async fn work_item_comment_pagination_returns_partial_data_at_cap() {
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let err = collect_work_item_comment_pages(
+            "https://example.test/comments?api-version=7.1-preview.3",
+            PaginationOptions::for_testing("work_item_comments", 2, None),
+            {
+                let calls = Arc::clone(&calls);
+                move |_| {
+                    let calls = Arc::clone(&calls);
+                    async move {
+                        let id = calls.fetch_add(1, Ordering::Relaxed) as u32;
+                        Ok(WorkItemCommentList {
+                            comments: vec![comment(id)],
+                            total_count: 10,
+                            continuation_token: Some("next".to_string()),
+                        })
+                    }
+                }
+            },
+        )
+        .await
+        .expect_err("cap should stop comment pagination");
+
+        let AdoError::PartialData {
+            endpoint,
+            completed_pages,
+            items,
+            ..
+        } = err
+            .downcast_ref::<AdoError>()
+            .expect("error should be typed")
+        else {
+            panic!("expected PartialData");
+        };
+        assert_eq!(*endpoint, "work_item_comments");
+        assert_eq!(*completed_pages, 2);
+        assert_eq!(*items, 2);
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
     }
 }

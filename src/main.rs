@@ -144,9 +144,10 @@ async fn main() -> Result<()> {
     let api_version = cli.api_version.clone();
 
     loop {
-        let mut client = AdoClient::new(
+        let mut client = AdoClient::new_with_timeouts(
             &config.devops.connection.organization,
             &config.devops.connection.project,
+            config.devops.connection.timeouts,
         )?;
         client.set_api_version(&api_version);
 

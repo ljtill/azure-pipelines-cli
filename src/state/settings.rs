@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use crate::config::{
-    Config, ConnectionConfig, DisplayConfig, FiltersConfig, LoggingConfig, NotificationsConfig,
-    UpdateConfig,
+    Config, ConnectionConfig, ConnectionTimeoutConfig, DisplayConfig, FiltersConfig, LoggingConfig,
+    NotificationsConfig, UpdateConfig,
 };
 
 /// Represents the field type for a settings row.
@@ -55,6 +55,9 @@ pub struct SettingsState {
     /// round-trip through `to_config` to avoid silently resetting a
     /// user-configured value.
     pub preserved_max_log_lines: usize,
+    /// Preserves `[connection.timeouts]` because timeout fields are not edited
+    /// in the settings form.
+    pub preserved_timeouts: ConnectionTimeoutConfig,
 }
 
 impl SettingsState {
@@ -171,6 +174,7 @@ impl SettingsState {
             config_path,
             cursor: 0,
             preserved_max_log_lines: config.devops.display.max_log_lines,
+            preserved_timeouts: config.devops.connection.timeouts,
         }
     }
 
@@ -309,6 +313,7 @@ impl SettingsState {
                 connection: ConnectionConfig {
                     organization: get("Organization").to_string(),
                     project: get("Project").to_string(),
+                    timeouts: self.preserved_timeouts,
                 },
                 filters: FiltersConfig {
                     folders: parse_string_list("Filter folders"),

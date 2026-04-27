@@ -2,16 +2,30 @@
 
 use anyhow::Result;
 
-use super::encode_continuation_token;
+use super::{PaginationProgressFn, RequestRetryPolicy, continuation_url};
 use crate::client::models::{Build, BuildListResponse, BuildTimeline, PipelineRun};
 
 impl super::AdoClient {
     /// Fetches the most recent builds across all pipelines in the project.
     pub async fn list_recent_builds(&self) -> Result<Vec<Build>> {
+        self.list_recent_builds_with_progress(None).await
+    }
+
+    /// Fetches the most recent builds, invoking the optional callback with
+    /// per-page progress as pagination advances.
+    pub async fn list_recent_builds_with_progress(
+        &self,
+        progress: Option<&PaginationProgressFn>,
+    ) -> Result<Vec<Build>> {
         tracing::debug!("listing recent builds");
         let url = self.endpoints.builds_recent();
-        let resp: BuildListResponse = self.get(&url).await?;
-        Ok(resp.value)
+        self.get_all_continuation_pages(
+            &url,
+            "recent_builds",
+            progress,
+            |page: BuildListResponse| page.value,
+        )
+        .await
     }
 
     /// Fetches the first page of builds for a specific pipeline definition.
@@ -51,11 +65,7 @@ impl super::AdoClient {
     ) -> Result<(Vec<Build>, Option<String>)> {
         tracing::debug!(definition_id, "listing builds for definition (continued)");
         let base_url = self.endpoints.builds_for_definition(definition_id);
-        let url = format!(
-            "{}&continuationToken={}",
-            base_url,
-            encode_continuation_token(continuation_token)
-        );
+        let url = continuation_url(&base_url, continuation_token)?;
         let (resp, continuation): (BuildListResponse, _) = self.get_with_continuation(&url).await?;
         Ok((resp.value, continuation))
     }
@@ -85,8 +95,12 @@ impl super::AdoClient {
     pub async fn cancel_build(&self, build_id: u32) -> Result<()> {
         tracing::info!(build_id, "cancelling build");
         let url = self.endpoints.build(build_id);
-        self.patch_json(&url, &serde_json::json!({"status": "cancelling"}))
-            .await
+        self.patch_json(
+            &url,
+            &serde_json::json!({"status": "cancelling"}),
+            RequestRetryPolicy::Idempotent,
+        )
+        .await
     }
 
     /// Retries all jobs in a specific stage of a build.
@@ -96,6 +110,7 @@ impl super::AdoClient {
         self.patch_json(
             &url,
             &serde_json::json!({"forceRetryAllJobs": true, "state": 1}),
+            RequestRetryPolicy::NonIdempotent,
         )
         .await
     }
@@ -104,6 +119,11 @@ impl super::AdoClient {
     pub async fn run_pipeline(&self, pipeline_id: u32) -> Result<PipelineRun> {
         tracing::info!(pipeline_id, "running pipeline");
         let url = self.endpoints.pipeline_runs(pipeline_id);
-        self.post_json(&url, &serde_json::json!({})).await
+        self.post_json(
+            &url,
+            &serde_json::json!({}),
+            RequestRetryPolicy::NonIdempotent,
+        )
+        .await
     }
 }
