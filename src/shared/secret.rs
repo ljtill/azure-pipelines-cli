@@ -2,12 +2,14 @@
 
 use std::fmt;
 
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
 /// Wraps a sensitive string value (token, credential) so its `Debug`
 /// and `Display` impls redact the inner value.
 ///
 /// Call [`SecretString::expose_secret`] only where the raw value must cross
 /// an FFI or HTTP boundary — the explicit method name makes leak audits easy.
-#[derive(Clone)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct SecretString(String);
 
 impl SecretString {
@@ -43,21 +45,6 @@ impl From<String> for SecretString {
 impl From<&str> for SecretString {
     fn from(s: &str) -> Self {
         Self(s.to_string())
-    }
-}
-
-impl Drop for SecretString {
-    fn drop(&mut self) {
-        // Best-effort wipe; not cryptographically guaranteed without the zeroize crate.
-        // SAFETY: we overwrite the bytes the String owns via as_mut_vec; safe because
-        // we do not read from it after, and the resulting bytes (all zero) remain
-        // valid UTF-8.
-        unsafe {
-            let v = self.0.as_mut_vec();
-            for b in v.iter_mut() {
-                *b = 0;
-            }
-        }
     }
 }
 
