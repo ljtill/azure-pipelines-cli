@@ -196,7 +196,7 @@ pub fn render_header(f: &mut Frame, area: Rect, cols: &[Column]) -> Rect {
         .collect();
 
     f.render_widget(
-        Paragraph::new(Line::from(spans)).style(theme::MUTED),
+        Paragraph::new(Line::from(spans)).style(theme::TABLE_HEADER),
         header_rect,
     );
 

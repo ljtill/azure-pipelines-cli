@@ -1,10 +1,10 @@
 //! Shared rendering utilities for status icons, elapsed time, and text truncation.
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 
 use super::theme;
 use crate::client::models::{Build, BuildResult, BuildStatus, TaskState};
@@ -34,14 +34,14 @@ pub fn status_label(status: BuildStatus, result: Option<BuildResult>) -> &'stati
 /// Returns the status icon and color for a build's status and result.
 pub fn status_icon(status: BuildStatus, result: Option<BuildResult>) -> (&'static str, Color) {
     if status.is_in_progress() {
-        return ("●", Color::Yellow);
+        return ("●", theme::WARNING_FG);
     }
     match result {
-        Some(BuildResult::Succeeded) => ("✓", Color::Green),
-        Some(BuildResult::Failed) => ("✗", Color::Red),
-        Some(BuildResult::PartiallySucceeded) => ("◐", Color::Yellow),
-        Some(BuildResult::Canceled | BuildResult::Skipped) => ("⊘", Color::DarkGray),
-        _ => ("○", Color::DarkGray),
+        Some(BuildResult::Succeeded) => ("✓", theme::SUCCESS_FG),
+        Some(BuildResult::Failed) => ("✗", theme::ERROR_FG),
+        Some(BuildResult::PartiallySucceeded) => ("◐", theme::WARNING_FG),
+        Some(BuildResult::Canceled | BuildResult::Skipped) => ("⊘", theme::PENDING_FG),
+        _ => ("○", theme::PENDING_FG),
     }
 }
 
@@ -53,7 +53,7 @@ pub fn effective_status_icon(
     has_pending_approval: bool,
 ) -> (&'static str, Color) {
     if has_pending_approval && status.is_in_progress() {
-        return ("◆", Color::Magenta);
+        return ("◆", theme::APPROVAL_FG);
     }
     status_icon(status, result)
 }
@@ -78,14 +78,14 @@ pub fn timeline_status_icon(
     result: Option<BuildResult>,
 ) -> (&'static str, Color) {
     match result {
-        Some(BuildResult::Succeeded) => ("✓", Color::Green),
-        Some(BuildResult::Failed) => ("✗", Color::Red),
-        Some(BuildResult::PartiallySucceeded) => ("◐", Color::Yellow),
-        Some(BuildResult::Canceled | BuildResult::Skipped) => ("⊘", Color::DarkGray),
+        Some(BuildResult::Succeeded) => ("✓", theme::SUCCESS_FG),
+        Some(BuildResult::Failed) => ("✗", theme::ERROR_FG),
+        Some(BuildResult::PartiallySucceeded) => ("◐", theme::WARNING_FG),
+        Some(BuildResult::Canceled | BuildResult::Skipped) => ("⊘", theme::PENDING_FG),
         _ => match state {
-            Some(TaskState::InProgress) => ("●", Color::Yellow),
-            Some(TaskState::Completed) => ("✓", Color::Green),
-            _ => ("○", Color::DarkGray),
+            Some(TaskState::InProgress) => ("●", theme::WARNING_FG),
+            Some(TaskState::Completed) => ("✓", theme::SUCCESS_FG),
+            _ => ("○", theme::PENDING_FG),
         },
     }
 }
@@ -96,11 +96,11 @@ pub fn checkpoint_status_icon(
     result: Option<BuildResult>,
 ) -> (&'static str, Color) {
     match result {
-        Some(BuildResult::Succeeded) => ("✓", Color::Green),
-        Some(BuildResult::Failed | BuildResult::Canceled) => ("✗", Color::Red),
+        Some(BuildResult::Succeeded) => ("✓", theme::SUCCESS_FG),
+        Some(BuildResult::Failed | BuildResult::Canceled) => ("✗", theme::ERROR_FG),
         _ => match state {
-            Some(TaskState::Completed) => ("✓", Color::Green),
-            _ => ("◆", Color::Magenta),
+            Some(TaskState::Completed) => ("✓", theme::SUCCESS_FG),
+            _ => ("◆", theme::APPROVAL_FG),
         },
     }
 }
@@ -154,6 +154,29 @@ pub fn draw_search_bar(f: &mut Frame, area: Rect, query: &str, input_mode: Input
     f.render_widget(search, area);
 }
 
+/// Returns a softly bordered block used for primary content surfaces.
+pub fn surface_block<'a, T>(title: T) -> Block<'a>
+where
+    T: Into<Line<'a>>,
+{
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(title)
+        .title_style(theme::TITLE)
+        .border_style(theme::PANEL_BORDER)
+        .style(theme::PANEL)
+}
+
+/// Returns an elevated bordered block for nested cards and detail panes.
+pub fn card_block<'a, T>(title: T) -> Block<'a>
+where
+    T: Into<Line<'a>>,
+{
+    surface_block(title)
+        .border_style(theme::PANEL_BORDER_FOCUSED)
+        .style(theme::PANEL_ELEVATED)
+}
+
 /// Returns the standard bordered block used for top-level view panels.
 pub fn view_block<'a, T>(title: T) -> Block<'a>
 where
@@ -163,6 +186,7 @@ where
         .title(title)
         .title_style(theme::TITLE)
         .border_style(theme::PANEL_BORDER)
+        .style(theme::PANEL)
 }
 
 /// Renders the standard outer frame for a view and returns the remaining body area.
@@ -220,6 +244,58 @@ where
     f.render_widget(Paragraph::new(message.into()).style(style), area);
 }
 
+/// Returns a compact pill-style span for metadata and status labels.
+pub fn badge(label: impl Into<String>, style: Style) -> Span<'static> {
+    Span::styled(format!(" {} ", label.into()), style)
+}
+
+/// Returns styled spans for command-style key hints.
+pub fn key_hint_spans(key: &str, label: &str) -> Vec<Span<'static>> {
+    vec![
+        Span::styled(key.to_string(), theme::KEY),
+        Span::styled(format!(" {label}"), theme::MUTED),
+    ]
+}
+
+/// Renders a centered empty-state message inside an already-framed area.
+pub fn draw_empty_state(f: &mut Frame, area: Rect, title: &str, hint: &str) {
+    draw_centered_state(f, area, title, hint, theme::TEXT);
+}
+
+/// Renders a centered loading-state message inside an already-framed area.
+pub fn draw_loading_state(f: &mut Frame, area: Rect, title: &str, hint: &str) {
+    draw_centered_state(f, area, &format!("⟳ {title}"), hint, theme::MUTED);
+}
+
+/// Renders a centered error-state message inside an already-framed area.
+pub fn draw_error_state(f: &mut Frame, area: Rect, title: &str, hint: &str) {
+    draw_centered_state(f, area, title, hint, theme::WARNING);
+}
+
+fn draw_centered_state(f: &mut Frame, area: Rect, title: &str, hint: &str, title_style: Style) {
+    let target = centered_message_area(area, 3);
+    let paragraph = Paragraph::new(vec![
+        Line::from(Span::styled(title.to_string(), title_style)),
+        Line::from(""),
+        Line::from(Span::styled(hint.to_string(), theme::MUTED)),
+    ])
+    .alignment(Alignment::Center)
+    .wrap(Wrap { trim: true });
+    f.render_widget(paragraph, target);
+}
+
+fn centered_message_area(area: Rect, height: u16) -> Rect {
+    if area.height <= height {
+        return area;
+    }
+    Rect {
+        x: area.x,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width: area.width,
+        height,
+    }
+}
+
 /// Truncates a string to at most `max_len` characters, safe for multi-byte UTF-8.
 /// Appends `…` when the text is clipped so the user knows content was cut.
 pub fn truncate(s: &str, max_len: usize) -> String {
@@ -270,13 +346,13 @@ pub fn row_style(is_selected: bool) -> Style {
 /// Returns the status icon and color for a pull request status string.
 pub fn pr_status_icon(status: &str, is_draft: bool) -> (&'static str, Color) {
     if is_draft {
-        return ("◌", Color::DarkGray);
+        return ("◌", theme::PENDING_FG);
     }
     match status.to_ascii_lowercase().as_str() {
-        "active" => ("●", Color::Green),
-        "completed" => ("✓", Color::Cyan),
-        "abandoned" => ("⊘", Color::Red),
-        _ => ("○", Color::DarkGray),
+        "active" => ("●", theme::SUCCESS_FG),
+        "completed" => ("✓", theme::ACCENT_FG),
+        "abandoned" => ("⊘", theme::ERROR_FG),
+        _ => ("○", theme::PENDING_FG),
     }
 }
 
@@ -286,10 +362,10 @@ pub fn pr_status_icon(status: &str, is_draft: bool) -> (&'static str, Color) {
 /// 0 = no vote, -5 = waiting for author, -10 = rejected.
 pub fn reviewer_vote_icon(vote: i32) -> (&'static str, Color) {
     match vote {
-        10 | 5 => ("✓", Color::Green),
-        -10 => ("✗", Color::Red),
-        -5 => ("●", Color::Yellow),
-        _ => ("○", Color::DarkGray),
+        10 | 5 => ("✓", theme::SUCCESS_FG),
+        -10 => ("✗", theme::ERROR_FG),
+        -5 => ("●", theme::WARNING_FG),
+        _ => ("○", theme::PENDING_FG),
     }
 }
 
@@ -314,6 +390,7 @@ pub fn split_with_search_bar(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::theme;
 
     // --- status_icon tests ---
 
@@ -321,7 +398,7 @@ mod tests {
     fn status_icon_in_progress() {
         let (icon, color) = status_icon(BuildStatus::InProgress, None);
         assert_eq!(icon, "●");
-        assert_eq!(color, Color::Yellow);
+        assert_eq!(color, theme::WARNING_FG);
     }
 
     #[test]
@@ -334,21 +411,21 @@ mod tests {
     fn status_icon_succeeded() {
         let (icon, color) = status_icon(BuildStatus::Completed, Some(BuildResult::Succeeded));
         assert_eq!(icon, "✓");
-        assert_eq!(color, Color::Green);
+        assert_eq!(color, theme::SUCCESS_FG);
     }
 
     #[test]
     fn status_icon_failed() {
         let (icon, color) = status_icon(BuildStatus::Completed, Some(BuildResult::Failed));
         assert_eq!(icon, "✗");
-        assert_eq!(color, Color::Red);
+        assert_eq!(color, theme::ERROR_FG);
     }
 
     #[test]
     fn status_icon_no_result() {
         let (icon, color) = status_icon(BuildStatus::Completed, None);
         assert_eq!(icon, "○");
-        assert_eq!(color, Color::DarkGray);
+        assert_eq!(color, theme::PENDING_FG);
     }
 
     // --- timeline_status_icon tests ---
@@ -364,14 +441,14 @@ mod tests {
     fn timeline_in_progress_state() {
         let (icon, color) = timeline_status_icon(Some(TaskState::InProgress), None);
         assert_eq!(icon, "●");
-        assert_eq!(color, Color::Yellow);
+        assert_eq!(color, theme::WARNING_FG);
     }
 
     #[test]
     fn timeline_pending_state() {
         let (icon, color) = timeline_status_icon(Some(TaskState::Pending), None);
         assert_eq!(icon, "○");
-        assert_eq!(color, Color::DarkGray);
+        assert_eq!(color, theme::PENDING_FG);
     }
 
     // --- truncate tests ---
@@ -406,6 +483,20 @@ mod tests {
     #[test]
     fn truncate_zero_len() {
         assert_eq!(truncate("hello", 0), "…");
+    }
+
+    #[test]
+    fn badge_pads_label() {
+        let span = badge("Active", theme::CHIP_ACTIVE);
+        assert_eq!(&*span.content, " Active ");
+    }
+
+    #[test]
+    fn key_hint_spans_split_key_and_label() {
+        let spans = key_hint_spans("Enter", "open");
+        assert_eq!(spans.len(), 2);
+        assert_eq!(&*spans[0].content, "Enter");
+        assert_eq!(&*spans[1].content, " open");
     }
 
     // --- build_elapsed tests ---
@@ -528,28 +619,28 @@ mod tests {
     fn checkpoint_approved() {
         let (icon, color) = checkpoint_status_icon(None, Some(BuildResult::Succeeded));
         assert_eq!(icon, "✓");
-        assert_eq!(color, Color::Green);
+        assert_eq!(color, theme::SUCCESS_FG);
     }
 
     #[test]
     fn checkpoint_rejected() {
         let (icon, color) = checkpoint_status_icon(None, Some(BuildResult::Failed));
         assert_eq!(icon, "✗");
-        assert_eq!(color, Color::Red);
+        assert_eq!(color, theme::ERROR_FG);
     }
 
     #[test]
     fn checkpoint_pending_in_progress() {
         let (icon, color) = checkpoint_status_icon(Some(TaskState::InProgress), None);
         assert_eq!(icon, "◆");
-        assert_eq!(color, Color::Magenta);
+        assert_eq!(color, theme::APPROVAL_FG);
     }
 
     #[test]
     fn checkpoint_pending_none() {
         let (icon, color) = checkpoint_status_icon(None, None);
         assert_eq!(icon, "◆");
-        assert_eq!(color, Color::Magenta);
+        assert_eq!(color, theme::APPROVAL_FG);
     }
 
     // --- status_label tests ---
@@ -623,28 +714,28 @@ mod tests {
     fn pr_status_icon_active() {
         let (icon, color) = pr_status_icon("active", false);
         assert_eq!(icon, "●");
-        assert_eq!(color, Color::Green);
+        assert_eq!(color, theme::SUCCESS_FG);
     }
 
     #[test]
     fn pr_status_icon_draft() {
         let (icon, color) = pr_status_icon("active", true);
         assert_eq!(icon, "◌");
-        assert_eq!(color, Color::DarkGray);
+        assert_eq!(color, theme::PENDING_FG);
     }
 
     #[test]
     fn pr_status_icon_completed() {
         let (icon, color) = pr_status_icon("completed", false);
         assert_eq!(icon, "✓");
-        assert_eq!(color, Color::Cyan);
+        assert_eq!(color, theme::ACCENT_FG);
     }
 
     #[test]
     fn pr_status_icon_abandoned() {
         let (icon, color) = pr_status_icon("abandoned", false);
         assert_eq!(icon, "⊘");
-        assert_eq!(color, Color::Red);
+        assert_eq!(color, theme::ERROR_FG);
     }
 
     #[test]
@@ -659,34 +750,34 @@ mod tests {
     fn reviewer_vote_approved() {
         let (icon, color) = reviewer_vote_icon(10);
         assert_eq!(icon, "✓");
-        assert_eq!(color, Color::Green);
+        assert_eq!(color, theme::SUCCESS_FG);
     }
 
     #[test]
     fn reviewer_vote_approved_with_suggestions() {
         let (icon, color) = reviewer_vote_icon(5);
         assert_eq!(icon, "✓");
-        assert_eq!(color, Color::Green);
+        assert_eq!(color, theme::SUCCESS_FG);
     }
 
     #[test]
     fn reviewer_vote_rejected() {
         let (icon, color) = reviewer_vote_icon(-10);
         assert_eq!(icon, "✗");
-        assert_eq!(color, Color::Red);
+        assert_eq!(color, theme::ERROR_FG);
     }
 
     #[test]
     fn reviewer_vote_waiting() {
         let (icon, color) = reviewer_vote_icon(-5);
         assert_eq!(icon, "●");
-        assert_eq!(color, Color::Yellow);
+        assert_eq!(color, theme::WARNING_FG);
     }
 
     #[test]
     fn reviewer_vote_no_vote() {
         let (icon, color) = reviewer_vote_icon(0);
         assert_eq!(icon, "○");
-        assert_eq!(color, Color::DarkGray);
+        assert_eq!(color, theme::PENDING_FG);
     }
 }
