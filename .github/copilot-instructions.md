@@ -11,6 +11,7 @@
 - Format check: `cargo fmt --all -- --check`
 - Clippy: `cargo clippy --all-targets -- -D warnings`
 - Security checks, when the tools are available: `cargo audit` and `cargo deny --all-features check`.
+- Render/rebuild benchmarks: `cargo bench --bench render --features internal-test-helpers` (the `internal-test-helpers` feature is required outside debug builds because `src/test_helpers.rs` is feature-gated for release-profile use).
 - Current baseline: `cargo build`, `cargo test`, `cargo fmt --all -- --check`, and `cargo clippy --all-targets -- -D warnings` all pass cleanly. Keep it that way — do not commit code that introduces new warnings or formatting drift.
 
 Before committing, always run:
@@ -20,6 +21,20 @@ cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo
 ```
 
 A git pre-commit hook (`.githooks/pre-commit`) enforces these same checks. One-time setup: `git config core.hooksPath .githooks`.
+
+## Commit messages
+
+All commits use [Conventional Commits](https://www.conventionalcommits.org/) with a concrete scope, e.g. `fix(update): retain rollback target until lock clears`, `feat(ui): expand pipeline folders by default`, `docs(release): define validation gates`. The release workflow's next-version calculation depends on this format — non-conforming subjects break tag computation and changelog generation.
+
+## Stable surfaces (1.x freeze)
+
+The following are frozen for the 1.x line — do not rename, remove, or repurpose without a major-version bump. New keys/flags/bindings/paths may be **added** with defaults; existing ones may not change meaning. See `docs/stability.md` for the full contract.
+
+- **Config keys** under `[devops.connection|filters|update|logging|notifications|display]` and the optional top-level `schema_version`.
+- **Keybindings** documented in `docs/keybindings.md`.
+- **File paths**: `~/.config/devops/config.toml`, `~/.local/state/devops/`, `~/.local/share/devops/versions/`, `~/.local/bin/devops`.
+- **CLI surface**: `devops`, `devops version`, `devops update`, plus `--config` and `--api-version`.
+- **`src/lib.rs`** is intentionally a binary-support crate. Every module re-export is `#[doc(hidden)]`; there is no stable Rust library API. Keep new top-level modules `#[doc(hidden)]` too.
 
 ## Runtime and configuration
 
@@ -78,6 +93,9 @@ The codebase is a Rust/ratatui terminal dashboard organized around top-level `Se
 - **Data refresh derives aggregate views.** `DataRefresh` derives active builds from recent builds, builds `latest_builds_by_def` from `definition.latest_build` overlaid with newer recent builds, and rebuilds Dashboard/Pipelines/Active Runs from that shared state.
 - **Test helpers.** `src/test_helpers.rs` provides factory functions (`make_app`, `make_build`, `make_definition`, `make_config`, `make_simple_timeline`) used by both unit tests in `src/` and integration tests in `tests/`.
 - **List view column layout.** All list views source their column widths from shared schemas in `src/render/columns.rs` (`build_row`, `pull_request_row`, `work_item_row`, `board_row`) built on the `Column` / `ColumnWidth::{Fixed, Flex}` primitive in `src/render/table.rs`. Views call `render_header(f, area, &schema.columns)` to draw a muted single-line header and receive the body rect, then reuse `resolve_widths` with the same schema so the header and rows line up exactly. New columns belong in the schema, not in per-view `Layout::horizontal` calls — `Flex { weight, min, max }` keeps extra horizontal space in the primary text columns instead of sprawling into the last column.
+- **HTTP transport invariants.** `src/client/http/` enforces a per-request retry policy (`429`/`5xx` with `Retry-After` honored as either seconds or HTTP-date, jittered exponential backoff fallback, 4 attempts total = 1 + 3 retries) and a `MAX_JSON_BYTES` 32 MiB body cap. Continuation-token pagination is centralized; new endpoints should reuse the existing pagination helpers rather than re-implementing the loop. The hidden `AdoClient::new_for_testing` constructor is the sanctioned entry point for wiremock-backed integration tests in `tests/http_client.rs` and `tests/http_failure_modes.rs` — keep its signature stable.
+- **Model fixtures are tied to wire types.** Changes to `src/client/models/*` payload structs must keep `tests/fixtures/*.json` (definitions, builds, approvals, pull_requests, pull_request_threads, timeline, connection_data, log) round-trippable; `tests/json_fixtures.rs` deserializes them as a contract test. When adding new model fields, update or add a fixture rather than relying solely on synthetic test data.
+- **Advisory ignores are policy-gated.** Any `cargo audit` or `cargo deny` ignore must be mirrored in **both** `.cargo/audit.toml` and `deny.toml` with: advisory link, rationale, `Reviewed:` date, `Review-by:` expiry date, and the trigger for early re-review. Treat `Review-by` as a hard expiry — refresh or remove the ignore before the next release.
 
 ## Code comments
 
