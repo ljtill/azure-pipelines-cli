@@ -35,7 +35,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 
 # Azure auth
 azure_identity = { version = "=0.35.0", default-features = false, features = ["tokio"] }
-azure_core = { version = "=0.35.0", default-features = false, features = ["reqwest", "reqwest_deflate", "reqwest_gzip", "tokio"] }
+azure_core = { version = "=1.0.0", default-features = false, features = ["reqwest", "reqwest_deflate", "reqwest_gzip", "tokio"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
